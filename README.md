@@ -90,8 +90,11 @@ pull request. On pushes to `main`, it also deploys the site to GitHub Pages.
   has none. Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
 - adsbdb returns the route a flight number currently operates. If a flight number changed routes,
   correct the airports or the haul by hand in the dialog.
-- Continental means both airports are in Europe or on the Mediterranean rim (North Africa, Levant,
-  Turkey, Cyprus). Every other flight counts as intercontinental.
+- Continental means both airports are in the same country or on the same continent (e.g. SEA–SFO,
+  FRA–ZRH). For this rule, Europe includes the Mediterranean rim (North Africa, Levant, Turkey, Cyprus).
+  Every other flight counts as intercontinental. You can override the haul per flight.
+- adsbdb keeps one route per flight number and ignores the date. If an airline reused the number,
+  the lookup can show the wrong route (e.g. UA2837 shows NRT–SFO). Type the airports by hand in that case.
 
 ## Disclaimer
 

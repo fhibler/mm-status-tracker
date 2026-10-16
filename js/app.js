@@ -474,7 +474,8 @@
       const src = r.source === 'manual' ? 'entered manually' : `from adsbdb.com${r.via ? ` via ${esc(r.via)}` : ''}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
       const unknown = !r.origin.country || !r.destination.country;
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
-        (unknown ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '');
+        (unknown ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
+        (r.source !== 'manual' ? '<br><span class="muted">This is the route currently listed for the flight number, not for your date. Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>' : '');
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
     } else if (lk && lk.status === 'notfound') {

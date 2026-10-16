@@ -27,6 +27,10 @@ const fraJfk = { origin: ap('DE'), destination: ap('US') };
 const fraZrh = { origin: ap('DE'), destination: ap('CH') };
 assert.strictEqual(E.autoHaul(flight({ route: fraJfk })), 'intercontinental');
 assert.strictEqual(E.autoHaul(flight({ route: fraZrh })), 'continental');
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('US'), destination: ap('US') } })), 'continental');   // SEA–SFO
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('US'), destination: ap('CA') } })), 'continental');
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('JP'), destination: ap('US') } })), 'intercontinental');
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('DE'), destination: ap('EG') } })), 'continental');
 
 // LHG earning, upgrade only counts when paid
 let e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: false }), rules);

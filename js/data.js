@@ -54,13 +54,24 @@ MM.AIRLINES = {
 };
 MM.GROUP_LABEL = { LHG: 'Lufthansa Group', STAR: 'Star Alliance', NONE: 'No status credit' };
 
-/* "Continental" region for Miles & More purposes: Europe plus the Mediterranean rim.
- * A flight is continental when origin AND destination are inside this region. */
-MM.CONTINENTAL_COUNTRIES = new Set((
-  'AL AD AM AT AZ BY BE BA BG HR CY CZ DK EE FO FI FR GE DE GI GR GL HU IS IE IT XK LV LI LT LU ' +
-  'MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SE CH TR UA GB VA IM JE GG AX ' +
-  'MA DZ TN LY EG IL LB JO PS SY'
-).split(' '));
+/* Regions (ISO country codes) for the haul rule: a flight within one region – or within one
+ * country – is continental, everything else is intercontinental. "EU" is Europe plus the
+ * Mediterranean rim, as Miles & More treats e.g. Frankfurt–Cairo or Frankfurt–Tel Aviv as continental. */
+MM.REGIONS = {
+  EU: 'AL AD AM AT AZ BY BE BA BG HR CY CZ DK EE FO FI FR GE DE GI GR GL HU IS IE IT XK LV LI LT LU ' +
+      'MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SE CH TR UA GB VA IM JE GG AX ' +
+      'MA DZ TN LY EG IL LB JO PS SY',
+  NA: 'US CA MX GT BZ SV HN NI CR PA CU JM HT DO PR BS BB TT AG DM GD KN LC VC AW CW SX BQ KY TC VG VI ' +
+      'BM GP MQ BL MF AI MS PM',
+  SA: 'CO VE GY SR GF EC PE BO BR PY UY AR CL FK',
+  AF: 'MR ML NE TD SD SS ER DJ SO ET KE UG RW BI TZ MZ MW ZM ZW BW NA ZA LS SZ AO CD CG GA GQ CM CF ' +
+      'NG BJ TG GH CI LR SL GN GW GM SN CV ST MG MU SC KM RE YT EH',
+  AS: 'SA AE QA BH KW OM YE IQ IR AF PK IN LK MV BD NP BT MM TH LA KH VN MY SG ID BN PH TL CN HK MO ' +
+      'TW KR KP JP MN KZ UZ TM KG TJ',
+  OC: 'AU NZ PG FJ NC PF WS TO VU SB GU MP PW FM MH KI NR TV CK',
+};
+MM.REGION_OF = {};
+for (const [region, list] of Object.entries(MM.REGIONS)) for (const c of list.split(' ')) MM.REGION_OF[c] = region;
 
 /* Small airport table, used only when a route is entered manually (no API response). */
 MM.AIRPORTS = {};

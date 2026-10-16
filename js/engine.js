@@ -53,8 +53,10 @@
   E.autoHaul = (f) => {
     const r = f.route;
     if (!r || !r.origin || !r.destination || !r.origin.country || !r.destination.country) return null;
-    const inside = c => MM.CONTINENTAL_COUNTRIES.has(c);
-    return inside(r.origin.country) && inside(r.destination.country) ? 'continental' : 'intercontinental';
+    const a = r.origin.country, b = r.destination.country;
+    if (a === b) return 'continental';                       // domestic, e.g. SEA–SFO
+    const ra = MM.REGION_OF[a], rb = MM.REGION_OF[b];
+    return ra && ra === rb ? 'continental' : 'intercontinental';
   };
   E.haul = (f) => (f.haulOverride && f.haulOverride !== 'auto' ? f.haulOverride : E.autoHaul(f));
 
