@@ -7,7 +7,7 @@ It is deployed to GitHub Pages by `.github/workflows/deploy.yml`.
 
 - `js/data.js`: airlines and earning groups, zones, default rules (`MM.DEFAULT_RULES`)
 - `js/engine.js`: pure calculation logic (earning, haul, status, history, rail caps, soft landing, fares per booking, planner scenarios). Functions that depend on the date take `today` as a parameter
-- `js/store.js`: state (`flights`, `bookings`, `adjustments`, `stays`, `plans`, `apiCache`), `S.normalize` (fills defaults, drops invalid entries; no migrations), `S.parse` (refuses other files and older versions), `.json` import/export, `S.saveFlight` / `S.deleteFlight`, demo data
+- `js/store.js`: state (`flights`, `bookings`, `adjustments`, `stays`, `plans`, `apiCache`), `S.normalize` (fills defaults, resets invalid choice fields, drops invalid entries; no migrations), `S.parse` (refuses other files and older versions), `.json` import/export, `S.saveFlight` / `S.deleteFlight`, demo data
 - `js/api.js`: adsbdb.com route lookup with a cache that is saved in the `.json`
 - `js/app.js`, `js/charts.js`: UI and SVG charts
 - `js/airports.js`: generated in CI by `tools/build-airports.ps1` and git-ignored
@@ -21,8 +21,9 @@ to change, and what to do about saved user data when a default changes.
 
 ## Working here
 
-- No Node or Python on the dev machine. Preview with the launch config "mm-status-tracker"
-  (`tools/serve.ps1`, port 8765), and run the tests at http://localhost:8765/tests/browser.html.
+- No Node or Python on the dev machine. Preview with the launch config "mm-status-tracker" in the git-ignored
+  `.claude/launch.json` (runs `powershell -NoProfile -ExecutionPolicy Bypass -File tools/serve.ps1`, port 8765; create
+  it if missing), and run the tests at http://localhost:8765/tests/browser.html.
 - Keep it dependency-free: no npm packages, no CDN libraries.
 - Commits: use the repo's git identity, and add no AI or Claude attribution lines. Commit and push only when asked.
 - To push over HTTPS from a non-interactive shell, set `GCM_GUI_PROMPT=1 GIT_TERMINAL_PROMPT=0`.

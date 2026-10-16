@@ -108,7 +108,7 @@ To update airline or points rules, follow [docs/UPDATING-RULES.md](docs/UPDATING
 
 `.github/workflows/deploy.yml` downloads the current OurAirports data, builds `js/airports.js`, checks
 the JavaScript syntax and runs the engine tests on every push and pull request. On pushes to `main`,
-on manual runs and once a week (Monday, 03:17 UTC, to pick up fresh airport data) it also deploys the
+on manual runs from `main` and once a week (Monday, 03:17 UTC, to pick up fresh airport data) it also deploys the
 site to GitHub Pages.
 
 1. Push this folder to a GitHub repository (`main` branch).
@@ -120,10 +120,11 @@ site to GitHub Pages.
 - **Codeshares**: enter the operating flight in "Operated by" (e.g. UA9414 → `LH488`). Miles & More credits by
   the **operating** airline: UA9414 operated by Lufthansa earns Points, QP and HON Circle Points, while LH9246
   operated by United earns Points only (Star Alliance). Exception: SWISS LX8000–8499 operated by Edelweiss
-  earns like SWISS. The app checks the operating flight's route and uses it when the marketing number has none.
-  Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
-- adsbdb returns the route a flight number currently operates. If a flight number changed routes,
-  correct the airports or the haul by hand in the dialog.
+  earns like SWISS. When the marketing number has no route, the app uses the operating flight's route (in the
+  dialog and in "Look up missing routes"). Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
+- adsbdb keeps one route per flight number (the one it currently operates) and ignores the date. If an airline
+  reused or changed the number, the lookup can show the wrong route (e.g. UA2837 shows NRT–SFO). Type the
+  airports by hand, or set the haul, in the dialog in that case.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
   Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland
@@ -136,10 +137,7 @@ site to GitHub Pages.
   with the WK flight under "Operated by" if you like.
 - **Retro credits** count in the calendar year of the flight, so date a point correction on the flight date.
 - Other Miles & More airline partners (Air Astana, Cathay Pacific, LATAM, Olympic Air) earn award miles
-  only, so they count as "No status credit". Edelweiss isn't listed for Points either; if your statement
-  shows credit, set "Earning" for that flight.
-- adsbdb keeps one route per flight number and ignores the date. If an airline reused the number,
-  the lookup can show the wrong route (e.g. UA2837 shows NRT–SFO). Type the airports by hand in that case.
+  only, so they count as "No status credit".
 
 ## Disclaimer
 
