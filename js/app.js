@@ -668,9 +668,11 @@
     ];
     const target = (key) => {
       const g = E.gap(sc.total, key, rules), ok = Object.values(g).every(v => v === 0);
-      const fc = sc.base.reached.forecast[key];
+      // reached.forecast includes flown segments, so check what was already flown first
+      const done = sc.base.reached.actual[key], fc = sc.base.reached.forecast[key];
       const miss = Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${k === 'p' ? 'Points' : k === 'qp' ? 'QP' : 'HON'}`).join(' · ');
-      return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? (fc ? `✓ in your forecast (${C.fmtDate(fc)})` : '✓ reached with this scenario') : `missing ${miss}`}</span></div>`;
+      const how = done ? `✓ reached on ${C.fmtDate(done)}` : fc ? `✓ with your planned flights on ${C.fmtDate(fc)}` : '✓ reached with this scenario';
+      return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? how : `missing ${miss}`}</span></div>`;
     };
     const signedMoney = (v, i) => (i > 0 && v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v), true);
     set('#planResult', `
