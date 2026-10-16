@@ -971,6 +971,7 @@
   darkMQ.addEventListener('change', applyTheme);
   applyTheme();
 
+  if (state.flights.length || state.adjustments.length) save();   // write back migrations done by S.normalize
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
   setView(['dashboard', 'flights', 'settings'].includes(startView) ? startView : 'dashboard');

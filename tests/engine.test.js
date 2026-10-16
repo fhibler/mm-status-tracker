@@ -47,6 +47,30 @@ assert.deepStrictEqual([e.p, e.qp, e.hon], [200, 200, 200]);
 e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: true, earnClassOverride: 'Premium Economy' }), rules);
 assert.deepStrictEqual([e.cls, e.p, e.qp, e.hon], ['Premium Economy', 80, 80, 0]);
 
+// Miles & More zones: North Africa counts as Europe, Israel as Asia, Greenland as North America
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('DE'), destination: ap('IL') } })), 'intercontinental');
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('DE'), destination: ap('TN') } })), 'continental');
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('DK'), destination: ap('GL') } })), 'intercontinental');
+assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('CA'), destination: ap('GL') } })), 'continental');
+
+// intercontinental First earns 400
+e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'First', upgradeClass: 'First' }), rules);
+assert.deepStrictEqual([e.p, e.qp, e.hon], [400, 400, 400]);
+
+// earning groups as listed by Miles & More
+assert.strictEqual(E.earn(flight({ airlineCode: 'OU', route: fraZrh, bookedClass: 'Economy' }), rules).qp, 20);   // Croatia: full
+assert.strictEqual(E.earn(flight({ airlineCode: 'LO', route: fraZrh, bookedClass: 'Economy' }), rules).qp, 20);   // LOT: full
+assert.strictEqual(E.earn(flight({ airlineCode: 'A3', route: fraZrh, bookedClass: 'Economy' }), rules).qp, 0);    // Aegean: Points only
+assert.strictEqual(E.earn(flight({ airlineCode: 'CX', route: fraJfk, bookedClass: 'Economy' }), rules).p, 0);     // Cathay: no status credit
+
+// saved rules from before rulesVersion 2 get First 400; a later file keeps its own value
+{
+  const old = MM.store.normalize({ settings: { rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } });
+  assert.strictEqual(old.settings.rules.points.intercontinental.First, 400);
+  const custom = MM.store.normalize({ settings: { rulesVersion: 2, rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } });
+  assert.strictEqual(custom.settings.rules.points.intercontinental.First, 300);
+}
+
 // Luxair (co-issuing Miles & More partner) earns like a Lufthansa Group airline
 e = E.earn(flight({ airlineCode: 'LG', route: fraZrh, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon, e.group], [40, 40, 40, 'LHG']);

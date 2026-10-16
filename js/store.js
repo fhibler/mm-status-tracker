@@ -9,7 +9,7 @@
 
   S.empty = () => ({
     format: FORMAT, version: 1,
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null } },
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, rulesVersion: 2 },
     flights: [],
     adjustments: [],   // manual point corrections from the account statement
     apiCache: {},
@@ -41,6 +41,10 @@
         },
         co2: { ...d.co2, ...(r.co2 || {}) },
       };
+      // rulesVersion 2: intercontinental First earns 400 (was 300 in earlier versions). Only an untouched old default is migrated.
+      if (!(+raw.settings.rulesVersion >= 2) && s.settings.rules.points.intercontinental.First === 300) {
+        s.settings.rules.points.intercontinental = { ...s.settings.rules.points.intercontinental, First: 400 };
+      }
     }
     if (raw.settings && raw.settings.currency) s.settings.currency = raw.settings.currency;
     if (raw.settings && raw.settings.startStatus && MM.STATUS_ORDER.includes(raw.settings.startStatus.status)) {

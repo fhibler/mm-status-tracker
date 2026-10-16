@@ -11,8 +11,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.
 - **Points engine**: earns on the booked class, or on the upgrade class when the upgrade was paid.
-  - Lufthansa Group airlines (LH, LX, OS, SN, EW, EN, 4Y, WK, …): Points, QP and HON Circle Points
-  - Star Alliance partners: Points only
+  - Lufthansa Group airlines and co-issuing partners (Air Dolomiti, Austrian, Brussels, Croatia, Discover,
+    Eurowings, ITA, LOT, Lufthansa, Lufthansa City, Luxair, SWISS): Points, QP and HON Circle Points
+  - Star Alliance airlines: Points only
   - Other airlines: nothing
 - **Planning mode**: any flight dated in the future counts as planned. The forecast shows the date you
   reach each status. Each planned flight can be left out of the forecast to try what-if scenarios.
@@ -38,7 +39,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 | Per segment (Lufthansa Group) | Economy | Premium Economy | Business | First |
 |---|---:|---:|---:|---:|
 | Continental      | 20 | 20 | 40  | 40  |
-| Intercontinental | 60 | 80 | 200 | 300 |
+| Intercontinental | 60 | 80 | 200 | 400 |
 
 HON Circle Points are earned only in Business and First.
 
@@ -106,9 +107,13 @@ site to GitHub Pages.
   has none. Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
 - adsbdb returns the route a flight number currently operates. If a flight number changed routes,
   correct the airports or the haul by hand in the dialog.
-- Continental means both airports are in the same country or on the same continent (e.g. SEA–SFO,
-  FRA–ZRH). For this rule, Europe includes the Mediterranean rim (North Africa, Levant, Turkey, Cyprus).
-  Every other flight counts as intercontinental. You can override the haul per flight.
+- Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
+  FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
+  Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland
+  belongs to North America. Every other flight counts as intercontinental. You can override the haul per flight.
+- Other Miles & More airline partners (Air Astana, Cathay Pacific, LATAM, Olympic Air) earn award miles
+  only, so they count as "No status credit". Edelweiss isn't listed for Points either; if your statement
+  shows credit, set "Earning" for that flight.
 - adsbdb keeps one route per flight number and ignores the date. If an airline reused the number,
   the lookup can show the wrong route (e.g. UA2837 shows NRT–SFO). Type the airports by hand in that case.
 

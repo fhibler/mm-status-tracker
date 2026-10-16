@@ -4,24 +4,28 @@ window.MM = window.MM || {};
 MM.CLASSES = ['Economy', 'Premium Economy', 'Business', 'First'];
 MM.CLASS_SHORT = { 'Economy': 'Y', 'Premium Economy': 'W', 'Business': 'C', 'First': 'F' };
 
-/* Earning groups:
- *  LHG   – Lufthansa Group airlines (and co-issuing partners): Points + Qualifying Points + HON Circle Points
- *  STAR  – Star Alliance partners: Points only
- *  NONE  – no status credit */
+/* Earning groups (as listed on miles-and-more.com, "Points system" and "Partners", checked 2026-10-16):
+ *  LHG   – Lufthansa Group airlines and co-issuing Miles & More partners: Points + Qualifying Points + HON Circle Points
+ *  STAR  – Star Alliance airlines: Points only
+ *  NONE  – no status credit (other airline partners only earn award miles) */
 MM.AIRLINES = {
-  LH: { name: 'Lufthansa', icao: 'DLH', group: 'LHG' },
-  LX: { name: 'SWISS', icao: 'SWR', group: 'LHG' },
+  // Points, Qualifying Points and HON Circle Points ("Airlines at a glance" on the Points system page)
+  EN: { name: 'Air Dolomiti', icao: 'DLA', group: 'LHG' },
   OS: { name: 'Austrian Airlines', icao: 'AUA', group: 'LHG' },
   SN: { name: 'Brussels Airlines', icao: 'BEL', group: 'LHG' },
-  EW: { name: 'Eurowings', icao: 'EWG', group: 'LHG' },
-  EN: { name: 'Air Dolomiti', icao: 'DLA', group: 'LHG' },
+  OU: { name: 'Croatia Airlines', icao: 'CTN', group: 'LHG' },
   '4Y': { name: 'Discover Airlines', icao: 'OCN', group: 'LHG' },
-  WK: { name: 'Edelweiss Air', icao: 'EDW', group: 'LHG' },
-  CL: { name: 'Lufthansa CityLine', icao: 'CLH', group: 'LHG' },
-  VL: { name: 'Lufthansa City Airlines', icao: 'LHX', group: 'LHG' },
+  EW: { name: 'Eurowings', icao: 'EWG', group: 'LHG' },
   AZ: { name: 'ITA Airways', icao: 'ITY', group: 'LHG' },
   LO: { name: 'LOT Polish Airlines', icao: 'LOT', group: 'LHG' },
-  LG: { name: 'Luxair', icao: 'LGL', group: 'LHG' },          // co-issuing Miles & More partner: P, QP and HON
+  LH: { name: 'Lufthansa', icao: 'DLH', group: 'LHG' },
+  CL: { name: 'Lufthansa CityLine', icao: 'CLH', group: 'LHG' },
+  VL: { name: 'Lufthansa City Airlines', icao: 'LHX', group: 'LHG' },
+  LG: { name: 'Luxair', icao: 'LGL', group: 'LHG' },
+  LX: { name: 'SWISS', icao: 'SWR', group: 'LHG' },
+  // Not listed by Miles & More for Points – set "Earning" per flight if your statement shows credit.
+  WK: { name: 'Edelweiss Air', icao: 'EDW', group: 'NONE' },
+  // Star Alliance: Points only
   A3: { name: 'Aegean Airlines', icao: 'AEE', group: 'STAR' },
   AC: { name: 'Air Canada', icao: 'ACA', group: 'STAR' },
   CA: { name: 'Air China', icao: 'CCA', group: 'STAR' },
@@ -31,7 +35,6 @@ MM.AIRLINES = {
   OZ: { name: 'Asiana Airlines', icao: 'AAR', group: 'STAR' },
   AV: { name: 'Avianca', icao: 'AVA', group: 'STAR' },
   CM: { name: 'Copa Airlines', icao: 'CMP', group: 'STAR' },
-  OU: { name: 'Croatia Airlines', icao: 'CTN', group: 'STAR' },
   MS: { name: 'EgyptAir', icao: 'MSR', group: 'STAR' },
   ET: { name: 'Ethiopian Airlines', icao: 'ETH', group: 'STAR' },
   BR: { name: 'EVA Air', icao: 'EVA', group: 'STAR' },
@@ -42,6 +45,12 @@ MM.AIRLINES = {
   TG: { name: 'Thai Airways', icao: 'THA', group: 'STAR' },
   TK: { name: 'Turkish Airlines', icao: 'THY', group: 'STAR' },
   UA: { name: 'United Airlines', icao: 'UAL', group: 'STAR' },
+  // Miles & More airline partners outside Star Alliance: award miles only, no status credit
+  KC: { name: 'Air Astana', icao: 'KZR', group: 'NONE' },
+  CX: { name: 'Cathay Pacific', icao: 'CPA', group: 'NONE' },
+  LA: { name: 'LATAM Airlines', icao: 'LAN', group: 'NONE' },
+  OA: { name: 'Olympic Air', icao: 'OAL', group: 'NONE' },
+  // Other airlines
   JU: { name: 'Air Serbia', icao: 'ASL', group: 'NONE' },
   EK: { name: 'Emirates', icao: 'UAE', group: 'NONE' },
   QR: { name: 'Qatar Airways', icao: 'QTR', group: 'NONE' },
@@ -55,21 +64,22 @@ MM.AIRLINES = {
 };
 MM.GROUP_LABEL = { LHG: 'Lufthansa Group', STAR: 'Star Alliance', NONE: 'No status credit' };
 
-/* Regions (ISO country codes) for the haul rule: a flight within one region – or within one
- * country – is continental, everything else is intercontinental. "EU" is Europe plus the
- * Mediterranean rim, as Miles & More treats e.g. Frankfurt–Cairo or Frankfurt–Tel Aviv as continental. */
+/* Zones (ISO country codes) for the haul rule, as defined by Miles & More ("What counts as a continental
+ * or intercontinental flight?"): a flight within one zone – or within one country – is continental,
+ * everything else is intercontinental. Europe includes Algeria, Egypt, Libya, Morocco, Tunisia and
+ * Western Sahara; Israel, Jordan, Lebanon, Palestine and Syria belong to "Middle East and Asia",
+ * Greenland to North America. Isle of Man, Jersey, Guernsey and Åland are added to Europe. */
 MM.REGIONS = {
-  EU: 'AL AD AM AT AZ BY BE BA BG HR CY CZ DK EE FO FI FR GE DE GI GR GL HU IS IE IT XK LV LI LT LU ' +
-      'MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SE CH TR UA GB VA IM JE GG AX ' +
-      'MA DZ TN LY EG IL LB JO PS SY',
-  NA: 'US CA MX GT BZ SV HN NI CR PA CU JM HT DO PR BS BB TT AG DM GD KN LC VC AW CW SX BQ KY TC VG VI ' +
-      'BM GP MQ BL MF AI MS PM',
-  SA: 'CO VE GY SR GF EC PE BO BR PY UY AR CL FK',
-  AF: 'MR ML NE TD SD SS ER DJ SO ET KE UG RW BI TZ MZ MW ZM ZW BW NA ZA LS SZ AO CD CG GA GQ CM CF ' +
-      'NG BJ TG GH CI LR SL GN GW GM SN CV ST MG MU SC KM RE YT EH',
-  AS: 'SA AE QA BH KW OM YE IQ IR AF PK IN LK MV BD NP BT MM TH LA KH VN MY SG ID BN PH TL CN HK MO ' +
-      'TW KR KP JP MN KZ UZ TM KG TJ',
-  OC: 'AU NZ PG FJ NC PF WS TO VU SB GU MP PW FM MH KI NR TV CK',
+  EU: 'AL DZ AD AM AT AZ BY BE BA BG HR CY CZ DK EG EE FO FI FR GE DE GI GR HU IS IE IT LV LY LI LT LU ' +
+      'MT MC MA NL MK NO PL PT XK MD ME RS RO RU SM SK SI ES SJ SE CH TN TR UA GB VA EH IM JE GG AX',
+  NA: 'AI AG AW BS BB BZ BM BQ VG CA KY CR CU CW DM DO SV GL GD GP GT HT HN JM MQ MX MS AN NI PA PR ' +
+      'KN LC MF SX BL PM VC TT TC US VI',
+  SA: 'AQ AR BO BV BR CL CO EC FK GF GY PY PE GS SR UY VE',
+  AF: 'AO BJ BW BF BI CM CV CF TD KM CG CD DJ GQ ER SZ ET TF GA GM GH GN GW CI KE LS LR MG MW ML MR MU ' +
+      'YT MZ NA NE NG RE RW ST SN SC SL SO ZA SS SH SD TZ TG UG ZM ZW',
+  AS: 'AF BH BD BT IO BN KH CN KP HK IN ID IQ IR IL JP JO KZ KW KG LA LB MO MY MV MN MM NP PS PK PH ' +
+      'QA KR YE SA SG LK OM SY TW TJ TH TL TM AE UZ VN',
+  OC: 'AS AU CX CC CK FJ PF GU HM KI MH FM NR NC NZ NU NF MP PW PG PN WS SB TK TO TV UM VU WF',
 };
 MM.REGION_OF = {};
 for (const [region, list] of Object.entries(MM.REGIONS)) for (const c of list.split(' ')) MM.REGION_OF[c] = region;
@@ -95,7 +105,7 @@ MM.DEFAULT_RULES = {
   points: {
     // Points / Qualifying Points per segment on Lufthansa Group airlines (same value for P and QP).
     continental:      { 'Economy': 20, 'Premium Economy': 20, 'Business': 40,  'First': 40 },
-    intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 },
+    intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 400 },
   },
   honClasses: ['Business', 'First'],            // HON Circle Points only in these cabins (LHG only)
   thresholds: {
