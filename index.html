@@ -69,7 +69,15 @@
       </header>
       <div class="dlg-body">
         <div class="grid">
-          <label>Flight date<input type="date" name="date" required></label>
+          <label><span class="label-row">Flight date <span class="pill" id="dateStatus"></span></span>
+            <span class="date-field">
+              <input name="date" placeholder="YYYY/MM/DD" inputmode="numeric" maxlength="10" autocomplete="off" required>
+              <button type="button" class="date-btn" id="btnDatePick" aria-label="Open calendar" title="Open calendar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+              </button>
+              <input type="date" id="datePicker" class="date-native" tabindex="-1" aria-hidden="true">
+            </span>
+          </label>
           <label>Flight number<input name="flightNo" placeholder="LH400" autocomplete="off" required></label>
           <label>Booking code<input name="bookingCode" placeholder="ABC123" maxlength="8" autocomplete="off"></label>
           <label>Airline<input name="airlineName" readonly tabindex="-1" placeholder="from flight number"></label>

@@ -336,11 +336,10 @@
       <div class="card">
         <div class="card-head">
           <h2>Flights · CY ${year}</h2>
-          <span class="sub">${flown.length} flown · ${planned.length} planned · click a row to edit</span>
+          <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
             ${missing ? `<button class="btn small" data-act="lookup-missing">Look up ${missing} missing route(s)</button>` : ''}
-            <button class="btn" data-act="add-planned">+ Planned flight</button>
-            <button class="btn primary" data-act="add">+ Flight</button>
+            <button class="btn primary" data-act="add">+ Add flight</button>
           </div>
         </div>
         ${sum.rows.length ? `<div class="table-wrap"><table>
@@ -482,10 +481,20 @@
     }
   };
 
+  /* Date field shows YYYY/MM/DD; the model stores ISO YYYY-MM-DD. */
+  const dateToISO = (txt) => {
+    const m = String(txt || '').trim().match(/^(\d{4})[/.\-]?(\d{1,2})[/.\-]?(\d{1,2})$/);
+    if (!m) return '';
+    const iso = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    const d = new Date(iso + 'T00:00:00Z');
+    return !isNaN(d) && d.toISOString().slice(0, 10) === iso ? iso : '';
+  };
+  const dateToField = (iso) => (iso ? iso.replace(/-/g, '/') : '');
+
   const readForm = () => {
     const parsed = E.parseFlightNo(form.flightNo.value);
     Object.assign(draft, {
-      date: form.date.value,
+      date: dateToISO(form.date.value),
       flightNo: parsed ? parsed.iata : form.flightNo.value.toUpperCase().replace(/\s/g, ''),
       airlineCode: parsed ? parsed.code : '',
       airlineName: parsed && parsed.airline ? parsed.airline.name : (draft.route && draft.route.airlineName) || (parsed ? parsed.code : ''),
@@ -508,8 +517,11 @@
     readForm();
     form.airlineName.value = draft.flightNo ? (draft.airlineName ? `${draft.airlineName} · ${MM.GROUP_LABEL[E.earningGroup(draft)]}` : 'Unknown airline') : '';
     $('[data-co2-only]', form).hidden = draft.co2Level === 'none';
-    const planned = E.isPlanned(draft);
+    const planned = !!draft.date && E.isPlanned(draft);
     $('[data-plan-only]', form).hidden = !planned;
+    const st = $('#dateStatus');
+    st.className = 'pill' + (draft.date ? (planned ? ' planned' : '') : ' warn');
+    st.textContent = draft.date ? (planned ? 'Planned' : 'Flown') : (form.date.value.trim() ? 'Invalid date' : 'Date required');
     const upgraded = draft.upgradeClass !== draft.bookedClass;
     form.upgradeCost.disabled = !upgraded;
     form.upgradePaid.disabled = !upgraded;
@@ -521,7 +533,7 @@
       <div><div class="k">Qualifying Points</div><b>${num(e.qp)}</b></div>
       <div><div class="k">HON Circle Points</div><b>${num(e.hon)}</b></div>
       <div><div class="k">Total cost</div><b>${money(c.total)}</b></div>
-      <div><div class="k">Type</div><b>${planned ? 'Planned (future)' : 'Flown'}</b></div>`;
+      <div><div class="k">Type</div><b>${!draft.date ? '–' : planned ? 'Planned (date after today)' : 'Flown'}</b></div>`;
     routeInfo();
   };
 
@@ -572,20 +584,18 @@
     updatePreview();
   };
 
-  const openDialog = (flight, plannedDefault) => {
+  const openDialog = (flight) => {
     fillSelects();
     isNew = !flight;
     if (flight) draft = JSON.parse(JSON.stringify(flight));
     else {
-      const d = new Date();
-      if (plannedDefault) d.setDate(d.getDate() + 30);
-      let iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      if (+iso.slice(0, 4) !== year) iso = plannedDefault || year > new Date().getFullYear() ? `${year}-01-15` : `${year}-06-15`;
+      let iso = E.todayISO();
+      if (+iso.slice(0, 4) !== year) iso = year > +iso.slice(0, 4) ? `${year}-01-15` : `${year}-06-15`;
       draft = S.newFlight(iso);
     }
     upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
-    $('#dlgTitle').textContent = isNew ? (plannedDefault ? 'Add planned flight' : 'Add flight') : `Edit ${draft.flightNo}`;
-    form.date.value = draft.date;
+    $('#dlgTitle').textContent = isNew ? 'Add flight' : `Edit ${draft.flightNo}`;
+    form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
     form.bookingCode.value = draft.bookingCode;
     form.origin.value = draft.route && draft.route.origin ? draft.route.origin.iata : '';
@@ -608,7 +618,30 @@
     (isNew ? form.date : form.flightNo).focus();
   };
 
+  // Date field: auto-insert slashes while typing, normalise on blur, calendar via a hidden native picker.
+  const datePicker = $('#datePicker');
+  form.date.addEventListener('input', (e) => {
+    if (!e.inputType || !e.inputType.startsWith('insert')) return;
+    const digits = form.date.value.replace(/\D/g, '').slice(0, 8);
+    form.date.value = [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean).join('/');
+  });
+  form.date.addEventListener('blur', () => {
+    const iso = dateToISO(form.date.value);
+    if (iso) form.date.value = dateToField(iso);
+  });
+  $('#btnDatePick').addEventListener('click', () => {
+    datePicker.value = dateToISO(form.date.value) || E.todayISO();
+    try { datePicker.showPicker(); } catch { datePicker.focus(); datePicker.click(); }
+  });
+  datePicker.addEventListener('change', () => {
+    if (!datePicker.value) return;
+    form.date.value = dateToField(datePicker.value);
+    updatePreview();
+    form.date.focus();
+  });
+
   form.addEventListener('input', (e) => {
+    if (e.target === datePicker) return;
     if (e.target.name === 'upgradeClass') upgradeTouched = form.upgradeClass.value !== form.bookedClass.value;
     if (e.target.name === 'origin' || e.target.name === 'destination') { manualAirport(); return; }
     updatePreview();
@@ -639,7 +672,7 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     readForm();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) { toast('Please enter a flight date'); form.date.focus(); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) { toast('Please enter the flight date as YYYY/MM/DD'); form.date.focus(); return; }
     if (!E.parseFlightNo(draft.flightNo)) { toast('Please enter a valid flight number, e.g. LH400'); form.flightNo.focus(); return; }
     if (!draft.route && !(draft.routeLookup && draft.routeLookup.queried && draft.routeLookup.flightNo === draft.flightNo)) {
       const entry = await A.lookup(state, draft.flightNo);
@@ -682,8 +715,7 @@
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
-    if (act === 'add') openDialog(null, false);
-    if (act === 'add-planned') openDialog(null, true);
+    if (act === 'add') openDialog(null);
     if (act === 'goto-flights') setView('flights');
     if (act === 'load') $('#fileLoad').click();
     if (act === 'lookup-missing') lookupMissing();
