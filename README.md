@@ -142,4 +142,4 @@ code) comes from [OurAirports](https://ourairports.com/data/), which is public d
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © 2026 Florian Hibler · Source: [github.com/fhibler/mm-status-tracker](https://github.com/fhibler/mm-status-tracker)

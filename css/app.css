@@ -265,6 +265,7 @@ label.btn { font-size: 14px; color: var(--ink); }
 /* ---------- footer ---------- */
 .site-foot { max-width: 1500px; margin: 0 auto; padding: 0 max(16px, 3vw) 32px; }
 .site-foot p { margin: 0; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-3); }
+.site-foot p.copy { padding-top: 6px; border-top: 0; }
 .site-foot a { color: var(--ink-2); }
 
 /* ---------- date field (YYYY/MM/DD text + native calendar) ---------- */
