@@ -370,7 +370,7 @@
         <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
         <td class="cls">${clsBadge(f.bookedClass)}</td>
-        <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradeType ? esc((MM.UPGRADE_TYPES[f.upgradeType] || {}).label || f.upgradeType) : 'type not specified'}${E.upgradeEarns(f) ? '' : ' · earns booked class'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
+        <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradeType ? esc((MM.UPGRADE_TYPES[f.upgradeType] || {}).label || f.upgradeType) : 'type not specified'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
         <td class="num">${money(r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
         ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
@@ -613,7 +613,7 @@
     form.upgradeClass.innerHTML = opts;
     form.earnClassOverride.innerHTML = '<option value="auto">Auto (from classes)</option>' + opts;
     form.upgradeType.innerHTML = '<option value="">– not specified –</option>' +
-      Object.entries(MM.UPGRADE_TYPES).map(([v, t]) => `<option value="${v}">${esc(t.label)}${t.earnsUpgrade ? ' – earns upgrade class' : ''}</option>`).join('');
+      Object.entries(MM.UPGRADE_TYPES).map(([v, t]) => `<option value="${v}">${esc(t.label)}</option>`).join('');
     form.co2Level.innerHTML = MM.CO2_LEVELS.map(l => {
       const b = state.settings.rules.co2[l];
       return `<option value="${l}">${MM.CO2_LABEL[l]}${b ? ` (+${b.p}% P, +${b.qp}% QP, +${b.hon}% HON)` : ''}</option>`;
