@@ -238,10 +238,32 @@ assert.deepStrictEqual(h[2023], ['SEN', 'SEN', false]);
 e = E.earn(flight({ airlineCode: 'LH', route: null }), rules);
 assert.ok(e.unknown && e.p === 0);
 
+
+// fares per booking code: older files are migrated by adding up the segments' fares; a fare is split evenly
+{
+  const old = MM.store.normalize({ version: 1, flights: [
+    { date: '2026-03-01', bookingCode: 'abc123', flightNo: 'LH400', flightCost: 900 },
+    { date: '2026-03-08', bookingCode: 'ABC123', flightNo: 'LH401', flightCost: 100 },
+    { date: '2026-04-01', bookingCode: '', flightNo: 'LH100', flightCost: 150 },
+  ] });
+  assert.strictEqual(old.bookings.ABC123.fare, 1000);
+  assert.strictEqual(old.flights[0].flightCost, 0);
+  assert.strictEqual(E.fareShare(old, old.flights[0]), 500);
+  assert.strictEqual(E.fareShare(old, old.flights[2]), 150);   // no booking code: the segment's own fare
+  const ys = E.yearSummary(old, 2026);
+  assert.strictEqual(ys.cost.actual.flight + ys.cost.plan.flight, 1150);
+  // version 2 files are taken as they are; bookings without segments are dropped
+  const v2 = MM.store.normalize({ version: 2, bookings: { ABC123: { fare: 700 }, GONE01: { fare: 50 } },
+    flights: [{ date: '2026-03-01', bookingCode: 'ABC123', flightNo: 'LH400', flightCost: 0 }] });
+  assert.strictEqual(v2.bookings.ABC123.fare, 700);
+  assert.strictEqual('GONE01' in v2.bookings, false);
+  assert.strictEqual(MM.store.normalize(JSON.parse(JSON.stringify(v2))).bookings.ABC123.fare, 700);
+}
 // demo data round-trips through normalize
 const demo = MM.store.demo();
 const again = MM.store.normalize(JSON.parse(JSON.stringify(demo)));
 assert.strictEqual(again.flights.length, demo.flights.length);
 assert.ok(Object.keys(again.apiCache).length > 0);
+assert.strictEqual(again.bookings.K7XQ2P.fare, 780);   // demo fares sit on their bookings
 
 console.log('engine tests passed');

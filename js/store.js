@@ -8,9 +8,10 @@
   S.uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
   S.empty = () => ({
-    format: FORMAT, version: 1,
+    format: FORMAT, version: 2,   // 2: fares per booking code (bookings)
     settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, rulesVersion: 2 },
     flights: [],
+    bookings: {},      // booking code -> { fare }: one fare per booking, split evenly over its segments
     adjustments: [],   // manual point corrections from the account statement
     stays: [],         // Marriott Bonvoy hotel stays (Points only, capped per year)
     apiCache: {},
@@ -37,6 +38,34 @@
       delete f.upgradePaid;
     }
     return f;
+  };
+
+  S.bookingKey = (code) => MM.engine.bookingKey(code);
+
+  /**
+   * Fares are stored once per booking code (state.bookings). Files before version 2 kept a fare on each
+   * segment: the fares of all segments with the same code are added up into the booking, and the segments'
+   * own fare is cleared. Segments without a booking code keep their own fare (flightCost).
+   * Bookings without any segment are dropped.
+   */
+  const normalizeBookings = (raw, flights) => {
+    const out = {};
+    const src = raw.bookings && typeof raw.bookings === 'object' ? raw.bookings : {};
+    for (const [k, b] of Object.entries(src)) if (S.bookingKey(k)) out[S.bookingKey(k)] = { fare: Math.max(0, +(b && b.fare) || 0) };
+    if (!(+raw.version >= 2)) {
+      for (const f of flights) {
+        const k = S.bookingKey(f.bookingCode);
+        if (!k) continue;
+        out[k] = { fare: ((out[k] && out[k].fare) || 0) + (+f.flightCost || 0) };
+        f.flightCost = 0;
+      }
+    }
+    return S.pruneBookings({ bookings: out, flights }).bookings;
+  };
+  S.pruneBookings = (state) => {
+    const used = new Set(state.flights.map(f => S.bookingKey(f.bookingCode)).filter(Boolean));
+    for (const k of Object.keys(state.bookings || {})) if (!used.has(k)) delete state.bookings[k];
+    return state;
   };
 
   /** Fill gaps so that older/handwritten files keep working. */
@@ -76,6 +105,7 @@
     s.stays = (Array.isArray(raw.stays) ? raw.stays : [])
       .filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date))
       .map(x => ({ ...S.newStay(x.date), ...x, id: x.id || S.uid() }));
+    s.bookings = normalizeBookings(raw, s.flights);
     return s;
   };
 
@@ -90,7 +120,7 @@
   };
 
   S.exportJSON = (state) => {
-    const data = { ...state, format: FORMAT, version: 1, savedAt: new Date().toISOString() };
+    const data = { ...state, format: FORMAT, version: 2, savedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -170,6 +200,6 @@
     const lx = s.flights.find(f => f.flightNo === 'LX318');
     const cd = new Date(lx.date + 'T12:00:00'); cd.setDate(cd.getDate() + 10);
     s.adjustments.push({ ...S.newAdjustment(cd.toISOString().slice(0, 10)), p: 20, qp: 20, hon: 0, remark: 'Statement: retro credit for missing LX segment' });
-    return s;
+    return S.normalize({ ...s, version: 1 });   // moves the per-segment demo fares into their bookings
   };
 })();

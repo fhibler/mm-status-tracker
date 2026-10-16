@@ -315,3 +315,14 @@ label.btn { font-size: 14px; color: var(--ink); }
 .table-scroll::after { right: 0; background: linear-gradient(to left, var(--surface) 20%, transparent); }
 .table-scroll.more-left::before, .table-scroll.more-right::after { opacity: 1; }
 th, td { padding-left: 7px; padding-right: 7px; }
+
+/* Segment type switch (Flight / Train / Bus) at the top of the flight dialog */
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+.seg label { display: block; font-size: 14px; color: var(--ink-2); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-weight: 600; }
+.seg svg { width: 17px; height: 17px; flex: none; }
+.seg span:hover { color: var(--ink); }
+.seg input:checked + span { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.seg input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 1px; }
+.field-hint { font-weight: 400; color: var(--ink-3); font-size: 11.5px; min-height: 1em; }

@@ -109,8 +109,28 @@
   };
 
   E.isPlanned = (f, today = E.todayISO()) => f.date > today;
-  E.cost = (f) => {
-    const flight = +f.flightCost || 0;
+
+  /** Booking codes are compared in upper case without spaces. */
+  E.bookingKey = (code) => String(code || '').toUpperCase().replace(/\s/g, '');
+  /** Number of segments per booking code. */
+  E.bookingSegments = (state) => {
+    const n = {};
+    for (const f of state.flights) { const k = E.bookingKey(f.bookingCode); if (k) n[k] = (n[k] || 0) + 1; }
+    return n;
+  };
+  /**
+   * Fare of one segment: the fare of its booking (state.bookings[code].fare) split evenly over the booking's
+   * segments, or the segment's own fare (flightCost) when it has no booking code or the booking has no fare.
+   */
+  E.fareShare = (state, f, segs = E.bookingSegments(state)) => {
+    const k = E.bookingKey(f.bookingCode);
+    const b = k && (state.bookings || {})[k];
+    return b ? (+b.fare || 0) / (segs[k] || 1) : (+f.flightCost || 0);
+  };
+
+  /** Costs of one segment; `fare` defaults to the segment's own fare (see E.fareShare). */
+  E.cost = (f, fare = +f.flightCost || 0) => {
+    const flight = fare;
     const upgrade = f.upgradeClass && f.upgradeClass !== f.bookedClass ? (+f.upgradeCost || 0) : 0;
     const co2 = f.co2Level && f.co2Level !== 'none' ? (+f.co2Cost || 0) : 0;
     return { flight, upgrade, co2, total: flight + upgrade + co2 };
@@ -190,13 +210,14 @@
     const rows = [], adjustments = [], stays = [], events = [];
     let unknown = 0;
     const NO_COST = { flight: 0, upgrade: 0, co2: 0, total: 0 };
+    const segs = E.bookingSegments(state);
     for (const it of items) {
       const isAdj = it.kind === 'adj', isStay = it.kind === 'stay';
       const date = it.date;
       const planned = date > today;
       const counts = isAdj || isStay || !planned || it.f.includeInPlan !== false;
       const e = isAdj ? E.adjustmentEarn(it.a) : isStay ? E.stayEarn(it.s, rules, stayTotal.p) : E.earn(it.f, rules);
-      const c = isAdj || isStay ? NO_COST : E.cost(it.f);
+      const c = isAdj || isStay ? NO_COST : E.cost(it.f, E.fareShare(state, it.f, segs));
       if (it.kind === 'flight' && e.unknown) unknown++;
       if (counts) {
         all.p += e.p; all.qp += e.qp; all.hon += e.hon;

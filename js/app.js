@@ -26,6 +26,7 @@
   /** "Senator → Frequent Traveller (not requalified)" for a soft-landing year, else ''. */
   const downgradeTxt = (h, when = '') => (h.downgraded ? `${esc(MM.STATUS_LABEL[h.prevHeld])} → ${esc(MM.STATUS_LABEL[h.held])}${when} (not requalified)` : '');
   const routeTxt = (f) => (f.route && f.route.origin && f.route.destination ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}` : '<span class="pill warn">no route</span>');
+  const isFlight = (f) => !f.transport || f.transport === 'flight';
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
 
   /* ================= navigation ================= */
@@ -356,9 +357,15 @@
     const sum = E.yearSummary(state, year);
     const showCO2 = sum.rows.some(r => r.f.co2Level && r.f.co2Level !== 'none');
     const flown = sum.rows.filter(r => !r.planned), planned = sum.rows.filter(r => r.planned);
-    const missing = sum.rows.filter(r => !r.f.route || r.e.unknown).length;
+    const missing = sum.rows.filter(r => isFlight(r.f) && (!r.f.route || r.e.unknown)).length;
     // Flown / planned is shown by the section rows, so there is no status column.
     const cols = 12 + (showCO2 ? 1 : 0);
+    const segs = E.bookingSegments(state);
+    /** Fare cell: the segment's share; for a booking with several segments also the booking's fare. */
+    const fareCell = (f, share) => {
+      const k = E.bookingKey(f.bookingCode), b = k && state.bookings[k];
+      return `${money(share)}${b && segs[k] > 1 ? `<div class="muted" title="Booking ${esc(k)}: ${money(b.fare)} split over ${segs[k]} segments">1/${segs[k]} of ${money(b.fare, true)}</div>` : ''}`;
+    };
 
     const row = (r) => {
       const f = r.f, up = f.upgradeClass && f.upgradeClass !== f.bookedClass;
@@ -367,12 +374,12 @@
         <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
         <td><b>${esc(f.flightNo)}</b>${f.transport === 'rail' ? ' <span class="pill">Train</span>' : f.transport === 'bus' ? ' <span class="pill">Bus</span>' : ''}<div class="muted"><code>${esc(f.bookingCode || '–')}</code></div></td>
         <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
-        <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
+        <td><span class="route">${isFlight(f) || f.route ? routeTxt(f) : '<span class="muted">–</span>'}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
         <td class="cls">${clsBadge(f.bookedClass)}</td>
         <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradeType ? esc((MM.UPGRADE_TYPES[f.upgradeType] || {}).label || f.upgradeType) : 'type not specified'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
-        <td class="num">${money(r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
+        <td class="num">${fareCell(f, r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
         ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
       </tr>`;
     };
@@ -392,7 +399,7 @@
           <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
             ${missing ? `<button class="btn small" data-act="lookup-missing">Look up ${missing} missing route(s)</button>` : ''}
-            <button class="btn primary" data-act="add">+ Add flight</button>
+            <button class="btn primary" data-act="add">+ Add flight / train</button>
           </div>
         </div>
         ${sum.rows.length ? `<div class="table-wrap"><table>
@@ -609,7 +616,6 @@
 
   const fillSelects = () => {
     const opts = MM.CLASSES.map(c => `<option>${c}</option>`).join('');
-    form.bookedClass.innerHTML = opts;
     form.upgradeClass.innerHTML = opts;
     form.earnClassOverride.innerHTML = '<option value="auto">Auto (from classes)</option>' + opts;
     form.upgradeType.innerHTML = '<option value="">– not specified –</option>' +
@@ -618,6 +624,48 @@
       const b = state.settings.rules.co2[l];
       return `<option value="${l}">${MM.CO2_LABEL[l]}${b ? ` (+${b.p}% P, +${b.qp}% QP, +${b.hon}% HON)` : ''}</option>`;
     }).join('');
+  };
+
+  /* ---------- Flight / Train / Bus: what the dialog asks for ---------- */
+  const TRANSPORT = {
+    flight: { noun: 'flight', date: 'Flight', number: 'Flight', placeholder: 'LH400', from: 'FRA', to: 'JFK' },
+    rail: { noun: 'train', date: 'Travel', number: 'Train', placeholder: 'LH3460', from: 'QKL', to: 'FRA' },
+    bus: { noun: 'bus trip', date: 'Travel', number: 'Bus', placeholder: 'LH number', from: '', to: '' },
+  };
+  /** "Flight", "Train" or "Bus trip" for messages. */
+  const nounOf = (f) => { const n = (TRANSPORT[f.transport] || TRANSPORT.flight).noun; return n[0].toUpperCase() + n.slice(1); };
+  /** Trains offer Economy (2nd class) and Business (1st class) only. */
+  const RAIL_CLASSES = { Economy: 'Economy (2nd class)', Business: 'Business (1st class)' };
+  const fillBookedClass = (t, value) => {
+    const list = t === 'rail' ? Object.keys(RAIL_CLASSES) : MM.CLASSES;
+    form.bookedClass.innerHTML = list.map(c => `<option value="${c}">${esc(t === 'rail' ? RAIL_CLASSES[c] : c)}</option>`).join('');
+    form.bookedClass.value = list.includes(value) ? value : list[0];
+    form.bookedClass.dataset.mode = t;
+  };
+  const transportHint = (t) => {
+    const caps = state.settings.rules.railCaps;
+    if (t === 'rail') return `Austrian AIRail, Lufthansa Express Rail or SWISS Air Rail, booked with a flight number. Earns like a continental
+      flight, but train QP / HON count towards a status only up to ${num(caps.FTL)} QP (Frequent Traveller), ${num(caps.SEN)} QP (Senator)
+      and ${num(caps.HON)} HON (HON Circle). No upgrades or CO₂ compensation.`;
+    if (t === 'bus') return 'Lufthansa Express Bus: earns no Points, QP or HON Circle Points. Add it to keep track of the trip and its costs.';
+    return '';
+  };
+  /** Shows only the fields that apply to the chosen type (data-for="flight rail" …); the hidden values are kept until saving. */
+  const applyTransport = () => {
+    const t = TRANSPORT[form.transport.value] ? form.transport.value : 'flight', T = TRANSPORT[t];
+    $$('[data-for]', form).forEach(el => (el.hidden = !el.dataset.for.split(' ').includes(t)));
+    $('[data-noun]', form).textContent = T.date;
+    $$('[data-noun]', form)[1].textContent = T.number;
+    $('[data-class-label]', form).textContent = t === 'rail' ? 'Class' : 'Booked class';
+    if (form.bookedClass.dataset.mode !== t) fillBookedClass(t, form.bookedClass.value);
+    form.flightNo.placeholder = T.placeholder;
+    form.origin.placeholder = T.from;
+    form.destination.placeholder = T.to;
+    const hint = $('#transportHint');
+    hint.textContent = transportHint(t);
+    hint.hidden = !hint.textContent;
+    $('#dlgTitle').textContent = isNew ? `Add ${T.noun}` : `Edit ${draft.flightNo || T.noun}`;
+    $('#btnSaveFlight').textContent = `Save ${T.noun}`;
   };
 
   /** Known airport details from the API cache or the bundled table. */
@@ -636,14 +684,20 @@
   const routeInfo = () => {
     const info = $('#routeInfo');
     const r = draft.route, lk = draft.routeLookup;
+    if (!isFlight(draft) && !(r && r.origin && r.destination)) {
+      info.textContent = draft.transport === 'rail'
+        ? 'Optional: the station codes from your ticket, e.g. QKL (Cologne Hbf) → FRA. Trains count as continental.'
+        : 'Optional: the codes from your ticket.';
+      return;
+    }
     if (r && r.origin && r.destination) {
       const km = E.distanceKm(r.origin, r.destination);
       const name = a => esc([a.city || a.name, a.country].filter(Boolean).join(', ') || a.iata);
       const src = r.source === 'manual' ? 'entered manually' : `from adsbdb.com${r.via ? ` via ${esc(r.via)}` : ''}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
       const unknown = !r.origin.country || !r.destination.country;
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
-        (unknown ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
-        (r.source !== 'manual' ? '<br><span class="muted">This is the route currently listed for the flight number, not for your date. Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>' : '');
+        (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
+        (r.source !== 'manual' && isFlight(draft) ? '<br><span class="muted">This is the route currently listed for the flight number, not for your date. Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>' : '');
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
     } else if (lk && lk.status === 'notfound') {
@@ -704,56 +758,71 @@
   };
   const dateToField = (iso) => (iso ? iso.replace(/-/g, '/') : '');
 
+  /** Hidden fields keep their values in the form (switching back restores them); the draft gets neutral ones. */
   const readForm = () => {
+    const t = TRANSPORT[form.transport.value] ? form.transport.value : 'flight', fl = t === 'flight';
     const parsed = E.parseFlightNo(form.flightNo.value);
-    const opParsed = E.parseFlightNo(form.operatingFlightNo.value);
+    const opParsed = fl ? E.parseFlightNo(form.operatingFlightNo.value) : null;
     Object.assign(draft, {
-      operatingFlightNo: opParsed ? opParsed.iata : form.operatingFlightNo.value.toUpperCase().replace(/\s/g, ''),
+      transport: t,
+      operatingFlightNo: !fl ? '' : opParsed ? opParsed.iata : form.operatingFlightNo.value.toUpperCase().replace(/\s/g, ''),
       date: dateToISO(form.date.value),
       flightNo: parsed ? parsed.iata : form.flightNo.value.toUpperCase().replace(/\s/g, ''),
       airlineCode: parsed ? parsed.code : '',
       airlineName: parsed && parsed.airline ? parsed.airline.name : (draft.route && draft.route.airlineName) || (parsed ? parsed.code : ''),
-      bookingCode: form.bookingCode.value.toUpperCase().trim(),
-      haulOverride: form.haulOverride.value,
-      earningGroup: form.earningGroup.value,
-      transport: form.transport.value,
-      earnClassOverride: form.earnClassOverride.value,
+      bookingCode: E.bookingKey(form.bookingCode.value),
+      haulOverride: fl ? form.haulOverride.value : 'auto',
+      earningGroup: t === 'bus' ? 'auto' : form.earningGroup.value,
+      earnClassOverride: fl ? form.earnClassOverride.value : 'auto',
       bookedClass: form.bookedClass.value,
-      upgradeClass: form.upgradeClass.value,
-      upgradeType: form.upgradeType.value,
-      flightCost: +form.flightCost.value || 0,
-      upgradeCost: +form.upgradeCost.value || 0,
-      co2Level: form.co2Level.value,
-      co2Cost: +form.co2Cost.value || 0,
+      upgradeClass: fl ? form.upgradeClass.value : form.bookedClass.value,
+      upgradeType: fl ? form.upgradeType.value : '',
+      upgradeCost: fl ? +form.upgradeCost.value || 0 : 0,
+      co2Level: fl ? form.co2Level.value : 'none',
+      co2Cost: fl ? +form.co2Cost.value || 0 : 0,
       includeInPlan: form.includeInPlan.checked,
       notes: form.notes.value.trim(),
     });
   };
 
+  /** The fare field holds the whole booking's fare when there is a booking code, else this segment's fare. */
+  const fareInfo = () => {
+    const k = E.bookingKey(form.bookingCode.value), fare = Math.max(0, +form.fare.value || 0);
+    const others = k ? state.flights.filter(f => f.id !== draft.id && E.bookingKey(f.bookingCode) === k) : [];
+    return { k, fare, others, n: others.length + 1, share: fare / (others.length + 1) };
+  };
+  const fareHint = (fi) => {
+    if (!fi.k) return 'This segment only. With a booking code, you enter one fare for all segments of the booking.';
+    if (!fi.others.length) return `Whole booking ${esc(fi.k)}. Other segments with this code share it.`;
+    const list = fi.others.slice(0, 3).map(f => esc(f.flightNo)).join(', ') + (fi.others.length > 3 ? ` +${fi.others.length - 3}` : '');
+    return `Whole booking ${esc(fi.k)}, split over ${fi.n} segments (${money(fi.share)} each) · with ${list}`;
+  };
+
   const updatePreview = () => {
     readForm();
+    const fl = isFlight(draft);
     form.airlineName.value = draft.flightNo ? (draft.airlineName ? `${draft.airlineName} · earns as ${MM.GROUP_LABEL[E.earningGroup(draft)]}` : 'Unknown airline') : '';
     $('[data-co2-only]', form).hidden = draft.co2Level === 'none';
     const planned = !!draft.date && E.isPlanned(draft);
     $('[data-plan-only]', form).hidden = !planned;
     const st = $('#dateStatus');
     st.className = 'pill' + (draft.date ? (planned ? ' planned' : '') : ' warn');
-    st.textContent = draft.date ? (planned ? 'Planned' : 'Flown') : (form.date.value.trim() ? 'Invalid date' : 'Date required');
+    st.textContent = draft.date ? (planned ? 'Planned' : fl ? 'Flown' : 'Travelled') : (form.date.value.trim() ? 'Invalid date' : 'Date required');
     const upgraded = draft.upgradeClass !== draft.bookedClass;
     form.upgradeCost.disabled = !upgraded;
     form.upgradeType.disabled = !upgraded;
+    const fi = fareInfo();
+    $('#fareLabel').textContent = fi.k ? 'Fare (whole booking)' : 'Fare';
+    $('#fareHint').innerHTML = fareHint(fi);
     const e = E.earn(draft, state.settings.rules);
-    const c = E.cost(draft);
+    const c = E.cost(draft, fi.share);
     $('#earnPreview').innerHTML = `
       <div><div class="k">Earning basis${[draft.earnClassOverride, draft.haulOverride, draft.earningGroup].some(v => v && v !== 'auto') ? ' (override)' : ''}</div><b>${esc(e.cls)} · ${e.haul ? (e.haul === 'continental' ? 'Continental' : 'Intercontinental') : 'haul unknown'} · ${esc(MM.GROUP_LABEL[e.group])}</b></div>
       <div><div class="k">Points</div><b>${num(e.p)}</b></div>
       <div><div class="k">Qualifying Points</div><b>${num(e.qp)}</b></div>
       <div><div class="k">HON Circle Points</div><b>${num(e.hon)}</b></div>
-      <div><div class="k">Total cost</div><b>${money(c.total)}</b></div>
-      <div><div class="k">Type</div><b>${!draft.date ? '–' : planned ? 'Planned (date after today)' : 'Flown'}</b></div>
-      ${draft.transport === 'rail' ? `<div class="muted" style="flex-basis:100%">Train: counts like a flight, but rail QP / HON count towards a status only up to
-        ${num(state.settings.rules.railCaps.FTL)} QP (Frequent Traveller), ${num(state.settings.rules.railCaps.SEN)} QP (Senator) and ${num(state.settings.rules.railCaps.HON)} HON (HON Circle).</div>` : ''}
-      ${draft.transport === 'bus' ? '<div class="muted" style="flex-basis:100%">Lufthansa Express Bus segments earn no Points, Qualifying Points or HON Circle Points.</div>' : ''}`;
+      <div><div class="k">Cost of this segment</div><b>${money(c.total)}</b></div>
+      <div><div class="k">Type</div><b>${!draft.date ? '–' : planned ? 'Planned (date after today)' : fl ? 'Flown' : 'Travelled'}</b></div>`;
     routeInfo();
   };
 
@@ -785,6 +854,7 @@
   };
 
   const autoLookup = () => {
+    if (form.transport.value !== 'flight') return;   // adsbdb only knows flights
     const parsed = E.parseFlightNo(form.flightNo.value);
     if (!parsed) return;
     const known = draft.routeLookup && draft.routeLookup.flightNo === parsed.iata && draft.route;
@@ -815,7 +885,6 @@
       draft = S.newFlight(iso);
     }
     upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
-    $('#dlgTitle').textContent = isNew ? 'Add flight' : `Edit ${draft.flightNo}`;
     form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
     form.operatingFlightNo.value = draft.operatingFlightNo || '';
@@ -826,10 +895,11 @@
     form.earningGroup.value = draft.earningGroup || 'auto';
     form.transport.value = draft.transport || 'flight';
     form.earnClassOverride.value = draft.earnClassOverride || 'auto';
-    form.bookedClass.value = draft.bookedClass;
+    fillBookedClass(form.transport.value, draft.bookedClass);
     form.upgradeClass.value = draft.upgradeClass || draft.bookedClass;
     form.upgradeType.value = draft.upgradeType || '';
-    form.flightCost.value = draft.flightCost || '';
+    const booking = state.bookings[E.bookingKey(draft.bookingCode)];
+    form.fare.value = (booking ? booking.fare : draft.flightCost) || '';
     form.upgradeCost.value = draft.upgradeCost || '';
     form.co2Level.value = draft.co2Level || 'none';
     form.co2Cost.value = draft.co2Cost || '';
@@ -837,6 +907,7 @@
     form.notes.value = draft.notes || '';
     const del = $('#btnDelete');
     del.hidden = isNew; del.textContent = 'Delete'; del.dataset.armed = '';
+    applyTransport();
     updatePreview();
     dlg.showModal();
     (isNew ? form.date : form.flightNo).focus();
@@ -917,6 +988,7 @@
 
   form.addEventListener('input', (e) => {
     if (e.target === datePicker) return;
+    if (e.target.name === 'transport') applyTransport();
     if (e.target.name === 'upgradeClass') upgradeTouched = form.upgradeClass.value !== form.bookedClass.value;
     if (e.target.name === 'origin' || e.target.name === 'destination') { manualAirport(); return; }
     updatePreview();
@@ -941,6 +1013,13 @@
       readForm();
       lookupOperating();
     }
+    if (e.target.name === 'transport') autoLookup();   // back to Flight: look up the route if there is none yet
+    if (e.target.name === 'bookingCode') {
+      form.bookingCode.value = E.bookingKey(form.bookingCode.value);
+      const booking = state.bookings[form.bookingCode.value];
+      if (booking) form.fare.value = booking.fare || '';   // an existing booking brings its fare along
+      updatePreview();
+    }
   });
   $('#btnLookup').addEventListener('click', () => {
     draft.route = null;
@@ -951,31 +1030,37 @@
     const b = e.currentTarget;
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
     state.flights = state.flights.filter(f => f.id !== draft.id);
-    save(); dlg.close(); toast('Flight deleted'); render();
+    S.pruneBookings(state);
+    save(); dlg.close(); toast(`${nounOf(draft)} deleted`); render();
   });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     readForm();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) { toast('Please enter the flight date as YYYY/MM/DD'); form.date.focus(); return; }
-    if (!E.parseFlightNo(draft.flightNo)) { toast('Please enter a valid flight number, e.g. LH400'); form.flightNo.focus(); return; }
-    if (!draft.route && !(draft.routeLookup && draft.routeLookup.queried && draft.routeLookup.flightNo === draft.flightNo)) {
+    const T = TRANSPORT[draft.transport];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) { toast('Please enter the date as YYYY/MM/DD'); form.date.focus(); return; }
+    if (!E.parseFlightNo(draft.flightNo)) { toast(`Please enter a valid ${T.number.toLowerCase()} number, e.g. ${T.placeholder}`); form.flightNo.focus(); return; }
+    if (isFlight(draft) && !draft.route && !(draft.routeLookup && draft.routeLookup.queried && draft.routeLookup.flightNo === draft.flightNo)) {
       const entry = await A.lookup(state, draft.flightNo);
       applyLookup(entry, draft.flightNo);
     }
     if (!draft.upgradeClass) draft.upgradeClass = draft.bookedClass;
+    // The fare belongs to the booking (shared by its segments), or to the segment when there is no booking code.
+    const fi = fareInfo();
+    if (fi.k) { state.bookings[fi.k] = { fare: fi.fare }; draft.flightCost = 0; } else draft.flightCost = fi.fare;
     const flight = JSON.parse(JSON.stringify(draft));
     if (flight.routeLookup && flight.routeLookup.status === 'loading') flight.routeLookup = null;
     const i = state.flights.findIndex(f => f.id === flight.id);
     i >= 0 ? (state.flights[i] = flight) : state.flights.push(flight);
+    S.pruneBookings(state);   // drops the old booking when its last segment got another code
     year = +flight.date.slice(0, 4);
     save(); dlg.close();
-    toast(isNew ? 'Flight added' : 'Flight saved');
+    toast(`${nounOf(flight)} ${isNew ? 'added' : 'saved'}`);
     render();
   });
 
   /* ================= global actions ================= */
   const lookupMissing = async () => {
-    const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && !f.route);
+    const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && isFlight(f) && !f.route);
     let ok = 0;
     for (const f of todo) {
       const entry = await A.lookup(state, f.flightNo);
