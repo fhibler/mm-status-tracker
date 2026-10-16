@@ -9,7 +9,7 @@
 
   S.empty = () => ({
     format: FORMAT, version: 1,
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR' },
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null } },
     flights: [],
     adjustments: [],   // manual point corrections from the account statement
     apiCache: {},
@@ -43,6 +43,9 @@
       };
     }
     if (raw.settings && raw.settings.currency) s.settings.currency = raw.settings.currency;
+    if (raw.settings && raw.settings.startStatus && MM.STATUS_ORDER.includes(raw.settings.startStatus.status)) {
+      s.settings.startStatus = { status: raw.settings.startStatus.status, year: +raw.settings.startStatus.year || null };
+    }
     s.apiCache = raw.apiCache && typeof raw.apiCache === 'object' ? raw.apiCache : {};
     s.flights = (Array.isArray(raw.flights) ? raw.flights : [])
       .filter(f => f && /^\d{4}-\d{2}-\d{2}$/.test(f.date))

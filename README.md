@@ -17,6 +17,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 - **Planning mode**: any flight dated in the future counts as planned. The forecast shows the date you
   reach each status. Each planned flight can be left out of the forecast to try what-if scenarios.
   A planner works out how many more segments you need.
+- **Starting status** (Settings): the status you already hold and the year it was earned (from your
+  statement), so the first tracked year shows the right "status held", validity and downgrade.
 - **Point corrections** (Flights tab): add manual adjustments of Points, QP and HON Circle Points with a
   date and a remark, e.g. a retro credit or a deduction from your account statement. Negative values are
   allowed. Corrections count in all totals, status dates, charts and forecasts, and are saved in the `.json`.

@@ -187,16 +187,28 @@
    *   requalify the status held then, the soft landing one level below it.
    * held: best of carriedIn and the status earned so far in `year`.
    * downgraded: held is below the status held in year-1 (prevHeld).
+   * A starting status from the account statement (settings.startStatus = { status, year }) counts as
+   * earned in that year; the timeline then starts in that year at the latest.
+   * hasPrev: the timeline has a year before `year` (otherwise nothing could be carried in).
    */
-  E.history = (state) => {
+  E.history = (state, untilYear) => {
     const ys = E.years(state);
+    if (untilYear && untilYear > ys[ys.length - 1]) ys.push(untilYear);
+    const start = (state.settings && state.settings.startStatus) || {};
+    const startYear = start.status && start.status !== 'NONE' && +start.year ? +start.year : null;
+    const first = startYear ? Math.min(ys[0], startYear) : ys[0];
     const out = [];
     let prevHeld = 'NONE', prevEarned = 'NONE';
-    for (let y = ys[0]; y <= ys[ys.length - 1]; y++) {
+    for (let y = first; y <= ys[ys.length - 1]; y++) {
       const s = E.yearSummary(state, y);
+      const fromStatement = y === startYear && E.rank(start.status) > E.rank(s.statusActual);
+      if (fromStatement) {
+        s.statusActual = start.status;
+        s.statusForecast = best(s.statusForecast, start.status);
+      }
       const carriedIn = best(prevEarned, E.softLanding(prevHeld));
       const held = best(carriedIn, s.statusActual);
-      out.push({ ...s, carriedIn, held, prevHeld, downgraded: E.rank(held) < E.rank(prevHeld) });
+      out.push({ ...s, carriedIn, held, prevHeld, fromStatement, hasPrev: y > first, downgraded: E.rank(held) < E.rank(prevHeld) });
       prevHeld = held;
       prevEarned = s.statusActual;
     }

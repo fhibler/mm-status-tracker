@@ -120,6 +120,22 @@ assert.deepStrictEqual(h[2023], ['SEN', 'SEN', false]);
   assert.strictEqual(E.years(st)[0], 2020);
 }
 
+// starting status from the statement: counts as earned in that year and carries into the next
+{
+  const st = { flights: segs(2026, 1), adjustments: [], settings: { rules, startStatus: { status: 'SEN', year: 2025 } } };
+  const h = E.history(st);
+  const y25 = h.find(x => x.year === 2025), y26 = h.find(x => x.year === 2026), y27 = E.history(st, 2027).find(x => x.year === 2027);
+  assert.strictEqual(y25.statusActual, 'SEN');
+  assert.strictEqual(y25.fromStatement, true);
+  assert.strictEqual(y26.carriedIn, 'SEN');
+  assert.strictEqual(y26.held, 'SEN');
+  assert.strictEqual(y26.hasPrev, true);
+  assert.strictEqual(y27.held, 'FTL');            // not requalified in 2026 -> soft landing
+  const none = E.history({ ...st, settings: { rules } }).find(x => x.year === 2026);
+  assert.strictEqual(none.carriedIn, 'NONE');
+  assert.strictEqual(none.hasPrev, false);
+}
+
 // unknown haul earns nothing
 e = E.earn(flight({ airlineCode: 'LH', route: null }), rules);
 assert.ok(e.unknown && e.p === 0);

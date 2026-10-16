@@ -41,6 +41,8 @@
     const ys = new Set(E.years(state));
     ys.add(new Date().getFullYear() + 1);
     ys.add(year);
+    const ss = state.settings.startStatus;
+    if (ss && ss.status !== 'NONE' && ss.year) ys.add(ss.year);
     const sel = $('#yearSelect');
     sel.innerHTML = [...ys].sort((a, b) => b - a).map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
   };
@@ -68,11 +70,15 @@
     const host = $('#view-dashboard');
     if (!state.flights.length) { host.innerHTML = emptyState(); return; }
     const rules = state.settings.rules;
-    const hist = E.history(state);
+    const hist = E.history(state, year);
     const sum = hist.find(h => h.year === year) || { ...E.yearSummary(state, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
+    const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
       : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
-      : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}` : 'No status carried in';
+      : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}${prevYear && prevYear.fromStatement ? ' (statement)' : ''}`
+      : sum.fromStatement ? `${esc(MM.STATUS_LABEL[sum.statusActual])} earned ${year} as per your statement`
+      : !sum.hasPrev ? `No data for ${year - 1} – <a href="#" data-act="goto-settings">set your starting status</a>`
+      : `No status carried in from ${year - 1}`;
     const nFlown = sum.rows.filter(r => !r.planned).length;
     const nPlan = sum.rows.filter(r => r.planned && r.counts).length;
     const totalCost = sum.cost.actual.total + sum.cost.plan.total;
@@ -86,7 +92,8 @@
           <div class="meta">${heldMeta}</div></div>
         <div class="card kpi"><div class="label">Earned in ${year} (flown)</div>
           <div class="value">${badge(sum.statusActual)}</div>
-          <div class="meta">${sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
+          <div class="meta">${sum.fromStatement ? `From your statement · valid until ${C.fmtDate(E.validUntil(year))}`
+            : sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
         <div class="card kpi"><div class="label">Forecast incl. plan</div>
           <div class="value">${badge(sum.statusForecast)}</div>
           <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
@@ -275,7 +282,7 @@
         <td class="num">${num(h.actual.p)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.p)}</span>` : ''}</td>
         <td class="num">${num(h.actual.qp)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.qp)}</span>` : ''}</td>
         <td class="num">${num(h.actual.hon)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.hon)}</span>` : ''}</td>
-        <td>${badge(h.statusActual)}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
+        <td>${badge(h.statusActual)}${h.fromStatement ? ' <span class="muted">(statement)</span>' : ''}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
         <td>${h.statusActual !== 'NONE' || h.statusForecast !== 'NONE' ? C.fmtDate(E.validUntil(h.year)) : '–'}</td>
         <td>${badge(h.held)}${h.downgraded ? `<div class="muted">${downgradeTxt(h)}</div>` : ''}</td>
         <td class="num">${money(total, true)}${hasPlan ? ` <span class="muted">(${money(h.cost.plan.total, true)} plan)</span>` : ''}</td>
@@ -417,8 +424,22 @@
     const host = $('#view-settings');
     const cacheN = Object.keys(state.apiCache).length;
     const cacheOk = Object.values(state.apiCache).filter(c => c.status === 'ok').length;
+    const ss = state.settings.startStatus || { status: 'NONE', year: null };
+    const ssYear = ss.year || new Date().getFullYear() - 1;
     host.innerHTML = `
       <div class="settings-grid">
+        <div class="card">
+          <div class="card-head"><h2>Starting status</h2><span class="sub">your status before the first tracked year</span></div>
+          <div class="grid">
+            <label>Status (as on your statement)
+              <select id="startStatus">${MM.STATUS_ORDER.map(s => `<option value="${s}" ${s === ss.status ? 'selected' : ''}>${s === 'NONE' ? 'None / Base' : esc(MM.STATUS_LABEL[s])}</option>`).join('')}</select>
+            </label>
+            <label>Earned in calendar year<input type="number" id="startYear" min="2000" max="2100" step="1" value="${ssYear}"></label>
+          </div>
+          <p class="hint">Counts as the status earned in that year: it carries into the next year and is valid until
+            ${C.fmtDate(E.validUntil(+ssYear))}. If you don't requalify, the usual one-level downgrade applies.
+            Leave on "None" if you track all your flights from the year you earned it.</p>
+        </div>
         <div class="card">
           <div class="card-head"><h2>Points per segment</h2><span class="sub">Lufthansa Group: Points = Qualifying Points</span></div>
           <div class="table-wrap"><table>
@@ -479,6 +500,16 @@
       save(); toast('Rules updated');
     }));
     $('#currency', host).addEventListener('change', (e) => { state.settings.currency = e.target.value; save(); toast('Currency updated'); });
+    const saveStart = () => {
+      const status = $('#startStatus', host).value;
+      const y = Math.round(+$('#startYear', host).value);
+      const valid = y >= 2000 && y <= 2100;
+      if (status !== 'NONE' && !valid) { toast('Please enter a valid year'); return; }
+      state.settings.startStatus = { status, year: valid ? y : null };   // year is kept even while status is None
+      save(); renderSettings(); toast('Starting status updated');
+    };
+    $('#startStatus', host).addEventListener('change', saveStart);
+    $('#startYear', host).addEventListener('change', saveStart);
   };
 
   /* ================= flight dialog ================= */
@@ -847,6 +878,7 @@
     if (act === 'add') openDialog(null);
     if (act === 'add-adj') openAdjDialog(null);
     if (act === 'goto-flights') setView('flights');
+    if (act === 'goto-settings') { e.preventDefault(); setView('settings'); }
     if (act === 'load') $('#fileLoad').click();
     if (act === 'lookup-missing') lookupMissing();
     if (act === 'demo') {
@@ -859,7 +891,7 @@
   });
 
   $$('.tabs button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
-  $('#yearSelect').addEventListener('change', (e) => { year = +e.target.value; render(); });
+  $('#yearSelect').addEventListener('change', (e) => { if (+e.target.value) { year = +e.target.value; render(); } });
   $('#btnSave').addEventListener('click', () => { S.exportJSON(state); toast('Saved .json'); });
   $('#fileLoad').addEventListener('change', async (e) => {
     const file = e.target.files[0];
