@@ -344,8 +344,8 @@
         <td><code>${esc(f.bookingCode || '–')}</code></td>
         <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
-        <td class="cls">${esc(f.bookedClass)}</td>
-        <td class="cls ${up ? 'up' : ''}">${esc(f.upgradeClass || f.bookedClass)}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
+        <td class="cls">${clsBadge(f.bookedClass)}</td>
+        <td class="cls">${up ? clsBadge(f.upgradeClass) : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td>${up ? (f.upgradePaid ? 'Yes' : 'No') : '–'}</td>
         ${showCO2 ? `<td>${f.co2Level && f.co2Level !== 'none' ? esc(MM.CO2_LABEL[f.co2Level]) : '–'}</td>` : ''}
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
@@ -397,6 +397,9 @@
     $$('tbody tr[data-id]', host).forEach(tr => tr.addEventListener('click', () => openDialog(state.flights.find(f => f.id === tr.dataset.id))));
     $$('tbody tr[data-adj-id]', host).forEach(tr => tr.addEventListener('click', () => openAdjDialog(state.adjustments.find(a => a.id === tr.dataset.adjId))));
   };
+
+  /** Cabin class tag in the Lufthansa app colours (Economy / Premium Economy green, Business slate, First red). */
+  const clsBadge = (c) => `<span class="cls-badge cls-${MM.CLASS_SHORT[c] || 'Y'}">${esc(c)}</span>`;
 
   const signed = (v) => (v > 0 ? '+' : '') + num(v);
   const renderAdjustmentsCard = (sum) => {

@@ -23,6 +23,10 @@
   --st-HON: #111827;
   --planned-bg: #fff8e6;
   --on-primary: #ffffff;
+  --cls-Y: #536d4c;   /* Economy – muted green (Lufthansa app) */
+  --cls-W: #2f5a3c;   /* Premium Economy – dark green (Lufthansa app, estimated) */
+  --cls-C: #4b606b;   /* Business – slate blue-grey (Lufthansa app) */
+  --cls-F: #9a4f4d;   /* First – muted red (Lufthansa app) */
   --logo-bg: #05164d;
   --logo-ring: transparent;
   --logo-fg: #f9b000;
@@ -285,3 +289,16 @@ label.btn { font-size: 14px; color: var(--ink); }
 .kpi-trio .k i { width: 8px; height: 8px; border-radius: 2px; background: var(--c); flex: none; }
 .kpi-trio b { font-size: clamp(15px, 8.5cqi, 24px); font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kpi-trio .fc { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- cabin class tags, as in the Lufthansa app (solid colour, white text) ---------- */
+.cls-badge {
+  display: inline-block; white-space: nowrap;
+  font-size: 12px; font-weight: 500; letter-spacing: .01em; line-height: 1.5;
+  padding: 1px 7px; border-radius: 2px;
+  color: #fff; background: var(--c);
+}
+.cls-Y { --c: var(--cls-Y); }
+.cls-W { --c: var(--cls-W); }
+.cls-C { --c: var(--cls-C); }
+.cls-F { --c: var(--cls-F); }
+:root[data-theme="dark"] .cls-badge { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); }
