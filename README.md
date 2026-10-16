@@ -20,7 +20,13 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   - Other airlines: nothing
 - **Planning mode**: any flight dated in the future counts as planned. The forecast shows the date you
   reach each status. Each planned flight can be left out of the forecast to try what-if scenarios.
-  A planner works out how many more segments you need.
+- **Planner tab**: build a what-if scenario per calendar year on top of your forecast, saved in the `.json`:
+  - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
+    Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment.
+  - **CO₂ compensation**: try a booster on any existing or planned flight and see the extra Points; the cost is
+    prefilled with the average you paid. "Apply" saves the booster to the flight.
+  - The result shows Points, QP, HON, status and cost after each step, what is still missing per status, and how many
+    more segments of one type would close the gap.
 - **Starting status** (Settings): the status you already hold and the year it was earned (from your
   statement), so the first tracked year shows the right "status held", validity and downgrade.
 - **Marriott Bonvoy stays** (Activity tab): with linked accounts, each qualifying stay of at least two nights

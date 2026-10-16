@@ -301,4 +301,58 @@
     const need = Object.keys(g).map(k => (g[k] === 0 ? 0 : e[k] ? Math.ceil(g[k] / e[k]) : Infinity));
     return Math.max(0, ...need);
   };
+
+  /* ---------- planner scenarios ---------- */
+  E.statusOfTotals = (t, rules) => statusOf(t, rules);
+
+  /**
+   * One row of a planned mix: `count` extra segments of a kind.
+   * kind: 'LHG' (Lufthansa Group flight), 'STAR' (Star Alliance flight, Points only) or 'RAIL' (train: continental,
+   * no CO₂ booster, QP / HON capped). Returns the earning of one segment.
+   */
+  E.mixRowEarn = (row, rules) => {
+    const rail = row.kind === 'RAIL';
+    return E.earn({
+      transport: rail ? 'rail' : 'flight', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
+      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, upgradeClass: row.cls,
+      co2Level: rail ? 'none' : row.co2Level,
+    }, rules);
+  };
+
+  /** Average CO₂ compensation cost the user paid for this booster level and haul, or null without data. */
+  E.co2CostEstimate = (state, level, haul) => {
+    const xs = state.flights.filter(f => f.co2Level === level && +f.co2Cost > 0 && E.haul(f) === haul).map(f => +f.co2Cost);
+    return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length * 100) / 100 : null;
+  };
+
+  /**
+   * What-if scenario for a calendar year, on top of the forecast (flown + planned flights, corrections, stays):
+   *  1. plan.co2 = { flightId: { level, cost } } – a CO₂ booster per existing or planned flight instead of its own
+   *  2. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in)
+   * Returns the totals after each step, the extra cost of each step and the status reached.
+   */
+  E.planScenario = (state, year, plan = {}) => {
+    const rules = state.settings.rules;
+    const over = plan.co2 || {};
+    const base = E.yearSummary(state, year);
+    const flights = state.flights.map(f => (over[f.id] ? { ...f, co2Level: over[f.id].level, co2Cost: +over[f.id].cost || 0 } : f));
+    const withCo2 = E.yearSummary({ ...state, flights }, year);
+    const costOf = (s) => s.cost.actual.total + s.cost.plan.total;
+    const total = { ...withCo2.forecast };
+    let mixCost = 0;
+    const mix = (plan.mix || []).map(row => {
+      const n = Math.max(0, Math.round(+row.count || 0));
+      const e = E.mixRowEarn(row, rules);
+      total.p += n * e.p; total.qp += n * e.qp; total.hon += n * e.hon;
+      if (e.rail) { total.qpRail += n * e.qp; total.honRail += n * e.hon; }
+      const cost = n * (+row.cost || 0);
+      mixCost += cost;
+      return { row, n, e, sum: { p: n * e.p, qp: n * e.qp, hon: n * e.hon }, cost };
+    });
+    return {
+      base, withCo2, mix, total,
+      cost: { base: costOf(base), co2Extra: costOf(withCo2) - costOf(base), mix: mixCost, total: costOf(withCo2) + mixCost },
+      status: { actual: base.statusActual, forecast: base.statusForecast, withCo2: withCo2.statusForecast, total: statusOf(total, rules) },
+    };
+  };
 })();

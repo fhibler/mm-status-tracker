@@ -71,6 +71,7 @@
     renderYearSelect();
     if (view === 'dashboard') renderDashboard();
     if (view === 'flights') renderFlights();
+    if (view === 'planner') renderPlanner();
     if (view === 'settings') renderSettings();
     enhanceTables();
   };
@@ -150,28 +151,23 @@
       ${warn}
       <div class="cols">
         <div class="card">
-          <div class="card-head"><h2>Status progress ${year}</h2><span class="sub">solid = flown · hatched = incl. planned flights</span></div>
+          <div class="card-head"><h2>Status progress ${year}</h2><span class="sub">solid = flown · hatched = incl. planned flights</span>
+            <div class="right"><button class="btn small" data-act="goto-planner">Plan in Planner →</button></div></div>
           <div class="progress-list" id="progList"></div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h2>Planner</h2><span class="sub">extra segments needed on top of your forecast</span></div>
-          <div id="planner"></div>
-        </div>
-      </div>
-      <div class="cols-3" id="cumCharts"></div>
-      <div class="cols">
-        <div class="card">
-          <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">faded = planned</span></div>
-          <div class="chart" id="costChart"></div>
-          <div class="legend">
-            <span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span>
-            <span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span>
-            <span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span>
-          </div>
         </div>
         <div class="card">
           <div class="card-head"><h2>Segments ${year}</h2></div>
           <div id="segBreakdown"></div>
+        </div>
+      </div>
+      <div class="cols-3" id="cumCharts"></div>
+      <div class="card">
+        <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">faded = planned</span></div>
+        <div class="chart" id="costChart"></div>
+        <div class="legend">
+          <span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span>
+          <span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span>
+          <span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span>
         </div>
       </div>
       <div class="card">
@@ -183,7 +179,6 @@
 
     fitText($$('.kpi-trio b', host));
     renderProgress(sum, rules);
-    renderPlanner(sum, rules);
     renderCumCharts(sum, rules);
     renderCostChart(sum);
     renderSegments(sum);
@@ -222,31 +217,6 @@
       </div>`;
     };
     $('#progList').innerHTML = ['FTL', 'SEN', 'HON'].map(line).join('');
-  };
-
-  const plannerPrefs = { target: null, haul: 'intercontinental', cls: 'Business', co2: 'none' };
-  const renderPlanner = (sum, rules) => {
-    const host = $('#planner');
-    const target = plannerPrefs.target || ['FTL', 'SEN', 'HON'].find(k => E.rank(sum.statusForecast) < E.rank(k)) || 'HON';
-    plannerPrefs.target = target;
-    const n = E.segmentsNeeded(sum.forecast, target, plannerPrefs.haul, plannerPrefs.cls, plannerPrefs.co2, rules);
-    const e = E.earn({ haulOverride: plannerPrefs.haul, earningGroup: 'LHG', bookedClass: plannerPrefs.cls, co2Level: plannerPrefs.co2 }, rules);
-    const g = E.gap(sum.forecast, target, rules);
-    const opt = (arr, cur, lab = x => x) => arr.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(lab(v))}</option>`).join('');
-    host.innerHTML = `
-      <div class="grid">
-        <label>Target status<select data-pl="target">${opt(['FTL', 'SEN', 'HON'], target, k => MM.STATUS_LABEL[k])}</select></label>
-        <label>Haul<select data-pl="haul">${opt(['continental', 'intercontinental'], plannerPrefs.haul, h => h === 'continental' ? 'Continental' : 'Intercontinental')}</select></label>
-        <label>Cabin<select data-pl="cls">${opt(MM.CLASSES, plannerPrefs.cls)}</select></label>
-        <label>CO₂ booster<select data-pl="co2">${opt(MM.CO2_LEVELS, plannerPrefs.co2, l => MM.CO2_LABEL[l])}</select></label>
-      </div>
-      <div class="earn-preview" style="margin-top:12px">
-        <div><div class="k">Per segment (Lufthansa Group)</div><b>${num(e.p)} P · ${num(e.qp)} QP · ${num(e.hon)} HON</b></div>
-        <div><div class="k">Still missing after plan</div><b>${Object.entries(g).map(([k, v]) => `${num(v)} ${k.toUpperCase()}`).join(' · ')}</b></div>
-        <div><div class="k">Extra segments needed</div><b style="font-size:20px">${n === Infinity ? 'not reachable' : n === 0 ? '✓ none' : n + '×'}</b></div>
-      </div>
-      <p class="hint">Example: a round trip counts as 2 segments. HON Circle Points are only earned in ${esc(rules.honClasses.join(' / '))}.</p>`;
-    $$('[data-pl]', host).forEach(s => s.addEventListener('change', () => { plannerPrefs[s.dataset.pl] = s.value; renderPlanner(sum, rules); }));
   };
 
   const renderCumCharts = (sum, rules) => {
@@ -506,6 +476,251 @@
     del.hidden = isNewAdj; del.textContent = 'Delete'; del.dataset.armed = '';
     adjDlg.showModal();
     (isNewAdj ? adjForm.p : adjForm.remark).focus();
+  };
+
+  /* ================= planner view ================= */
+  /* Scenario per calendar year (saved in the .json): CO₂ what-ifs for existing and planned flights, plus a mix of
+     extra segments. Inputs only update the plan and the computed cells; adding / removing rows re-renders the view. */
+  const planFor = (y) => state.plans[y] || (state.plans[y] = { co2: {}, mix: [] });
+  const MIX_KIND = { LHG: 'Lufthansa Group', STAR: 'Star Alliance', RAIL: 'Train' };
+  const HAUL_LABEL = { continental: 'Continental', intercontinental: 'Intercontinental' };
+  const MIX_PRESETS = [
+    { count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none' },
+    { count: 4, kind: 'LHG', haul: 'intercontinental', cls: 'Premium Economy', co2Level: 'medium' },
+    { count: 2, kind: 'LHG', haul: 'intercontinental', cls: 'Business', co2Level: 'none' },
+    { count: 4, kind: 'LHG', haul: 'continental', cls: 'Economy', co2Level: 'none' },
+  ];
+  const mixLabel = (r) => `${r.count} × ${r.cls} ${r.kind === 'RAIL' ? 'train' : r.haul === 'continental' ? 'continental' : 'intercont.'}${r.kind === 'STAR' ? ' (Star Alliance)' : ''}${r.co2Level !== 'none' && r.kind !== 'RAIL' ? ` + ${MM.CO2_LABEL[r.co2Level]}` : ''}`;
+  const pts = (e) => `${num(e.p)} · ${num(e.qp)} · ${num(e.hon)}`;
+  const plusPts = (e) => [e.p, e.qp, e.hon].map(v => (v ? '+' + num(v) : '0')).join(' · ');
+  const opts = (list, cur, lab = (x) => x) => list.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(lab(v))}</option>`).join('');
+
+  /** Extra Points of one flight when it uses `level` instead of its own booster. */
+  const co2Delta = (f, level) => {
+    const rules = state.settings.rules, a = E.earn(f, rules), b = E.earn({ ...f, co2Level: level }, rules);
+    return { p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon };
+  };
+  /** Cost to suggest for a booster level: the flight's own cost for its own level, else the average you paid. */
+  const co2CostFor = (f, level) => (level === 'none' ? 0 : level === f.co2Level ? (+f.co2Cost || 0) : E.co2CostEstimate(state, level, E.haul(f)) || 0);
+
+  const renderPlanner = () => {
+    const host = $('#view-planner');
+    const plan = planFor(year);
+    const sum = E.yearSummary(state, year);
+    const co2Rows = sum.rows.filter(r => isFlight(r.f) && r.e.group !== 'NONE');
+    const hasAvg = MM.CO2_LEVELS.some(l => l !== 'none' && (E.co2CostEstimate(state, l, 'continental') || E.co2CostEstimate(state, l, 'intercontinental')));
+
+    const co2Row = (r) => {
+      const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level || 'none';
+      return `<tr data-co2-id="${f.id}" class="${r.planned ? 'planned' : ''}" style="cursor:default">
+        <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
+        <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
+        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
+        <td>${f.co2Level && f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
+        <td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
+        <td class="num" data-cell="delta">${plusPts(co2Delta(f, level))}</td>
+        <td class="num"><input type="number" min="0" step="0.01" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input"></td>
+        <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>
+      </tr>`;
+    };
+
+    const mixRow = (r) => {
+      const rail = r.kind === 'RAIL';
+      return `<tr data-mix-id="${r.id}" style="cursor:default">
+        <td class="num"><input type="number" min="0" step="1" data-mix="count" value="${r.count}" aria-label="Number of segments" class="num-input" style="width:64px"></td>
+        <td><select data-mix="kind" aria-label="Type">${opts(Object.keys(MIX_KIND), r.kind, k => MIX_KIND[k])}</select></td>
+        <td><select data-mix="haul" aria-label="Haul" ${rail ? 'disabled' : ''}>${opts(['continental', 'intercontinental'], rail ? 'continental' : r.haul, h => HAUL_LABEL[h])}</select></td>
+        <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? ['Economy', 'Business'] : MM.CLASSES, r.cls)}</select></td>
+        <td><select data-mix="co2Level" aria-label="CO₂ booster" ${rail ? 'disabled' : ''}>${opts(MM.CO2_LEVELS, rail ? 'none' : r.co2Level, l => MM.CO2_LABEL[l])}</select></td>
+        <td class="num"><input type="number" min="0" step="0.01" data-mix="cost" value="${r.cost || ''}" placeholder="0" aria-label="Cost per segment" class="num-input"></td>
+        <td class="num" data-cell="sum"></td>
+        <td><button class="icon-btn" data-mix-remove aria-label="Remove row" title="Remove row">✕</button></td>
+      </tr>`;
+    };
+
+    host.innerHTML = `
+      <div class="card" id="planResult"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Extra segments · CY ${year}</h2>
+          <span class="sub">plan a mix on top of your flights, e.g. 2 × Business continental + 4 × Premium Economy intercontinental with a booster</span>
+          <div class="right"><button class="btn primary" data-mix-add>+ Add segments</button></div>
+        </div>
+        ${plan.mix.length ? `<div class="table-wrap"><table>
+          <thead><tr><th class="num">Count</th><th>Type</th><th>Haul</th><th>Cabin</th><th>CO₂ booster</th><th class="num">Cost / segment</th>
+            <th class="num">Adds<div class="muted">P · QP · HON</div></th><th></th></tr></thead>
+          <tbody>${plan.mix.map(mixRow).join('')}</tbody>
+          <tfoot><tr><td colspan="6">Total extra segments <span class="muted" data-cell="mix-n"></span></td><td class="num" data-cell="mix-sum"></td><td></td></tr></tfoot>
+        </table></div>` : '<p class="muted" style="margin:0">No extra segments yet. Start with a preset or add your own rows:</p>'}
+        <div class="preset-row">${MIX_PRESETS.map((p, i) => `<button class="btn small" data-mix-preset="${i}">+ ${esc(mixLabel(p))}</button>`).join('')}</div>
+        <p class="hint">Continental includes domestic flights (e.g. SEA–SFO). Points per segment follow your rules in Settings. Star Alliance flights earn Points only; train QP / HON count only up to the
+          train limits. A round trip counts as 2 segments. The cost per segment is your estimate (fare, upgrade and booster).</p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>CO₂ compensation · existing and planned flights · CY ${year}</h2>
+          <span class="sub">try a booster per flight and see what it adds · Apply saves it to the flight</span>
+          ${co2Rows.length ? `<div class="right">
+            <select id="co2Bulk" aria-label="Booster to set">${opts(MM.CO2_LEVELS.filter(l => l !== 'none'), 'medium', l => MM.CO2_LABEL[l])}</select>
+            <button class="btn small" data-co2-bulk="planned">Set for planned</button>
+            <button class="btn small" data-co2-bulk="all">Set for all</button>
+            <button class="btn small" data-co2-bulk="reset">Reset</button>
+          </div>` : ''}
+        </div>
+        ${co2Rows.length ? `<div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Flight</th><th>Haul · cabin</th><th>Booked booster</th><th>Try booster</th>
+            <th class="num">Adds<div class="muted">P · QP · HON</div></th><th class="num">Booster cost</th><th></th></tr></thead>
+          <tbody>${co2Rows.map(co2Row).join('')}</tbody>
+          <tfoot><tr><td colspan="5">Total of the what-ifs</td><td class="num" data-cell="co2-sum"></td><td class="num" data-cell="co2-cost"></td><td></td></tr></tfoot>
+        </table></div>
+        <p class="hint">${hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
+          Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`
+        : `<p class="muted" style="margin:0">No flights with Points in ${year}. Add flights in Activity first.</p>`}
+      </div>
+      <div class="card" id="gapCard"></div>`;
+
+    /* --- CO₂ what-ifs --- */
+    const setOverride = (tr, f, level, cost) => {
+      if (level === (f.co2Level || 'none') && (+cost || 0) === (+f.co2Cost || 0)) delete plan.co2[f.id];
+      else plan.co2[f.id] = { level, cost: Math.max(0, +cost || 0) };
+      $('[data-cell="delta"]', tr).textContent = plusPts(co2Delta(f, level));
+      $('[data-co2-apply]', tr).hidden = !plan.co2[f.id];
+    };
+    $$('tr[data-co2-id]', host).forEach(tr => {
+      const f = state.flights.find(x => x.id === tr.dataset.co2Id);
+      const sel = $('[data-co2-level]', tr), cost = $('[data-co2-cost]', tr);
+      sel.addEventListener('change', () => { cost.value = co2CostFor(f, sel.value) || ''; setOverride(tr, f, sel.value, cost.value); planChanged(); });
+      cost.addEventListener('input', () => { setOverride(tr, f, sel.value, cost.value); planChanged(); });
+      $('[data-co2-apply]', tr).addEventListener('click', () => {
+        const o = plan.co2[f.id];
+        if (!o) return;
+        f.co2Level = o.level; f.co2Cost = o.level === 'none' ? 0 : o.cost;
+        delete plan.co2[f.id];
+        save(); renderPlanner(); toast(`${f.flightNo}: booster ${MM.CO2_LABEL[f.co2Level]} saved to the flight`);
+      });
+    });
+    $$('[data-co2-bulk]', host).forEach(b => b.addEventListener('click', () => {
+      const mode = b.dataset.co2Bulk, level = $('#co2Bulk').value;
+      for (const r of co2Rows) {
+        if (mode === 'reset') delete plan.co2[r.f.id];
+        else if (mode === 'all' || r.planned) {
+          if (level === (r.f.co2Level || 'none')) delete plan.co2[r.f.id];
+          else plan.co2[r.f.id] = { level, cost: co2CostFor(r.f, level) };
+        }
+      }
+      save(); renderPlanner();
+    }));
+
+    /* --- mix of extra segments --- */
+    $$('tr[data-mix-id]', host).forEach(tr => {
+      const row = plan.mix.find(r => r.id === tr.dataset.mixId);
+      $$('[data-mix]', tr).forEach(inp => {
+        const k = inp.dataset.mix;
+        inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
+          row[k] = k === 'count' ? Math.max(0, Math.round(+inp.value || 0)) : k === 'cost' ? Math.max(0, +inp.value || 0) : inp.value;
+          if (k === 'kind') {   // trains: continental, Economy or Business, no booster
+            if (row.kind === 'RAIL') { row.haul = 'continental'; row.co2Level = 'none'; if (!['Economy', 'Business'].includes(row.cls)) row.cls = 'Business'; }
+            save(); renderPlanner(); return;
+          }
+          planChanged();
+        });
+      });
+      $('[data-mix-remove]', tr).addEventListener('click', () => { plan.mix = plan.mix.filter(r => r !== row); save(); renderPlanner(); });
+    });
+    $('[data-mix-add]', host).addEventListener('click', () => { plan.mix.push(S.newMixRow()); save(); renderPlanner(); });
+    $$('[data-mix-preset]', host).forEach(b => b.addEventListener('click', () => {
+      plan.mix.push(S.newMixRow(MIX_PRESETS[+b.dataset.mixPreset])); save(); renderPlanner();
+    }));
+
+    planChanged(false);
+  };
+
+  /** Recomputes the scenario and fills every computed cell (keeps the inputs, so typing is not interrupted). */
+  const planChanged = (persist = true) => {
+    if (persist) save();
+    const host = $('#view-planner');
+    const plan = planFor(year), rules = state.settings.rules;
+    const sc = E.planScenario(state, year, plan);
+    const set = (sel, html, root = host) => { const el = $(sel, root); if (el) el.innerHTML = html; };
+
+    // mix rows and totals
+    for (const m of sc.mix) {
+      const tr = $(`tr[data-mix-id="${m.row.id}"]`, host);
+      if (!tr) continue;
+      set('[data-cell="sum"]', `<b>${pts(m.sum)}</b><div class="muted">${pts(m.e)} each · ${money(m.cost, true)}</div>`, tr);
+    }
+    const mixSum = sc.mix.reduce((a, m) => ({ p: a.p + m.sum.p, qp: a.qp + m.sum.qp, hon: a.hon + m.sum.hon }), { p: 0, qp: 0, hon: 0 });
+    const nSeg = sc.mix.reduce((a, m) => a + m.n, 0);
+    set('[data-cell="mix-n"]', `· ${nSeg} segment${nSeg === 1 ? '' : 's'}`);
+    set('[data-cell="mix-sum"]', `<b>${pts(mixSum)}</b><div class="muted">${money(sc.cost.mix, true)}</div>`);
+    // CO₂ what-ifs
+    const f0 = sc.base.forecast, f1 = sc.withCo2.forecast;
+    set('[data-cell="co2-sum"]', plusPts({ p: f1.p - f0.p, qp: f1.qp - f0.qp, hon: f1.hon - f0.hon }));
+    set('[data-cell="co2-cost"]', `${sc.cost.co2Extra < 0 ? '−' : '+'}${money(Math.abs(sc.cost.co2Extra))}`);
+
+    // result card
+    const nCo2 = Object.keys(plan.co2).filter(id => sc.base.rows.some(r => r.f.id === id)).length;
+    const steps = [
+      ['Flown so far', sc.base.actual, sc.status.actual, sc.base.cost.actual.total, ''],
+      ['+ planned flights', sc.base.forecast, sc.status.forecast, sc.base.cost.plan.total, 'your forecast'],
+      ['+ CO₂ what-ifs', sc.withCo2.forecast, sc.status.withCo2, sc.cost.co2Extra, nCo2 ? `${nCo2} flight${nCo2 === 1 ? '' : 's'}` : 'none'],
+      ['+ extra segments', sc.total, sc.status.total, sc.cost.mix, plan.mix.length ? plan.mix.map(r => esc(mixLabel(r))).join(', ') : 'none'],
+    ];
+    const target = (key) => {
+      const g = E.gap(sc.total, key, rules), ok = Object.values(g).every(v => v === 0);
+      const fc = sc.base.reached.forecast[key];
+      const miss = Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${k === 'p' ? 'Points' : k === 'qp' ? 'QP' : 'HON'}`).join(' · ');
+      return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? (fc ? `✓ in your forecast (${C.fmtDate(fc)})` : '✓ reached with this scenario') : `missing ${miss}`}</span></div>`;
+    };
+    const signedMoney = (v, i) => (i > 0 && v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v), true);
+    set('#planResult', `
+      <div class="card-head"><h2>Scenario · CY ${year}</h2><span class="sub">your forecast plus the extra segments and CO₂ what-ifs below · saved in your .json</span></div>
+      <div class="plan-targets">${['FTL', 'SEN', 'HON'].map(target).join('')}</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Step</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th><th class="num">Cost</th></tr></thead>
+        <tbody>${steps.map(([label, t, s, cost, note], i) => `<tr style="cursor:default">
+          <td>${label}${note ? `<div class="muted" style="white-space:normal">${note}</div>` : ''}</td>
+          <td class="num">${num(t.p)}</td><td class="num">${num(t.qp)}</td><td class="num">${num(t.hon)}</td>
+          <td>${badge(s)}</td><td class="num">${signedMoney(cost, i)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Scenario total</td><td class="num">${num(sc.total.p)}</td><td class="num">${num(sc.total.qp)}</td><td class="num">${num(sc.total.hon)}</td>
+          <td>${badge(sc.status.total)}</td><td class="num">${money(sc.cost.total, true)}${sc.total.qp ? `<div class="muted">${money(sc.cost.total / sc.total.qp)} / QP</div>` : ''}</td></tr></tfoot>
+      </table></div>`);
+
+    renderGap(sc.total);
+    enhanceTables();
+  };
+
+  /** "Fill the gap": how many more segments of one type close the remaining gap after the scenario. */
+  const gapPrefs = { target: null, haul: 'intercontinental', cls: 'Business', co2: 'none' };
+  const renderGap = (total) => {
+    const host = $('#gapCard'), rules = state.settings.rules;
+    if (!host) return;
+    const st = E.statusOfTotals(total, rules);
+    const target = gapPrefs.target || ['FTL', 'SEN', 'HON'].find(k => E.rank(st) < E.rank(k)) || 'HON';
+    const n = E.segmentsNeeded(total, target, gapPrefs.haul, gapPrefs.cls, gapPrefs.co2, rules);
+    const e = E.earn({ haulOverride: gapPrefs.haul, earningGroup: 'LHG', bookedClass: gapPrefs.cls, co2Level: gapPrefs.co2 }, rules);
+    const g = E.gap(total, target, rules);
+    host.innerHTML = `
+      <div class="card-head"><h2>Fill the gap</h2><span class="sub">how many more segments of one type you need on top of the scenario</span></div>
+      <div class="grid">
+        <label>Target status<select data-gap="target">${opts(['FTL', 'SEN', 'HON'], target, k => MM.STATUS_LABEL[k])}</select></label>
+        <label>Haul<select data-gap="haul">${opts(['continental', 'intercontinental'], gapPrefs.haul, h => HAUL_LABEL[h])}</select></label>
+        <label>Cabin<select data-gap="cls">${opts(MM.CLASSES, gapPrefs.cls)}</select></label>
+        <label>CO₂ booster<select data-gap="co2">${opts(MM.CO2_LEVELS, gapPrefs.co2, l => MM.CO2_LABEL[l])}</select></label>
+      </div>
+      <div class="earn-preview" style="margin-top:12px">
+        <div><div class="k">Per segment (Lufthansa Group)</div><b>${num(e.p)} P · ${num(e.qp)} QP · ${num(e.hon)} HON</b></div>
+        <div><div class="k">Still missing after scenario</div><b>${Object.entries(g).map(([k, v]) => `${num(v)} ${k.toUpperCase()}`).join(' · ')}</b></div>
+        <div><div class="k">Extra segments needed</div><b style="font-size:20px">${n === Infinity ? 'not reachable' : n === 0 ? '✓ none' : n + '×'}</b></div>
+      </div>
+      ${n > 0 && n !== Infinity ? `<div style="margin-top:10px"><button class="btn small" data-gap-add>+ Add ${n} × ${esc(gapPrefs.cls)} ${gapPrefs.haul === 'continental' ? 'continental' : 'intercont.'}${gapPrefs.co2 !== 'none' ? ` + ${esc(MM.CO2_LABEL[gapPrefs.co2])}` : ''} to the extra segments</button></div>` : ''}
+      <p class="hint">HON Circle Points are only earned in ${esc(rules.honClasses.join(' / '))}.</p>`;
+    $$('[data-gap]', host).forEach(s => s.addEventListener('change', () => { gapPrefs[s.dataset.gap] = s.value; renderGap(total); }));
+    const add = $('[data-gap-add]', host);
+    if (add) add.addEventListener('click', () => {
+      planFor(year).mix.push(S.newMixRow({ count: n, kind: 'LHG', haul: gapPrefs.haul, cls: gapPrefs.cls, co2Level: gapPrefs.co2 }));
+      save(); renderPlanner();
+    });
   };
 
   /* ================= settings view ================= */
@@ -1089,6 +1304,7 @@
     if (act === 'add-stay') openStayDialog(null);
     if (act === 'goto-flights') setView('flights');
     if (act === 'goto-settings') { e.preventDefault(); setView('settings'); }
+    if (act === 'goto-planner') setView('planner');
     if (act === 'load') $('#fileLoad').click();
     if (act === 'lookup-missing') lookupMissing();
     if (act === 'demo') {
@@ -1147,5 +1363,5 @@
   if (state.flights.length || state.adjustments.length || state.stays.length) save();   // write back migrations done by S.normalize
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
-  setView(['dashboard', 'flights', 'settings'].includes(startView) ? startView : 'dashboard');
+  setView(['dashboard', 'flights', 'planner', 'settings'].includes(startView) ? startView : 'dashboard');
 })();

@@ -259,6 +259,41 @@ assert.ok(e.unknown && e.p === 0);
   assert.strictEqual('GONE01' in v2.bookings, false);
   assert.strictEqual(MM.store.normalize(JSON.parse(JSON.stringify(v2))).bookings.ABC123.fare, 700);
 }
+
+// planner scenario: CO₂ what-ifs on existing flights plus a mix of extra segments
+{
+  const st = MM.store.normalize({ version: 2, flights: [
+    { id: 'a', date: '2026-02-01', flightNo: 'LH400', airlineCode: 'LH', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', co2Level: 'none' },
+  ] });
+  const sc0 = E.planScenario(st, 2026, {});
+  assert.strictEqual(sc0.total.qp, 200);
+  assert.strictEqual(sc0.cost.total, 0);
+  const plan = {
+    co2: { a: { level: 'large', cost: 40 } },   // +50 % P / QP, +20 % HON
+    mix: [
+      { count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 300 },
+      { count: 4, kind: 'LHG', haul: 'intercontinental', cls: 'Premium Economy', co2Level: 'medium', cost: 900 },
+      { count: 3, kind: 'STAR', haul: 'intercontinental', cls: 'Economy', co2Level: 'none', cost: 0 },
+    ],
+  };
+  const sc = E.planScenario(st, 2026, plan);
+  assert.deepStrictEqual([sc.withCo2.forecast.p, sc.withCo2.forecast.qp, sc.withCo2.forecast.hon], [300, 300, 240]);
+  // 2 × 40 continental Business (HON too), 4 × 96 Premium Economy intercontinental (80 + 20 %, no HON), 3 × 60 Star Points only
+  assert.deepStrictEqual([sc.total.p, sc.total.qp, sc.total.hon], [300 + 80 + 384 + 180, 300 + 80 + 384, 240 + 80]);
+  assert.strictEqual(sc.cost.co2Extra, 40);
+  assert.strictEqual(sc.cost.mix, 2 * 300 + 4 * 900);
+  assert.strictEqual(sc.status.total, 'FTL');
+  assert.strictEqual(st.flights[0].co2Level, 'none');   // what-ifs never change the flight itself
+  // trains in the mix: QP count towards a status only up to the train limit
+  const rail = E.planScenario(st, 2026, { mix: [{ count: 30, kind: 'RAIL', haul: 'intercontinental', cls: 'Business', co2Level: 'xlarge', cost: 0 }] });
+  assert.strictEqual(rail.mix[0].e.qp, 40);   // continental, no booster
+  assert.strictEqual(E.effective(rail.total, 'SEN', rules).qp, 200 + 500);
+  // plans are saved per year; what-ifs for deleted flights are dropped
+  const again = MM.store.normalize({ version: 2, flights: st.flights, plans: { 2026: { co2: { a: { level: 'small', cost: 5 }, gone: { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }] } } });
+  assert.deepStrictEqual(Object.keys(again.plans['2026'].co2).join(','), 'a');
+  assert.strictEqual(again.plans['2026'].mix[0].count, 2);
+  assert.strictEqual(again.plans['2026'].mix[0].kind, 'LHG');
+}
 // demo data round-trips through normalize
 const demo = MM.store.demo();
 const again = MM.store.normalize(JSON.parse(JSON.stringify(demo)));

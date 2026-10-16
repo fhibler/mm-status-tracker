@@ -14,6 +14,7 @@
     bookings: {},      // booking code -> { fare }: one fare per booking, split evenly over its segments
     adjustments: [],   // manual point corrections from the account statement
     stays: [],         // Marriott Bonvoy hotel stays (Points only, capped per year)
+    plans: {},         // planner scenarios per calendar year: { "2026": { co2: { flightId: { level, cost } }, mix: [row] } }
     apiCache: {},
   });
 
@@ -27,6 +28,9 @@
 
   /** Manual correction as shown on the Miles & More account statement (values may be negative). */
   S.newAdjustment = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), p: 0, qp: 0, hon: 0, remark: '' });
+
+  /** One row of a planned mix of extra segments (see MM.engine.planScenario); cost = estimated cost per segment. */
+  S.newMixRow = (o) => ({ id: S.uid(), count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 0, ...o });
 
   /** Marriott Bonvoy stay; date = check-out date (the stay is credited when it is completed). */
   S.newStay = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), hotel: '', nights: 2, remark: '' });
@@ -61,6 +65,30 @@
       }
     }
     return S.pruneBookings({ bookings: out, flights }).bookings;
+  };
+
+  /** Planner scenarios: keeps valid rows and drops CO₂ what-ifs for flights that no longer exist. */
+  const normalizePlans = (raw, flights) => {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    const ids = new Set(flights.map(f => f.id));
+    for (const [y, p] of Object.entries(raw)) {
+      if (!/^\d{4}$/.test(y) || !p || typeof p !== 'object') continue;
+      const co2 = {};
+      for (const [id, o] of Object.entries(p.co2 || {})) {
+        if (ids.has(id) && o && MM.CO2_LEVELS.includes(o.level)) co2[id] = { level: o.level, cost: Math.max(0, +o.cost || 0) };
+      }
+      const mix = (Array.isArray(p.mix) ? p.mix : []).filter(r => r && typeof r === 'object').map(r => S.newMixRow({
+        id: r.id || S.uid(), count: Math.max(0, Math.round(+r.count || 0)),
+        kind: ['LHG', 'STAR', 'RAIL'].includes(r.kind) ? r.kind : 'LHG',
+        haul: r.haul === 'intercontinental' ? 'intercontinental' : 'continental',
+        cls: MM.CLASSES.includes(r.cls) ? r.cls : 'Economy',
+        co2Level: MM.CO2_LEVELS.includes(r.co2Level) ? r.co2Level : 'none',
+        cost: Math.max(0, +r.cost || 0),
+      }));
+      if (Object.keys(co2).length || mix.length) out[y] = { co2, mix };
+    }
+    return out;
   };
   S.pruneBookings = (state) => {
     const used = new Set(state.flights.map(f => S.bookingKey(f.bookingCode)).filter(Boolean));
@@ -106,6 +134,7 @@
       .filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date))
       .map(x => ({ ...S.newStay(x.date), ...x, id: x.id || S.uid() }));
     s.bookings = normalizeBookings(raw, s.flights);
+    s.plans = normalizePlans(raw.plans, s.flights);
     return s;
   };
 
