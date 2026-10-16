@@ -20,6 +20,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   A planner works out how many more segments you need.
 - **Starting status** (Settings): the status you already hold and the year it was earned (from your
   statement), so the first tracked year shows the right "status held", validity and downgrade.
+- **Marriott Bonvoy stays** (Flights tab): with linked accounts, each qualifying stay of at least two nights
+  earns 40 Points (no QP / HON), up to 120 Points per calendar year. The values are editable in Settings.
 - **Point corrections** (Flights tab): add manual adjustments of Points, QP and HON Circle Points with a
   date and a remark, e.g. a retro credit or a deduction from your account statement. Negative values are
   allowed. Corrections count in all totals, status dates, charts and forecasts, and are saved in the `.json`.

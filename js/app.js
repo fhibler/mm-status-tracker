@@ -307,7 +307,9 @@
         <tbody>${list.map(g => `<tr style="cursor:default"><td>${esc(g.cls)}</td><td>${haulTxt(g.haul)}</td><td class="num">${g.flown}</td><td class="num">${g.planned}</td>
           <td class="num">${num(g.p)}</td><td class="num">${num(g.qp)}</td><td class="num">${num(g.hon)}</td><td class="num">${money(g.cost, true)}</td></tr>`).join('')}
           ${sum.adjustments.length ? `<tr style="cursor:default"><td colspan="2"><i>Point corrections</i></td><td class="num" colspan="2">${sum.adjustments.length}×</td>
-          <td class="num">${signed(sum.adjTotal.p)}</td><td class="num">${signed(sum.adjTotal.qp)}</td><td class="num">${signed(sum.adjTotal.hon)}</td><td class="num">–</td></tr>` : ''}</tbody>
+          <td class="num">${signed(sum.adjTotal.p)}</td><td class="num">${signed(sum.adjTotal.qp)}</td><td class="num">${signed(sum.adjTotal.hon)}</td><td class="num">–</td></tr>` : ''}
+          ${sum.stays.length ? `<tr style="cursor:default"><td colspan="2"><i>Marriott Bonvoy stays</i></td><td class="num" colspan="2">${sum.stays.length}×</td>
+          <td class="num">${num(sum.stayTotal.p)}</td><td class="num">0</td><td class="num">0</td><td class="num">–</td></tr>` : ''}</tbody>
       </table></div>
       <p class="hint">${lhg} Lufthansa Group segment(s) · ${star} Star Alliance segment(s) (Points only)</p>` : '<p class="muted">No segments in this year.</p>';
   };
@@ -406,14 +408,16 @@
           <tfoot>
             ${footRow('Flown total', tot(flown))}
             ${planned.length ? footRow('Incl. planned', tot(sum.rows)) : ''}
-            ${sum.adjustments.length ? footRow('Incl. point corrections', tot(sum.events)) : ''}
+            ${sum.adjustments.length || sum.stays.length ? footRow(sum.stays.length ? 'Incl. corrections &amp; hotel stays' : 'Incl. point corrections', tot(sum.events)) : ''}
           </tfoot>
         </table></div>` : `<div class="empty"><h2>No flights in ${year}</h2><p>Add a flown or planned segment to start tracking.</p>
           <div class="btns"><button class="btn primary" data-act="add">Add flight</button>${state.flights.length ? '' : '<button class="btn" data-act="demo">Load demo data</button>'}</div></div>`}
       </div>
-      ${renderAdjustmentsCard(sum)}`;
+      ${renderAdjustmentsCard(sum)}
+      ${renderStaysCard(sum)}`;
     $$('tbody tr[data-id]', host).forEach(tr => tr.addEventListener('click', () => openDialog(state.flights.find(f => f.id === tr.dataset.id))));
     $$('tbody tr[data-adj-id]', host).forEach(tr => tr.addEventListener('click', () => openAdjDialog(state.adjustments.find(a => a.id === tr.dataset.adjId))));
+    $$('tbody tr[data-stay-id]', host).forEach(tr => tr.addEventListener('click', () => openStayDialog(state.stays.find(s => s.id === tr.dataset.stayId))));
   };
 
   /** Cabin class tag in the Lufthansa app colours (Economy / Premium Economy green, Business slate, First red). */
@@ -439,6 +443,46 @@
         <tfoot><tr><td>Total</td><td class="num">${signed(t.p)}</td><td class="num">${signed(t.qp)}</td><td class="num">${signed(t.hon)}</td><td></td></tr></tfoot>
       </table></div>` : '<p class="muted" style="margin:0">No corrections in this year. Add one if your statement shows different Points, QP or HON Circle Points than calculated here.</p>'}
     </div>`;
+  };
+
+  const renderStaysCard = (sum) => {
+    const m = state.settings.rules.marriott;
+    const why = { ok: '', short: `under ${m.minNights} nights`, cap: 'yearly maximum reached', partial: 'yearly maximum reached' };
+    const rows = sum.stays.map(r => `<tr data-stay-id="${esc(r.stay.id)}" class="${r.planned ? 'planned' : ''}">
+        <td>${C.fmtDate(r.stay.date)}</td>
+        <td style="white-space:normal">${esc(r.stay.hotel || '–')}${r.stay.remark ? `<div class="muted">${esc(r.stay.remark)}</div>` : ''}</td>
+        <td class="num">${num(+r.stay.nights || 0)}</td>
+        <td class="num">${num(r.e.p)}${why[r.e.reason] ? `<div class="muted">${why[r.e.reason]}</div>` : ''}</td>
+      </tr>`).join('');
+    return `<div class="card">
+      <div class="card-head">
+        <h2>Hotel stays · Marriott Bonvoy · CY ${year}</h2>
+        <span class="sub">${num(m.pointsPerStay)} Points per stay of ${num(m.minNights)}+ nights · max ${num(m.maxPointsPerYear)} Points per calendar year · no QP / HON · accounts must be linked</span>
+        <div class="right"><button class="btn" data-act="add-stay">+ Add stay</button></div>
+      </div>
+      ${rows ? `<div class="table-wrap"><table>
+        <thead><tr><th>Check-out</th><th>Hotel</th><th class="num">Nights</th><th class="num">Points</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="3">Total <span class="muted">· ${num(Math.max(0, m.maxPointsPerYear - sum.stayTotal.p))} Points left this year</span></td><td class="num">${num(sum.stayTotal.p)}</td></tr></tfoot>
+      </table></div>` : '<p class="muted" style="margin:0">No Marriott Bonvoy stays in this year.</p>'}
+    </div>`;
+  };
+
+  /* ================= Marriott stay dialog (wired up below, after the date helpers) ================= */
+  const stayDlg = $('#stayDialog'), stayForm = $('#stayForm');
+  let stayDraft = null;
+  const openStayDialog = (stay) => {
+    const isNewStay = !stay;
+    stayDraft = stay ? { ...stay } : S.newStay(+E.todayISO().slice(0, 4) === year ? E.todayISO() : `${year}-12-31`);
+    $('#stayTitle').textContent = isNewStay ? 'Add Marriott Bonvoy stay' : 'Edit Marriott Bonvoy stay';
+    stayForm.date.value = dateToField(stayDraft.date);
+    stayForm.hotel.value = stayDraft.hotel || '';
+    stayForm.nights.value = stayDraft.nights || '';
+    stayForm.remark.value = stayDraft.remark || '';
+    const del = $('#btnStayDelete');
+    del.hidden = isNewStay; del.textContent = 'Delete'; del.dataset.armed = '';
+    stayDlg.showModal();
+    (isNewStay ? stayForm.hotel : stayForm.nights).focus();
   };
 
   /* ================= point correction dialog (wired up below, after the date helpers) ================= */
@@ -508,6 +552,14 @@
             <tbody>${MM.CO2_LEVELS.filter(l => l !== 'none').map(l => `<tr style="cursor:default"><td>${MM.CO2_LABEL[l]}</td>
               ${['p', 'qp', 'hon'].map(k => `<td class="num"><input type="number" min="0" data-rule="co2.${l}.${k}" value="${r.co2[l][k]}"></td>`).join('')}</tr>`).join('')}</tbody>
           </table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Marriott Bonvoy stays</h2><span class="sub">Points only, accounts linked</span></div>
+          <div class="grid">
+            <label>Points per stay<input type="number" min="0" data-rule="marriott.pointsPerStay" value="${r.marriott.pointsPerStay}"></label>
+            <label>Minimum nights<input type="number" min="0" data-rule="marriott.minNights" value="${r.marriott.minNights}"></label>
+            <label>Max Points per year<input type="number" min="0" data-rule="marriott.maxPointsPerYear" value="${r.marriott.maxPointsPerYear}"></label>
+          </div>
         </div>
         <div class="card">
           <div class="card-head"><h2>Data</h2></div>
@@ -810,6 +862,29 @@
   const datePicker = $('#datePicker');
   wireDateField(form.date, $('#btnDatePick'), datePicker, () => updatePreview());
 
+  wireDateField(stayForm.date, $('#btnStayDatePick'), $('#stayDatePicker'));
+  $$('[data-close]', stayDlg).forEach(b => b.addEventListener('click', () => stayDlg.close()));
+  $('#btnStayDelete').addEventListener('click', (e) => {
+    const b = e.currentTarget;
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
+    state.stays = state.stays.filter(s => s.id !== stayDraft.id);
+    save(); stayDlg.close(); toast('Stay deleted'); render();
+  });
+  stayForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const date = dateToISO(stayForm.date.value);
+    if (!date) { toast('Please enter the check-out date as YYYY/MM/DD'); stayForm.date.focus(); return; }
+    const nights = Math.round(+stayForm.nights.value || 0);
+    if (nights < 1) { toast('Please enter the number of nights'); stayForm.nights.focus(); return; }
+    const stay = { ...stayDraft, date, nights, hotel: stayForm.hotel.value.trim(), remark: stayForm.remark.value.trim() };
+    const i = state.stays.findIndex(s => s.id === stay.id);
+    i >= 0 ? (state.stays[i] = stay) : state.stays.push(stay);
+    year = +date.slice(0, 4);
+    save(); stayDlg.close();
+    toast(i >= 0 ? 'Stay saved' : 'Stay added');
+    render();
+  });
+
   wireDateField(adjForm.date, $('#btnAdjDatePick'), $('#adjDatePicker'));
   $$('[data-close]', adjDlg).forEach(b => b.addEventListener('click', () => adjDlg.close()));
   $('#btnAdjDelete').addEventListener('click', (e) => {
@@ -921,6 +996,7 @@
     const act = b.dataset.act;
     if (act === 'add') openDialog(null);
     if (act === 'add-adj') openAdjDialog(null);
+    if (act === 'add-stay') openStayDialog(null);
     if (act === 'goto-flights') setView('flights');
     if (act === 'goto-settings') { e.preventDefault(); setView('settings'); }
     if (act === 'load') $('#fileLoad').click();
@@ -978,7 +1054,7 @@
   darkMQ.addEventListener('change', applyTheme);
   applyTheme();
 
-  if (state.flights.length || state.adjustments.length) save();   // write back migrations done by S.normalize
+  if (state.flights.length || state.adjustments.length || state.stays.length) save();   // write back migrations done by S.normalize
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
   setView(['dashboard', 'flights', 'settings'].includes(startView) ? startView : 'dashboard');

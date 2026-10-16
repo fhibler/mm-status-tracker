@@ -134,7 +134,7 @@
 
   /** Calendar years that have flights or corrections, plus the current year. */
   E.years = (state) => {
-    const items = [...(state.flights || []), ...(state.adjustments || [])];
+    const items = [...(state.flights || []), ...(state.adjustments || []), ...(state.stays || [])];
     const ys = new Set(items.map(x => +x.date.slice(0, 4)));
     ys.add(new Date().getFullYear());
     return [...ys].sort((a, b) => a - b);
@@ -144,8 +144,20 @@
   E.adjustmentEarn = (a) => ({ p: Math.round(+a.p || 0), qp: Math.round(+a.qp || 0), hon: Math.round(+a.hon || 0) });
 
   /**
-   * Walks one calendar year in date order (flights and manual corrections).
-   * rows: flights with their earnings; adjustments: corrections; events: both, in date order.
+   * Marriott Bonvoy stay: rules.marriott.pointsPerStay Points (no QP / HON) for a stay of at least minNights,
+   * but only until maxPointsPerYear Points from stays are reached in the calendar year (`usedSoFar`).
+   * reason: 'ok' | 'short' (too few nights) | 'cap' (yearly maximum reached) | 'partial'.
+   */
+  E.stayEarn = (stay, rules, usedSoFar = 0) => {
+    const m = rules.marriott || { pointsPerStay: 0, minNights: 0, maxPointsPerYear: 0 };
+    if ((+stay.nights || 0) < m.minNights) return { p: 0, qp: 0, hon: 0, reason: 'short' };
+    const p = Math.max(0, Math.min(m.pointsPerStay, m.maxPointsPerYear - usedSoFar));
+    return { p, qp: 0, hon: 0, reason: p === m.pointsPerStay ? 'ok' : p === 0 ? 'cap' : 'partial' };
+  };
+
+  /**
+   * Walks one calendar year in date order (flights, manual corrections and Marriott stays).
+   * rows: flights; adjustments: corrections; stays: hotel stays; events: all of them in date order.
    * Also returns totals (actual vs. incl. plan) and the dates on which each status was
    * (or will be) reached.
    */
@@ -153,28 +165,27 @@
     const rules = state.settings.rules;
     const today = E.todayISO();
     const inYear = x => +x.date.slice(0, 4) === year;
+    const ORDER = { flight: 0, adj: 1, stay: 2 };
     const items = [
-      ...state.flights.filter(inYear).map(f => ({ kind: 'flight', f })),
-      ...(state.adjustments || []).filter(inYear).map(a => ({ kind: 'adj', a })),
-    ].sort((x, y) => {
-      const dx = (x.f || x.a).date, dy = (y.f || y.a).date;
-      return dx.localeCompare(dy) || (x.kind === y.kind ? 0 : x.kind === 'flight' ? -1 : 1);
-    });
+      ...state.flights.filter(inYear).map(f => ({ kind: 'flight', f, date: f.date })),
+      ...(state.adjustments || []).filter(inYear).map(a => ({ kind: 'adj', a, date: a.date })),
+      ...(state.stays || []).filter(inYear).map(s => ({ kind: 'stay', s, date: s.date })),
+    ].sort((x, y) => x.date.localeCompare(y.date) || ORDER[x.kind] - ORDER[y.kind]);
     const act = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 }, all = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 };
     const cost = { actual: { flight: 0, upgrade: 0, co2: 0, total: 0 }, plan: { flight: 0, upgrade: 0, co2: 0, total: 0 } };
     const reached = { actual: {}, forecast: {} };
-    const adjTotal = { p: 0, qp: 0, hon: 0 };
-    const rows = [], adjustments = [], events = [];
+    const adjTotal = { p: 0, qp: 0, hon: 0 }, stayTotal = { p: 0, qp: 0, hon: 0 };
+    const rows = [], adjustments = [], stays = [], events = [];
     let unknown = 0;
     const NO_COST = { flight: 0, upgrade: 0, co2: 0, total: 0 };
     for (const it of items) {
-      const isAdj = it.kind === 'adj';
-      const date = isAdj ? it.a.date : it.f.date;
+      const isAdj = it.kind === 'adj', isStay = it.kind === 'stay';
+      const date = it.date;
       const planned = date > today;
-      const counts = isAdj || !planned || it.f.includeInPlan !== false;
-      const e = isAdj ? E.adjustmentEarn(it.a) : E.earn(it.f, rules);
-      const c = isAdj ? NO_COST : E.cost(it.f);
-      if (!isAdj && e.unknown) unknown++;
+      const counts = isAdj || isStay || !planned || it.f.includeInPlan !== false;
+      const e = isAdj ? E.adjustmentEarn(it.a) : isStay ? E.stayEarn(it.s, rules, stayTotal.p) : E.earn(it.f, rules);
+      const c = isAdj || isStay ? NO_COST : E.cost(it.f);
+      if (it.kind === 'flight' && e.unknown) unknown++;
       if (counts) {
         all.p += e.p; all.qp += e.qp; all.hon += e.hon;
         if (e.rail) { all.qpRail += e.qp; all.honRail += e.hon; }
@@ -189,15 +200,17 @@
         const s = statusOf(act, rules);
         for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.actual[k]) reached.actual[k] = date;
       }
-      const row = isAdj
-        ? { adj: it.a, f: { date, flightNo: 'Correction' }, e, c, planned, counts, cum: { ...all }, cumActual: { ...act } }
-        : { f: it.f, e, c, planned, counts, cum: { ...all }, cumActual: { ...act } };
+      const base = { e, c, planned, counts, cum: { ...all }, cumActual: { ...act } };
+      const row = isAdj ? { ...base, adj: it.a, f: { date, flightNo: 'Correction' } }
+        : isStay ? { ...base, stay: it.s, f: { date, flightNo: 'Marriott Bonvoy' } }
+        : { ...base, f: it.f };
       if (isAdj) { adjustments.push(row); adjTotal.p += e.p; adjTotal.qp += e.qp; adjTotal.hon += e.hon; }
+      else if (isStay) { stays.push(row); stayTotal.p += e.p; }
       else rows.push(row);
       events.push(row);
     }
     return {
-      year, rows, adjustments, events, adjTotal, actual: act, forecast: all, cost, reached, unknown,
+      year, rows, adjustments, stays, events, adjTotal, stayTotal, actual: act, forecast: all, cost, reached, unknown,
       statusActual: statusOf(act, rules),
       statusForecast: statusOf(all, rules),
     };

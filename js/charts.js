@@ -140,7 +140,9 @@
         `<div class="row"><span><i style="--c:${opts.color}"></i>${opts.label}</span><b>${fmt(v)}</b></div>`;
       for (const t of opts.thresholds) html += `<div class="row muted"><span>to ${t.label}</span><span>${v >= t.v ? '✓ reached' : fmt(t.v - v)}</span></div>`;
       for (const r of on) {
-        const label = r.adj ? `Correction: ${esc(r.adj.remark)}` : `${esc(r.f.flightNo)} ${r.f.route ? r.f.route.origin.iata + '→' + r.f.route.destination.iata : ''}`;
+        const label = r.adj ? `Correction: ${esc(r.adj.remark)}`
+          : r.stay ? `Marriott: ${esc(r.stay.hotel || 'hotel stay')}`
+          : `${esc(r.f.flightNo)} ${r.f.route ? r.f.route.origin.iata + '→' + r.f.route.destination.iata : ''}`;
         html += `<div class="row muted"><span>${label}</span><span>${r.e[k] < 0 ? '' : '+'}${fmt(r.e[k])}</span></div>`;
       }
       C.showTip(html, evt);

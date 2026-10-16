@@ -117,6 +117,8 @@ MM.DEFAULT_RULES = {
   // Rail (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail): max QP (FTL, SEN) / HON Circle Points (HON)
   // that rail segments may contribute towards each status.
   railCaps: { FTL: 160, SEN: 500, HON: 1000 },
+  // Marriott Bonvoy (accounts linked): Points (no QP / HON) per qualifying stay, max per calendar year.
+  marriott: { pointsPerStay: 40, minNights: 2, maxPointsPerYear: 120 },
   co2: {
     small:  { p: 5,  qp: 5,  hon: 5 },
     medium: { p: 20, qp: 20, hon: 20 },

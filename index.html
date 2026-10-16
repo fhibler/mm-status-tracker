@@ -190,6 +190,39 @@
     </form>
   </dialog>
 
+  <dialog id="stayDialog">
+    <form id="stayForm" method="dialog" novalidate>
+      <header class="dlg-head">
+        <h2 id="stayTitle">Add Marriott Bonvoy stay</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
+      </header>
+      <div class="dlg-body">
+        <p class="hint" style="margin:0">With linked Miles &amp; More and Marriott Bonvoy accounts, every qualifying stay of at least
+          two nights earns 40 Points (no QP / HON Circle Points), up to 120 Points per calendar year. The values can be changed in Settings.</p>
+        <div class="grid">
+          <label>Check-out date
+            <span class="date-field">
+              <input name="date" placeholder="YYYY/MM/DD" inputmode="numeric" maxlength="10" autocomplete="off" required>
+              <button type="button" class="date-btn" id="btnStayDatePick" aria-label="Open calendar" title="Open calendar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+              </button>
+              <input type="date" id="stayDatePicker" class="date-native" tabindex="-1" aria-hidden="true">
+            </span>
+          </label>
+          <label>Hotel<input name="hotel" placeholder="e.g. Sheraton Munich" autocomplete="off"></label>
+          <label>Nights<input type="number" name="nights" min="1" step="1" inputmode="numeric"></label>
+        </div>
+        <label>Remark<input name="remark" placeholder="optional" autocomplete="off"></label>
+      </div>
+      <footer class="dlg-foot">
+        <button type="button" class="btn danger" id="btnStayDelete">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save stay</button>
+      </footer>
+    </form>
+  </dialog>
+
   <div class="tooltip" id="tooltip" role="status" hidden></div>
   <div class="toast" id="toast" role="status" hidden></div>
 

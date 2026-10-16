@@ -58,6 +58,9 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
    - Edelweiss earns only on **LX8000–8499** code-shares booked with SWISS under the LX number. WK numbers earn nothing.
    - Lufthansa Express Bus earns nothing → transport "bus".
    - Retro credits count in the **calendar year of the flight**. In the app: point corrections dated on the flight date.
+6. **"Earn Points in your sleep with Marriott Bonvoy"** (same page, below the examples): with linked accounts,
+   **40 Points per qualifying stay of at least two days**, at most **120 Points per calendar year** towards status,
+   and no QP or HON Circle Points → `MM.DEFAULT_RULES.marriott`. Watch for new non-flight partners in this section.
 
 ### Partners page
 
@@ -79,7 +82,8 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 |---|---|
 | Airline group, new airline, IATA/ICAO code | `js/data.js` → `MM.AIRLINES` (keep the source comment above it current) |
 | Zones | `js/data.js` → `MM.REGIONS` (ISO 3166 alpha-2 codes; also used by `E.autoHaul`) |
-| Points per segment, HON cabins, thresholds, rail caps, CO₂ boosters | `js/data.js` → `MM.DEFAULT_RULES` |
+| Points per segment, HON cabins, thresholds, rail caps, Marriott stays, CO₂ boosters | `js/data.js` → `MM.DEFAULT_RULES` |
+| Hotel stays (Points per stay, minimum nights, yearly cap) | `js/data.js` → `MM.DEFAULT_RULES.marriott`; logic in `js/engine.js` → `E.stayEarn` |
 | Validity rule | `js/engine.js` → `E.validUntil` |
 | Downgrade rule | `js/engine.js` → `E.softLanding`, `E.history` |
 | Special earning cases (rail, bus, codeshare operator) | `js/engine.js` → `E.earn`, `E.earningGroup`, `E.effective` |
@@ -120,5 +124,6 @@ the defaults. A changed default therefore does **not** reach existing users on i
 - **Points per segment:** continental 20 / 20 / 40 / 40; intercontinental 60 / 80 / 200 / 400 (Y / W / C / F)
 - **Thresholds:** FTL 650 P + 325 QP; SEN 2,000 P + 1,000 QP; HON 6,000 HON
 - **Rail caps:** FTL 160 QP, SEN 500 QP, HON 1,000 HON
+- **Marriott Bonvoy:** 40 Points per stay of 2+ nights, max 120 Points per calendar year, no QP / HON
 - **Validity:** until end of February of the year after next; one-level soft landing
 - **CO₂ boosters (from the user):** Small 5/5/5 %, Medium 20/20/20 %, Large 50/50/20 %, X-Large 80/80/20 % (P/QP/HON)

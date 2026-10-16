@@ -99,6 +99,19 @@ assert.strictEqual(E.statusFor(0, 0, 6500, rules, { hon: 1600 }), 'NONE');     /
   assert.strictEqual(E.gap(s.actual, 'FTL', rules).qp, 165);
 }
 
+// Marriott Bonvoy: 40 Points per stay of 2+ nights, no QP / HON, max 120 Points per calendar year
+{
+  const stay = (date, nights) => ({ id: date, date, nights, hotel: 'H', remark: '' });
+  const st = { flights: [], adjustments: [], stays: [stay('2020-02-03', 1), stay('2020-03-03', 2), stay('2020-04-03', 3), stay('2020-05-03', 2), stay('2020-06-03', 4), stay('2021-01-10', 2)], settings: { rules } };
+  const s = E.yearSummary(st, 2020);
+  assert.strictEqual(s.stays.map(r => r.e.p).join(','), '0,40,40,40,0');
+  assert.strictEqual(s.stays.map(r => r.e.reason).join(','), 'short,ok,ok,ok,cap');
+  assert.deepStrictEqual([s.actual.p, s.actual.qp, s.actual.hon, s.stayTotal.p], [120, 0, 0, 120]);
+  assert.strictEqual(E.yearSummary(st, 2021).stayTotal.p, 40);                  // the cap resets each year
+  assert.strictEqual(E.years(st)[1], 2021);
+  assert.strictEqual(MM.store.normalize(JSON.parse(JSON.stringify(st))).stays.length, 6);
+}
+
 // saved rules from before rulesVersion 2 get First 400; a later file keeps its own value
 {
   const old = MM.store.normalize({ settings: { rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } });

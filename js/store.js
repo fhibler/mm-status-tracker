@@ -12,6 +12,7 @@
     settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, rulesVersion: 2 },
     flights: [],
     adjustments: [],   // manual point corrections from the account statement
+    stays: [],         // Marriott Bonvoy hotel stays (Points only, capped per year)
     apiCache: {},
   });
 
@@ -25,6 +26,9 @@
 
   /** Manual correction as shown on the Miles & More account statement (values may be negative). */
   S.newAdjustment = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), p: 0, qp: 0, hon: 0, remark: '' });
+
+  /** Marriott Bonvoy stay; date = check-out date (the stay is credited when it is completed). */
+  S.newStay = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), hotel: '', nights: 2, remark: '' });
 
   /** Fill gaps so that older/handwritten files keep working. */
   S.normalize = (raw) => {
@@ -41,6 +45,7 @@
           HON: { ...d.thresholds.HON, ...((r.thresholds || {}).HON || {}) },
         },
         railCaps: { ...d.railCaps, ...(r.railCaps || {}) },
+        marriott: { ...d.marriott, ...(r.marriott || {}) },
         co2: { ...d.co2, ...(r.co2 || {}) },
       };
       // rulesVersion 2: intercontinental First earns 400 (was 300 in earlier versions). Only an untouched old default is migrated.
@@ -59,6 +64,9 @@
     s.adjustments = (Array.isArray(raw.adjustments) ? raw.adjustments : [])
       .filter(a => a && /^\d{4}-\d{2}-\d{2}$/.test(a.date))
       .map(a => ({ ...S.newAdjustment(a.date), ...a, id: a.id || S.uid() }));
+    s.stays = (Array.isArray(raw.stays) ? raw.stays : [])
+      .filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date))
+      .map(x => ({ ...S.newStay(x.date), ...x, id: x.id || S.uid() }));
     return s;
   };
 
