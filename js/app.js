@@ -142,7 +142,7 @@
           <div class="meta">${money(sum.cost.actual.total, true)} spent · ${money(sum.cost.plan.total, true)} planned${sum.forecast.qp ? ` · ${money(totalCost / sum.forecast.qp)}/QP` : ''}</div></div>
       </div>`;
 
-    const warn = sum.unknown ? `<div class="card" style="border-color:var(--danger)"><b>${sum.unknown} segment(s) without haul information</b> earn 0 points until a route or haul is set. <button class="btn small" data-act="goto-flights">Fix in Flights</button></div>` : '';
+    const warn = sum.unknown ? `<div class="card" style="border-color:var(--danger)"><b>${sum.unknown} segment(s) without haul information</b> earn 0 points until a route or haul is set. <button class="btn small" data-act="goto-flights">Fix in Activity</button></div>` : '';
 
     host.innerHTML = `
       ${kpis}
@@ -388,7 +388,7 @@
     host.innerHTML = `
       <div class="card">
         <div class="card-head">
-          <h2>Flights · CY ${year}</h2>
+          <h2>Flights &amp; trains · CY ${year}</h2>
           <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
             ${missing ? `<button class="btn small" data-act="lookup-missing">Look up ${missing} missing route(s)</button>` : ''}
