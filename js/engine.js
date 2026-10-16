@@ -151,15 +151,30 @@
     };
   };
 
-  /** Status held during `year` = best of status earned in year-1 (valid through end of `year`) and status earned so far in `year`. */
+  /** Soft landing: one level below `s` (HON -> SEN -> FTL -> NONE). */
+  E.softLanding = (s) => MM.STATUS_ORDER[Math.max(0, E.rank(s) - 1)];
+  const best = (a, b) => (E.rank(a) >= E.rank(b) ? a : b);
+
+  /**
+   * Status timeline per calendar year (gap years filled in, so soft landings cascade).
+   * carriedIn: status valid from March of `year` = status earned in year-1 or, if year-1 did not
+   *   requalify the status held then, the soft landing one level below it.
+   * held: best of carriedIn and the status earned so far in `year`.
+   * downgraded: held is below the status held in year-1 (prevHeld).
+   */
   E.history = (state) => {
-    const years = E.years(state.flights);
-    const sums = years.map(y => E.yearSummary(state, y));
-    return sums.map((s, i) => {
-      const prev = i > 0 && sums[i - 1].year === s.year - 1 ? sums[i - 1].statusActual : 'NONE';
-      const held = E.rank(prev) >= E.rank(s.statusActual) ? prev : s.statusActual;
-      return { ...s, carriedIn: prev, held };
-    });
+    const ys = E.years(state.flights);
+    const out = [];
+    let prevHeld = 'NONE', prevEarned = 'NONE';
+    for (let y = ys[0]; y <= ys[ys.length - 1]; y++) {
+      const s = E.yearSummary(state, y);
+      const carriedIn = best(prevEarned, E.softLanding(prevHeld));
+      const held = best(carriedIn, s.statusActual);
+      out.push({ ...s, carriedIn, held, prevHeld, downgraded: E.rank(held) < E.rank(prevHeld) });
+      prevHeld = held;
+      prevEarned = s.statusActual;
+    }
+    return out;
   };
 
   /** What's still missing to reach a status, based on totals t. */

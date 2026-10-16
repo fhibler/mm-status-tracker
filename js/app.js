@@ -23,6 +23,8 @@
     clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), 2600);
   };
   const badge = (s) => `<span class="badge ${s}">${esc(MM.STATUS_LABEL[s])}</span>`;
+  /** "Senator → Frequent Traveller (not requalified)" for a soft-landing year, else ''. */
+  const downgradeTxt = (h, when = '') => (h.downgraded ? `${esc(MM.STATUS_LABEL[h.prevHeld])} → ${esc(MM.STATUS_LABEL[h.held])}${when} (not requalified)` : '');
   const routeTxt = (f) => (f.route && f.route.origin && f.route.destination ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}` : '<span class="pill warn">no route</span>');
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
 
@@ -67,7 +69,10 @@
     if (!state.flights.length) { host.innerHTML = emptyState(); return; }
     const rules = state.settings.rules;
     const hist = E.history(state);
-    const sum = hist.find(h => h.year === year) || { ...E.yearSummary(state, year), carriedIn: 'NONE', held: 'NONE' };
+    const sum = hist.find(h => h.year === year) || { ...E.yearSummary(state, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
+    const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
+      : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
+      : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}` : 'No status carried in';
     const nFlown = sum.rows.filter(r => !r.planned).length;
     const nPlan = sum.rows.filter(r => r.planned && r.counts).length;
     const totalCost = sum.cost.actual.total + sum.cost.plan.total;
@@ -78,7 +83,7 @@
       <div class="kpis">
         <div class="card kpi"><div class="label">Status held in ${year}</div>
           <div class="value">${badge(sum.held)}</div>
-          <div class="meta">${sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}` : 'No status carried in'}</div></div>
+          <div class="meta">${heldMeta}</div></div>
         <div class="card kpi"><div class="label">Earned in ${year} (flown)</div>
           <div class="value">${badge(sum.statusActual)}</div>
           <div class="meta">${sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
@@ -125,7 +130,7 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">a status is valid from the day it is reached until the end of February of the year after next</span></div>
+        <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">a status is valid from the day it is reached until the end of February of the year after next; without requalification it then drops one level</span></div>
         <div class="table-wrap" id="histTable"></div>
         ${hist.length > 1 ? `<div class="chart" id="yearCost" style="margin-top:14px"></div>
           <div class="legend"><span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span><span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span><span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span></div>` : ''}
@@ -270,7 +275,7 @@
         <td class="num">${num(h.actual.hon)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.hon)}</span>` : ''}</td>
         <td>${badge(h.statusActual)}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
         <td>${h.statusActual !== 'NONE' || h.statusForecast !== 'NONE' ? C.fmtDate(E.validUntil(h.year)) : '–'}</td>
-        <td>${badge(h.held)}</td>
+        <td>${badge(h.held)}${h.downgraded ? `<div class="muted">${downgradeTxt(h)}</div>` : ''}</td>
         <td class="num">${money(total, true)}${hasPlan ? ` <span class="muted">(${money(h.cost.plan.total, true)} plan)</span>` : ''}</td>
         <td class="num">${h.forecast.qp ? money(total / h.forecast.qp) : '–'}</td>
       </tr>`;

@@ -60,6 +60,37 @@ assert.strictEqual(E.statusFor(0, 0, 6000, rules), 'HON');
 assert.strictEqual(E.validUntil(2026), '2028-02-29');
 assert.strictEqual(E.validUntil(2025), '2027-02-28');
 
+// soft landing: without requalification the status drops one level from March of the year after next
+const segs = (year, n) => Array.from({ length: n }, (_, i) => flight({
+  date: `${year}-05-${String(i + 1).padStart(2, '0')}`, airlineCode: 'LH', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business',
+}));
+const held = (flights) => {
+  const h = E.history({ flights, settings: { rules } });
+  return Object.fromEntries(h.map(x => [x.year, [x.carriedIn, x.held, x.downgraded]]));
+};
+assert.strictEqual(E.softLanding('HON'), 'SEN');
+assert.strictEqual(E.softLanding('NONE'), 'NONE');
+// Senator in 2020, nothing after: SEN through Feb 2022, FTL from Mar 2022, Base from Mar 2023 (gap years filled in)
+let h = held(segs(2020, 10));
+assert.deepStrictEqual(h[2020], ['NONE', 'SEN', false]);
+assert.deepStrictEqual(h[2021], ['SEN', 'SEN', false]);
+assert.deepStrictEqual(h[2022], ['FTL', 'FTL', true]);
+assert.deepStrictEqual(h[2023], ['NONE', 'NONE', true]);
+assert.deepStrictEqual(h[2024], ['NONE', 'NONE', false]);
+// HON Circle in 2020, only FTL earned in 2021: soft landing (SEN) beats the earned FTL
+h = held([...segs(2020, 30), ...segs(2021, 4)]);
+assert.deepStrictEqual(h[2021], ['HON', 'HON', false]);
+assert.deepStrictEqual(h[2022], ['SEN', 'SEN', true]);
+assert.deepStrictEqual(h[2023], ['FTL', 'FTL', true]);
+// requalified every year: no downgrade
+h = held([...segs(2020, 10), ...segs(2021, 10), ...segs(2022, 10)]);
+assert.deepStrictEqual(h[2023], ['SEN', 'SEN', false]);
+assert.deepStrictEqual(h[2024], ['FTL', 'FTL', true]);
+// lands on FTL in March 2022, then earns Senator again in May 2022
+h = held([...segs(2020, 10), ...segs(2022, 10)]);
+assert.deepStrictEqual(h[2022], ['FTL', 'SEN', false]);
+assert.deepStrictEqual(h[2023], ['SEN', 'SEN', false]);
+
 // unknown haul earns nothing
 e = E.earn(flight({ airlineCode: 'LH', route: null }), rules);
 assert.ok(e.unknown && e.p === 0);

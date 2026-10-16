@@ -45,6 +45,8 @@ HON Circle Points are earned only in Business and First.
 
 A status is valid from the day you reach it until the end of February of the year after next.
 For example, a status reached in June 2026 is valid until 28 Feb 2028.
+If you don't requalify in the following year, you land one level lower from March
+(HON Circle → Senator → Frequent Traveller → Base); this repeats for each further year without requalification.
 
 | CO₂ booster | Points | QP | HON |
 |---|---:|---:|---:|
