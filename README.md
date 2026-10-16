@@ -41,7 +41,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   its validity.
 - **Save / Load `.json`**: the file holds your flights, your settings and every route lookup the app
   made so far (`apiCache` with `queried: true` / `status`). When you load a saved file, the app reuses
-  those answers and does not call the API again.
+  those answers and does not call the API again. Files in the old format (version 1, saved
+  before the fares-per-booking update of 16 Oct 2026) can no longer be loaded.
 - **Light / dark mode** switch in the header (Light · System · Dark). System follows the OS setting.
   Your choice is remembered in this browser and is not saved in the `.json`. The layout is responsive.
 

@@ -8,8 +8,8 @@
   S.uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
   S.empty = () => ({
-    format: FORMAT, version: 2,   // 2: fares per booking code (bookings)
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, rulesVersion: 2 },
+    format: FORMAT, version: 2,   // file format; older files (version 1) are refused by S.importFile
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null } },
     flights: [],
     bookings: {},      // booking code -> { fare }: one fare per booking, split evenly over its segments
     adjustments: [],   // manual point corrections from the account statement
@@ -35,35 +35,16 @@
   /** Marriott Bonvoy stay; date = check-out date (the stay is credited when it is completed). */
   S.newStay = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), hotel: '', nights: 2, remark: '' });
 
-  /** Older files stored `upgradePaid: true/false`; paid becomes "Fixed (Online)", unpaid "not specified" (same earning). */
-  const migrateFlight = (f) => {
-    if ('upgradePaid' in f) {
-      if (!f.upgradeType) f.upgradeType = f.upgradePaid ? 'fixed-online' : '';
-      delete f.upgradePaid;
-    }
-    return f;
-  };
-
   S.bookingKey = (code) => MM.engine.bookingKey(code);
 
   /**
-   * Fares are stored once per booking code (state.bookings). Files before version 2 kept a fare on each
-   * segment: the fares of all segments with the same code are added up into the booking, and the segments'
-   * own fare is cleared. Segments without a booking code keep their own fare (flightCost).
-   * Bookings without any segment are dropped.
+   * Fares are stored once per booking code (state.bookings); segments without a booking code keep their own
+   * fare (flightCost). Bookings without any segment are dropped.
    */
   const normalizeBookings = (raw, flights) => {
     const out = {};
     const src = raw.bookings && typeof raw.bookings === 'object' ? raw.bookings : {};
     for (const [k, b] of Object.entries(src)) if (S.bookingKey(k)) out[S.bookingKey(k)] = { fare: Math.max(0, +(b && b.fare) || 0) };
-    if (!(+raw.version >= 2)) {
-      for (const f of flights) {
-        const k = S.bookingKey(f.bookingCode);
-        if (!k) continue;
-        out[k] = { fare: ((out[k] && out[k].fare) || 0) + (+f.flightCost || 0) };
-        f.flightCost = 0;
-      }
-    }
     return S.pruneBookings({ bookings: out, flights }).bookings;
   };
 
@@ -96,7 +77,7 @@
     return state;
   };
 
-  /** Fill gaps so that older/handwritten files keep working. */
+  /** Fills missing fields with defaults and drops invalid entries (e.g. in handwritten files). */
   S.normalize = (raw) => {
     const s = S.empty();
     if (!raw || typeof raw !== 'object') return s;
@@ -114,10 +95,6 @@
         marriott: { ...d.marriott, ...(r.marriott || {}) },
         co2: { ...d.co2, ...(r.co2 || {}) },
       };
-      // rulesVersion 2: intercontinental First earns 400 (was 300 in earlier versions). Only an untouched old default is migrated.
-      if (!(+raw.settings.rulesVersion >= 2) && s.settings.rules.points.intercontinental.First === 300) {
-        s.settings.rules.points.intercontinental = { ...s.settings.rules.points.intercontinental, First: 400 };
-      }
     }
     if (raw.settings && raw.settings.currency) s.settings.currency = raw.settings.currency;
     if (raw.settings && raw.settings.startStatus && MM.STATUS_ORDER.includes(raw.settings.startStatus.status)) {
@@ -126,7 +103,7 @@
     s.apiCache = raw.apiCache && typeof raw.apiCache === 'object' ? raw.apiCache : {};
     s.flights = (Array.isArray(raw.flights) ? raw.flights : [])
       .filter(f => f && /^\d{4}-\d{2}-\d{2}$/.test(f.date))
-      .map(f => migrateFlight({ ...S.newFlight(f.date), ...f, id: f.id || S.uid() }));
+      .map(f => ({ ...S.newFlight(f.date), ...f, id: f.id || S.uid() }));
     s.adjustments = (Array.isArray(raw.adjustments) ? raw.adjustments : [])
       .filter(a => a && /^\d{4}-\d{2}-\d{2}$/.test(a.date))
       .map(a => ({ ...S.newAdjustment(a.date), ...a, id: a.id || S.uid() }));
@@ -165,6 +142,8 @@
       try {
         const raw = JSON.parse(reader.result);
         if (raw.format && raw.format !== FORMAT) throw new Error('Not a Miles & More Status Tracker file.');
+        // Version 1 files (per-segment fares, "upgrade paid") are no longer converted; they would load with wrong values.
+        if (!(+raw.version >= 2)) throw new Error('This file was saved by an older version of the tracker and can no longer be loaded.');
         resolve(S.normalize(raw));
       } catch (e) { reject(e); }
     };
@@ -194,7 +173,7 @@
     const s = S.empty();
     const today = MM.engine.todayISO();
     const plan = [
-      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, paid, flightCost, upgradeCost, co2, co2Cost, pnr]
+      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, paid, fare (added to the booking), upgradeCost, co2, co2Cost, pnr]
       [-14, 'LH400', 'FRA', 'JFK', 'Economy', 'Business', true, 780, 650, 'medium', 18, 'K7XQ2P'],
       [-14, 'LH401', 'JFK', 'FRA', 'Economy', 'Economy', false, 0, 0, 'none', 0, 'K7XQ2P'],
       [-9, 'LX318', 'ZRH', 'LHR', 'Economy', 'Economy', false, 189, 0, 'none', 0, 'R2MM8D'],
@@ -220,7 +199,8 @@
       s.apiCache[no] = { queried: true, source: 'adsbdb.com (demo)', fetchedAt: new Date().toISOString(), status: 'ok', response: resp };
       const f = { ...S.newFlight(date), flightNo: no, airlineCode: p.code, airlineName: p.airline.name, bookingCode: pnr,
         bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : paid ? 'bid' : 'voucher',
-        flightCost: fc, upgradeCost: uco, co2Level: co2, co2Cost: co2c };
+        upgradeCost: uco, co2Level: co2, co2Cost: co2c };
+      s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
       f.route = MM.api.routeFromCache(s.apiCache[no]);
       f.routeLookup = { queried: true, status: 'ok', fetchedAt: s.apiCache[no].fetchedAt, source: 'cache' };
       s.flights.push(f);
@@ -229,6 +209,6 @@
     const lx = s.flights.find(f => f.flightNo === 'LX318');
     const cd = new Date(lx.date + 'T12:00:00'); cd.setDate(cd.getDate() + 10);
     s.adjustments.push({ ...S.newAdjustment(cd.toISOString().slice(0, 10)), p: 20, qp: 20, hon: 0, remark: 'Statement: retro credit for missing LX segment' });
-    return S.normalize({ ...s, version: 1 });   // moves the per-segment demo fares into their bookings
+    return s;
   };
 })();

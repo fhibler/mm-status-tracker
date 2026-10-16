@@ -7,7 +7,7 @@ It is deployed to GitHub Pages by `.github/workflows/deploy.yml`.
 
 - `js/data.js`: airlines and earning groups, zones, default rules (`MM.DEFAULT_RULES`)
 - `js/engine.js`: pure calculation logic (earning, haul, status, history, rail caps, soft landing)
-- `js/store.js`: state, `.json` import/export, migrations (`S.normalize`, `rulesVersion`), demo data
+- `js/store.js`: state, `.json` import/export (`S.normalize` fills defaults; no migrations, older files are refused), demo data
 - `js/api.js`: adsbdb.com route lookup with a cache that is saved in the `.json`
 - `js/app.js`, `js/charts.js`: UI and SVG charts
 - `js/airports.js`: generated in CI by `tools/build-airports.ps1` and git-ignored
@@ -17,7 +17,7 @@ It is deployed to GitHub Pages by `.github/workflows/deploy.yml`.
 
 Follow **[docs/UPDATING-RULES.md](docs/UPDATING-RULES.md)**. It covers the sources, how to read them (the
 pages are behind a bot check, so use the built-in browser and never bypass it), what to compare, which files
-to change, and how to migrate saved user data when a default changes.
+to change, and what to do about saved user data when a default changes.
 
 ## Working here
 

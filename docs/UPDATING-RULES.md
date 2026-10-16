@@ -96,15 +96,17 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 ### Changing a default in `MM.DEFAULT_RULES`
 
 Users keep their rules in localStorage and in exported `.json` files, and `S.normalize` keeps stored values over
-the defaults. A changed default therefore does **not** reach existing users on its own:
+the defaults. A changed default therefore does **not** reach existing data on its own. The app has a single user
+and keeps **no migration code** (the old ones were removed on 2026-10-16, after the data had been migrated):
 
-1. Increase `rulesVersion` in `S.empty()` (`js/store.js`).
-2. In `S.normalize`, add a migration that runs only if `raw.settings.rulesVersion` is older **and** the stored value
-   still equals the old default, so values the user changed on purpose are kept. Example: First Class
-   intercontinental 300 → 400 (rulesVersion 2).
-3. Add a test that an old file is migrated and a current file is kept as it is.
-4. New keys (e.g. `railCaps`) need a merge line in `S.normalize` (`{ ...d.key, ...(r.key || {}) }`). A version bump
-   isn't needed for those.
+1. Tell the user which value changed. They update it in Settings, or use "Reset rules to defaults" if they never
+   changed the rules on purpose.
+2. New keys (e.g. `railCaps`) need a merge line in `S.normalize` (`{ ...d.key, ...(r.key || {}) }`), so saved data
+   gets the default for the new key.
+3. If a data model change makes saved data wrong (e.g. a renamed field), add a temporary migration in `S.normalize`
+   plus a `save()` after loading in `js/app.js`, raise `version` in `S.empty()` and refuse older files in
+   `S.importFile`. Once the user has opened the deployed site once and re-saved their `.json` files, remove the
+   migration again.
 
 ## 4. Verify
 

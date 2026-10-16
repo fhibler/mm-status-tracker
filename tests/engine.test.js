@@ -49,14 +49,6 @@ assert.deepStrictEqual([e.p, e.qp, e.hon], [200, 200, 200]);
   const got = ['fixed-online', 'fixed-airport', 'bid', 'miles', 'voucher', 'operational', ''].map(up).join(',');
   assert.strictEqual(got, '200,200,200,60,60,60,60');
 }
-// old files: upgradePaid true -> Fixed (Online), false -> not specified
-{
-  const s = MM.store.normalize({ flights: [
-    { date: '2026-01-01', upgradeClass: 'Business', bookedClass: 'Economy', upgradePaid: true },
-    { date: '2026-01-02', upgradeClass: 'Business', bookedClass: 'Economy', upgradePaid: false },
-  ] });
-  assert.strictEqual(s.flights.map(f => f.upgradeType + ':' + ('upgradePaid' in f)).join(','), 'fixed-online:false,:false');
-}
 
 // cabin override beats booked class and paid upgrade
 e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid', earnClassOverride: 'Premium Economy' }), rules);
@@ -127,13 +119,8 @@ assert.strictEqual(E.statusFor(0, 0, 6500, rules, { hon: 1600 }), 'NONE');     /
   assert.strictEqual(MM.store.normalize(JSON.parse(JSON.stringify(st))).stays.length, 6);
 }
 
-// saved rules from before rulesVersion 2 get First 400; a later file keeps its own value
-{
-  const old = MM.store.normalize({ settings: { rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } });
-  assert.strictEqual(old.settings.rules.points.intercontinental.First, 400);
-  const custom = MM.store.normalize({ settings: { rulesVersion: 2, rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } });
-  assert.strictEqual(custom.settings.rules.points.intercontinental.First, 300);
-}
+// saved rules are kept as they are (no migrations): a stored First of 300 stays 300
+assert.strictEqual(MM.store.normalize({ settings: { rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } }).settings.rules.points.intercontinental.First, 300);
 
 // Luxair (co-issuing Miles & More partner) earns like a Lufthansa Group airline
 e = E.earn(flight({ airlineCode: 'LG', route: fraZrh, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
@@ -239,20 +226,19 @@ e = E.earn(flight({ airlineCode: 'LH', route: null }), rules);
 assert.ok(e.unknown && e.p === 0);
 
 
-// fares per booking code: older files are migrated by adding up the segments' fares; a fare is split evenly
+// fares per booking code: a booking's fare is split evenly over its segments
 {
-  const old = MM.store.normalize({ version: 1, flights: [
-    { date: '2026-03-01', bookingCode: 'abc123', flightNo: 'LH400', flightCost: 900 },
-    { date: '2026-03-08', bookingCode: 'ABC123', flightNo: 'LH401', flightCost: 100 },
+  const st = MM.store.normalize({ version: 2, bookings: { abc123: { fare: 1000 } }, flights: [
+    { date: '2026-03-01', bookingCode: 'abc123', flightNo: 'LH400', flightCost: 0 },
+    { date: '2026-03-08', bookingCode: 'ABC123', flightNo: 'LH401', flightCost: 0 },
     { date: '2026-04-01', bookingCode: '', flightNo: 'LH100', flightCost: 150 },
   ] });
-  assert.strictEqual(old.bookings.ABC123.fare, 1000);
-  assert.strictEqual(old.flights[0].flightCost, 0);
-  assert.strictEqual(E.fareShare(old, old.flights[0]), 500);
-  assert.strictEqual(E.fareShare(old, old.flights[2]), 150);   // no booking code: the segment's own fare
-  const ys = E.yearSummary(old, 2026);
+  assert.strictEqual(st.bookings.ABC123.fare, 1000);
+  assert.strictEqual(E.fareShare(st, st.flights[0]), 500);
+  assert.strictEqual(E.fareShare(st, st.flights[2]), 150);   // no booking code: the segment's own fare
+  const ys = E.yearSummary(st, 2026);
   assert.strictEqual(ys.cost.actual.flight + ys.cost.plan.flight, 1150);
-  // version 2 files are taken as they are; bookings without segments are dropped
+  // bookings without segments are dropped
   const v2 = MM.store.normalize({ version: 2, bookings: { ABC123: { fare: 700 }, GONE01: { fare: 50 } },
     flights: [{ date: '2026-03-01', bookingCode: 'ABC123', flightNo: 'LH400', flightCost: 0 }] });
   assert.strictEqual(v2.bookings.ABC123.fare, 700);
