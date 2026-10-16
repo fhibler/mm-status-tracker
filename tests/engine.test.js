@@ -115,7 +115,9 @@ assert.deepStrictEqual(h[2023], ['SEN', 'SEN', false]);
   assert.strictEqual(s.rows.length, 3);
   assert.strictEqual(s.events.length, 5);
   assert.strictEqual(s.statusActual, 'FTL');            // 1,990 P < 2,000 for Senator
-  assert.deepStrictEqual(E.years(st).slice(0, 1), [2020]);
+  // E.years returns an array from the vm context: compare elements, not with deepStrictEqual
+  // (its prototype differs from this file's Array.prototype, so a deep-equal check always fails).
+  assert.strictEqual(E.years(st)[0], 2020);
 }
 
 // unknown haul earns nothing
