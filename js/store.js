@@ -9,7 +9,7 @@
 
   S.empty = () => ({
     format: FORMAT, version: 2,   // file format; older files (version 1) are refused by S.importFile
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null } },
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '' },
     flights: [],
     bookings: {},      // booking code -> { fare }: one fare per booking, split evenly over its segments
     adjustments: [],   // manual point corrections from the account statement
@@ -36,6 +36,15 @@
   S.newStay = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), hotel: '', nights: 2, remark: '' });
 
   S.bookingKey = (code) => MM.engine.bookingKey(code);
+
+  /** Miles & More number: digits only (cards show it in groups, e.g. "992 000 123 456 789"). */
+  S.memberNumber = (v) => String(v || '').replace(/\D/g, '').slice(0, 20);
+
+  /** "miles-and-more-992000123456789.json" with a Miles & More number, else "miles-and-more-status-2026-10-16.json". */
+  S.fileName = (state) => {
+    const n = S.memberNumber(state.settings && state.settings.memberNumber);
+    return n ? `miles-and-more-${n}.json` : `miles-and-more-status-${MM.engine.todayISO()}.json`;
+  };
 
   /**
    * Fares are stored once per booking code (state.bookings); segments without a booking code keep their own
@@ -97,6 +106,7 @@
       };
     }
     if (raw.settings && raw.settings.currency) s.settings.currency = raw.settings.currency;
+    if (raw.settings && raw.settings.memberNumber) s.settings.memberNumber = S.memberNumber(raw.settings.memberNumber);
     if (raw.settings && raw.settings.startStatus && MM.STATUS_ORDER.includes(raw.settings.startStatus.status)) {
       s.settings.startStatus = { status: raw.settings.startStatus.status, year: +raw.settings.startStatus.year || null };
     }
@@ -130,7 +140,7 @@
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `miles-and-more-status-${MM.engine.todayISO()}.json`;
+    a.download = S.fileName(state);
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);

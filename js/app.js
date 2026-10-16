@@ -726,6 +726,12 @@
   };
 
   /* ================= settings view ================= */
+  /** "992000123456789" -> "992 000 123 456 789", as printed on the card. */
+  const groupDigits = (d) => String(d || '').replace(/(\d{3})(?=\d)/g, '$1 ');
+  const memberHint = (d) => (!d ? 'Optional. Becomes part of the .json file name.'
+    : d.length === 15 ? `File name: ${S.fileName({ settings: { memberNumber: d } })}`
+    : `${d.length} digits – card numbers usually have 15. File name: ${S.fileName({ settings: { memberNumber: d } })}`);
+
   const renderSettings = () => {
     const r = state.settings.rules;
     const host = $('#view-settings');
@@ -788,6 +794,8 @@
         <div class="card">
           <div class="card-head"><h2>Data</h2></div>
           <div class="grid">
+            <label>Miles &amp; More number<input id="memberNumber" inputmode="numeric" autocomplete="off" placeholder="992 000 000 000 000" value="${esc(groupDigits(state.settings.memberNumber))}">
+              <small class="field-hint" id="memberHint">${memberHint(state.settings.memberNumber)}</small></label>
             <label>Currency<select id="currency">${['EUR', 'CHF', 'USD', 'GBP'].map(c => `<option ${c === state.settings.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
           </div>
           <p class="hint">Data is kept in this browser (localStorage) and can be saved / loaded as <code>.json</code>.
@@ -815,6 +823,13 @@
       save(); toast('Rules updated');
     }));
     $('#currency', host).addEventListener('change', (e) => { state.settings.currency = e.target.value; save(); toast('Currency updated'); });
+    const member = $('#memberNumber', host);
+    member.addEventListener('input', () => { $('#memberHint', host).textContent = memberHint(S.memberNumber(member.value)); });
+    member.addEventListener('change', () => {
+      state.settings.memberNumber = S.memberNumber(member.value);
+      member.value = groupDigits(state.settings.memberNumber);
+      save(); toast(state.settings.memberNumber ? 'Miles & More number saved' : 'Miles & More number removed');
+    });
     const saveStart = () => {
       const status = $('#startStatus', host).value;
       const y = Math.round(+$('#startYear', host).value);
@@ -1326,11 +1341,13 @@
     e.target.value = '';
     if (!file) return;
     try {
+      const keepNumber = state.settings.memberNumber;
       state = await S.importFile(file);
+      if (!state.settings.memberNumber) state.settings.memberNumber = keepNumber;   // files saved before the number was set
       const ys = E.years(state);
       if (!ys.includes(year)) year = ys[ys.length - 1];
       save(); render();
-      toast(`Loaded ${state.flights.length} flight(s) · ${Object.keys(state.apiCache).length} cached route lookup(s)`);
+      toast(`Loaded ${state.settings.memberNumber ? groupDigits(state.settings.memberNumber) + ' · ' : ''}${state.flights.length} flight(s) · ${Object.keys(state.apiCache).length} cached route lookup(s)`);
     } catch (err) {
       toast('Could not load file: ' + err.message);
     }

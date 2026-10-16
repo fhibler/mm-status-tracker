@@ -280,6 +280,14 @@ assert.ok(e.unknown && e.p === 0);
   assert.strictEqual(again.plans['2026'].mix[0].count, 2);
   assert.strictEqual(again.plans['2026'].mix[0].kind, 'LHG');
 }
+// Miles & More number: digits only, saved in the settings and used in the .json file name (without a date)
+{
+  const st = MM.store.normalize({ version: 2, settings: { memberNumber: '992 000-123 456 789' } });
+  assert.strictEqual(st.settings.memberNumber, '992000123456789');
+  assert.strictEqual(MM.store.fileName(st), 'miles-and-more-992000123456789.json');
+  assert.ok(/^miles-and-more-status-\d{4}-\d{2}-\d{2}\.json$/.test(MM.store.fileName(MM.store.empty())));
+}
+
 // demo data round-trips through normalize
 const demo = MM.store.demo();
 const again = MM.store.normalize(JSON.parse(JSON.stringify(demo)));
