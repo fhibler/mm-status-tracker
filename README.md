@@ -67,16 +67,27 @@ powershell -ExecutionPolicy Bypass -File tools/serve.ps1
 
 Then open http://localhost:8765. Your data also autosaves to the browser's localStorage.
 
+The airport table `js/airports.js` is generated, not committed. Build it once to resolve airports
+you type by hand (without it, only airports from route lookups are known):
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/build-airports.ps1
+```
+
 ## Tests
 
 ```bash
 node tests/engine.test.js
 ```
 
+The tests expect `js/airports.js`, so build it first (see above).
+
 ## Deploy (GitHub Pages)
 
-`.github/workflows/deploy.yml` checks the JavaScript syntax and runs the engine tests on every push and
-pull request. On pushes to `main`, it also deploys the site to GitHub Pages.
+`.github/workflows/deploy.yml` downloads the current OurAirports data, builds `js/airports.js`, checks
+the JavaScript syntax and runs the engine tests on every push and pull request. On pushes to `main`,
+on manual runs and once a week (Monday, 03:17 UTC, to pick up fresh airport data) it also deploys the
+site to GitHub Pages.
 
 1. Push this folder to a GitHub repository (`main` branch).
 2. In the repository, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
@@ -105,7 +116,8 @@ are used here only to describe what the tool is compatible with.
 
 Points, status dates and costs are estimates. The official Miles & More terms and your account
 statement always apply. Route data comes from [adsbdb.com](https://www.adsbdb.com) and may be
-incomplete or out of date.
+incomplete or out of date. Airport data for routes you type by hand (5,400+ airports with an IATA
+code) comes from [OurAirports](https://ourairports.com/data/), which is public domain.
 
 ## License
 

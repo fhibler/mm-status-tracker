@@ -463,7 +463,7 @@
         return { iata, icao: a.icao_code, name: a.name, city: a.municipality, country: a.country_iso_name, countryName: a.country_name, lat: a.latitude, lon: a.longitude };
       }
     }
-    return MM.AIRPORTS[iata] ? { ...MM.AIRPORTS[iata] } : { iata, country: null, lat: null, lon: null };
+    return MM.airport(iata) || { iata, country: null, lat: null, lon: null };
   };
 
   const routeInfo = () => {

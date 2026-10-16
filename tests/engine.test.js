@@ -7,7 +7,7 @@ const assert = require('assert');
 const ctx = { window: {}, console, Set, Math, Date, JSON, Object, Array, String, Number };
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ['data.js', 'engine.js', 'api.js', 'store.js']) {
+for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), ctx, { filename: f });
 }
 const { MM } = ctx;
@@ -21,6 +21,11 @@ assert.strictEqual(E.parseFlightNo('lh 400').iata, 'LH400');
 assert.strictEqual(E.parseFlightNo('4Y123').code, '4Y');
 assert.strictEqual(E.parseFlightNo('DLH400').code, 'LH');
 assert.strictEqual(E.parseFlightNo('12345'), null);
+
+// airport table (manual routes)
+assert.strictEqual(MM.airport('aus').country, 'US');
+assert.strictEqual(MM.airport('AUS').city, 'Austin');
+assert.strictEqual(MM.airport('XXX'), null);
 
 // haul
 const fraJfk = { origin: ap('DE'), destination: ap('US') };

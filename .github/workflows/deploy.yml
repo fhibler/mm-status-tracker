@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'   # weekly redeploy with fresh OurAirports data
 
 permissions:
   contents: read
@@ -24,6 +26,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Download OurAirports data
+        run: curl -sSfL --retry 3 -o "$RUNNER_TEMP/airports.csv" https://davidmegginson.github.io/ourairports-data/airports.csv
+
+      - name: Build airport table (js/airports.js)
+        shell: pwsh
+        run: ./tools/build-airports.ps1 -Csv "$env:RUNNER_TEMP/airports.csv"
 
       - name: Check JavaScript syntax
         run: for f in js/*.js; do node --check "$f"; done
