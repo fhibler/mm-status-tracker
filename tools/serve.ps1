@@ -1,5 +1,5 @@
 # Minimal static file server for local testing: powershell -ExecutionPolicy Bypass -File tools\serve.ps1
-param([string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path, [int]$Port = 8765)
+param([string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path, [int]$Port = $(if ($env:PORT) { $env:PORT } else { 8765 }))   # PORT: set by the preview tool when 8765 is taken
 $Root = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'   # trailing separator: a sibling folder like "<root>-old" must not match
 $types = @{ '.html'='text/html; charset=utf-8'; '.css'='text/css'; '.js'='application/javascript'; '.json'='application/json'; '.svg'='image/svg+xml' }
 $l = New-Object System.Net.HttpListener

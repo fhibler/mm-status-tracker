@@ -405,7 +405,7 @@
   /** Cabin class tag in the Lufthansa app colours (Economy / Premium Economy green, Business slate, First red). */
   const clsBadge = (c) => `<span class="cls-badge cls-${MM.CLASS_SHORT[c] || 'Y'}">${esc(c)}</span>`;
 
-  const signed = (v) => (v > 0 ? '+' : '') + num(v);
+  const signed = (v) => (v > 0 ? '+' + num(v) : v < 0 ? '−' + num(-v) : '0');
   const renderAdjustmentsCard = (sum) => {
     const rows = sum.adjustments.map(r => `<tr data-adj-id="${esc(r.adj.id)}" class="${r.planned ? 'planned' : ''}">
         <td>${C.fmtDate(r.adj.date)}</td>
@@ -499,7 +499,7 @@
   ];
   const mixLabel = (r) => `${r.count} × ${r.cls} ${r.kind === 'RAIL' ? 'train' : r.haul === 'continental' ? 'continental' : 'intercont.'}${r.kind === 'STAR' ? ' (Star Alliance)' : ''}${r.co2Level !== 'none' && r.kind !== 'RAIL' ? ` + ${MM.CO2_LABEL[r.co2Level]}` : ''}`;
   const pts = (e) => `${num(e.p)} · ${num(e.qp)} · ${num(e.hon)}`;
-  const plusPts = (e) => [e.p, e.qp, e.hon].map(v => (v ? '+' + num(v) : '0')).join(' · ');
+  const plusPts = (e) => [e.p, e.qp, e.hon].map(signed).join(' · ');   // +60 · −40 · 0
   const opts = (list, cur, lab = (x) => x) => list.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(lab(v))}</option>`).join('');
 
   /** Cost to suggest for a booster level: the flight's own cost for its own level, else the average you paid. */
