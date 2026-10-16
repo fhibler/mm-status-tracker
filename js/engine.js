@@ -62,11 +62,14 @@
   E.haul = (f) => (f.haulOverride && f.haulOverride !== 'auto' ? f.haulOverride
     : E.autoHaul(f) || (f.transport === 'rail' || f.transport === 'bus' ? 'continental' : null));
 
-  /** Cabin that earns: manual override, else the paid upgrade class, else the booked class. */
+  /** Cabin that earns: manual override, else the upgrade class (fixed or bid upgrade), else the booked class. */
   E.earningClass = (f) => {
     if (f.earnClassOverride && f.earnClassOverride !== 'auto') return f.earnClassOverride;
-    return f.upgradePaid && f.upgradeClass ? f.upgradeClass : f.bookedClass;
+    return E.upgradeEarns(f) && f.upgradeClass ? f.upgradeClass : f.bookedClass;
   };
+
+  /** Fixed (online / airport) and bid upgrades earn in the upgraded class; miles, voucher and operational ones don't. */
+  E.upgradeEarns = (f) => !!(MM.UPGRADE_TYPES[f.upgradeType] || {}).earnsUpgrade;
 
   /**
    * Points earned for one segment, incl. CO2 booster.

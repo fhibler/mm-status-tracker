@@ -6,11 +6,11 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 ## Features
 
 - **Flight log per CY**: booking code, flight date, flight number, airline (taken from the flight number),
-  booked class, upgrade class (defaults to the booked class), upgrade paid, flight cost, upgrade cost.
+  booked class, upgrade class (defaults to the booked class), upgrade type (Fixed online / Fixed airport / Bid / Miles / Voucher / Operational), flight cost, upgrade cost.
 - **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key).
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.
-- **Points engine**: earns on the booked class, or on the upgrade class when the upgrade was paid.
+- **Points engine**: earns on the booked class, or on the upgrade class for fixed-price (online or airport) and bid upgrades. Upgrades with miles, vouchers or operational upgrades earn on the booked class.
   - Lufthansa Group airlines and co-issuing partners (Air Dolomiti, Austrian, Brussels, Croatia, Discover,
     Eurowings, ITA, LOT, Lufthansa, Lufthansa City, Luxair, SWISS): Points, QP and HON Circle Points
   - Star Alliance airlines: Points only

@@ -98,7 +98,18 @@ MM.airport = (iata) => {
   return a ? { ...a } : null;
 };
 
-MM.CO2_LEVELS = ['none', 'small', 'medium', 'large', 'xlarge'];
+/* How an upgrade was obtained. Only fixed-price and bid upgrades earn in the upgraded class;
+ * all others earn in the booked class. '' = not specified (also earns in the booked class). */
+MM.UPGRADE_TYPES = {
+  'fixed-online':  { label: 'Fixed (Online)',  earnsUpgrade: true },
+  'fixed-airport': { label: 'Fixed (Airport)', earnsUpgrade: true },
+  'bid':           { label: 'Bid',             earnsUpgrade: true },
+  'miles':         { label: 'Miles',           earnsUpgrade: false },
+  'voucher':       { label: 'Voucher',         earnsUpgrade: false },
+  'operational':   { label: 'Operational',     earnsUpgrade: false },
+};
+
+MM.CO2_LEVELS =['none', 'small', 'medium', 'large', 'xlarge'];
 MM.CO2_LABEL = { none: 'None', small: 'Small', medium: 'Medium', large: 'Large', xlarge: 'X-Large' };
 
 /* Default rules (Miles & More status programme since 2024). Editable in Settings. */

@@ -19,7 +19,7 @@
   S.newFlight = (date) => ({
     id: S.uid(), bookingCode: '', date: date || MM.engine.todayISO(), transport: 'flight',   // 'flight' | 'rail' | 'bus'
     flightNo: '', airlineCode: '', airlineName: '', operatingFlightNo: '',
-    earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradePaid: false,
+    earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradeType: '',   // see MM.UPGRADE_TYPES
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
     earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, includeInPlan: true, notes: '',
   });
@@ -29,6 +29,15 @@
 
   /** Marriott Bonvoy stay; date = check-out date (the stay is credited when it is completed). */
   S.newStay = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), hotel: '', nights: 2, remark: '' });
+
+  /** Older files stored `upgradePaid: true/false`; paid becomes "Fixed (Online)", unpaid "not specified" (same earning). */
+  const migrateFlight = (f) => {
+    if ('upgradePaid' in f) {
+      if (!f.upgradeType) f.upgradeType = f.upgradePaid ? 'fixed-online' : '';
+      delete f.upgradePaid;
+    }
+    return f;
+  };
 
   /** Fill gaps so that older/handwritten files keep working. */
   S.normalize = (raw) => {
@@ -60,7 +69,7 @@
     s.apiCache = raw.apiCache && typeof raw.apiCache === 'object' ? raw.apiCache : {};
     s.flights = (Array.isArray(raw.flights) ? raw.flights : [])
       .filter(f => f && /^\d{4}-\d{2}-\d{2}$/.test(f.date))
-      .map(f => ({ ...S.newFlight(f.date), ...f, id: f.id || S.uid() }));
+      .map(f => migrateFlight({ ...S.newFlight(f.date), ...f, id: f.id || S.uid() }));
     s.adjustments = (Array.isArray(raw.adjustments) ? raw.adjustments : [])
       .filter(a => a && /^\d{4}-\d{2}-\d{2}$/.test(a.date))
       .map(a => ({ ...S.newAdjustment(a.date), ...a, id: a.id || S.uid() }));
@@ -151,7 +160,8 @@
       const resp = { flightroute: { callsign: no, callsign_iata: no, airline: { name: p.airline.name, iata: p.code, icao: p.airline.icao }, origin: apResp(from), destination: apResp(to) } };
       s.apiCache[no] = { queried: true, source: 'adsbdb.com (demo)', fetchedAt: new Date().toISOString(), status: 'ok', response: resp };
       const f = { ...S.newFlight(date), flightNo: no, airlineCode: p.code, airlineName: p.airline.name, bookingCode: pnr,
-        bookedClass: bc, upgradeClass: uc, upgradePaid: paid, flightCost: fc, upgradeCost: uco, co2Level: co2, co2Cost: co2c };
+        bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : paid ? 'bid' : 'voucher',
+        flightCost: fc, upgradeCost: uco, co2Level: co2, co2Cost: co2c };
       f.route = MM.api.routeFromCache(s.apiCache[no]);
       f.routeLookup = { queried: true, status: 'ok', fetchedAt: s.apiCache[no].fetchedAt, source: 'cache' };
       s.flights.push(f);

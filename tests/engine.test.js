@@ -38,13 +38,28 @@ assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('JP'), destination: a
 assert.strictEqual(E.autoHaul(flight({ route: { origin: ap('DE'), destination: ap('EG') } })), 'continental');
 
 // LHG earning, upgrade only counts when paid
-let e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: false }), rules);
+let e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'voucher' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [60, 60, 0]);
-e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: true }), rules);
+e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'fixed-online' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [200, 200, 200]);
 
+// upgrade types: only fixed (online / airport) and bid earn in the upgraded class
+{
+  const up = (upgradeType) => E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType }), rules).p;
+  const got = ['fixed-online', 'fixed-airport', 'bid', 'miles', 'voucher', 'operational', ''].map(up).join(',');
+  assert.strictEqual(got, '200,200,200,60,60,60,60');
+}
+// old files: upgradePaid true -> Fixed (Online), false -> not specified
+{
+  const s = MM.store.normalize({ flights: [
+    { date: '2026-01-01', upgradeClass: 'Business', bookedClass: 'Economy', upgradePaid: true },
+    { date: '2026-01-02', upgradeClass: 'Business', bookedClass: 'Economy', upgradePaid: false },
+  ] });
+  assert.strictEqual(s.flights.map(f => f.upgradeType + ':' + ('upgradePaid' in f)).join(','), 'fixed-online:false,:false');
+}
+
 // cabin override beats booked class and paid upgrade
-e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: true, earnClassOverride: 'Premium Economy' }), rules);
+e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid', earnClassOverride: 'Premium Economy' }), rules);
 assert.deepStrictEqual([e.cls, e.p, e.qp, e.hon], ['Premium Economy', 80, 80, 0]);
 
 // Miles & More zones: North Africa counts as Europe, Israel as Asia, Greenland as North America
