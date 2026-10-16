@@ -47,11 +47,31 @@
     sel.innerHTML = [...ys].sort((a, b) => b - a).map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
   };
 
+  /* Wide tables: wrap each .table-wrap so a fade on the left/right edge shows when more columns are hidden. */
+  const updateScrollHint = (wrap) => {
+    const box = wrap.parentElement;
+    box.classList.toggle('more-left', wrap.scrollLeft > 1);
+    box.classList.toggle('more-right', wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1);
+  };
+  const enhanceTables = () => {
+    for (const wrap of $$('.view:not([hidden]) .table-wrap')) {
+      if (!wrap.parentElement.classList.contains('table-scroll')) {
+        const box = document.createElement('div');
+        box.className = 'table-scroll';
+        wrap.replaceWith(box);
+        box.appendChild(wrap);
+        wrap.addEventListener('scroll', () => updateScrollHint(wrap), { passive: true });
+      }
+      updateScrollHint(wrap);
+    }
+  };
+
   const render = () => {
     renderYearSelect();
     if (view === 'dashboard') renderDashboard();
     if (view === 'flights') renderFlights();
     if (view === 'settings') renderSettings();
+    enhanceTables();
   };
 
   /* ================= dashboard ================= */
@@ -333,25 +353,23 @@
     const showCO2 = sum.rows.some(r => r.f.co2Level && r.f.co2Level !== 'none');
     const flown = sum.rows.filter(r => !r.planned), planned = sum.rows.filter(r => r.planned);
     const missing = sum.rows.filter(r => !r.f.route || r.e.unknown).length;
-    const cols = 15 + (showCO2 ? 2 : 0);
+    // Flown / planned is shown by the section rows, so there is no status column.
+    const cols = 12 + (showCO2 ? 1 : 0);
 
     const row = (r) => {
       const f = r.f, up = f.upgradeClass && f.upgradeClass !== f.bookedClass;
+      const co2 = f.co2Level && f.co2Level !== 'none';
       return `<tr data-id="${f.id}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
-        <td class="num" style="text-align:left">${C.fmtDate(f.date)}</td>
-        <td><b>${esc(f.flightNo)}</b></td>
+        <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
+        <td><b>${esc(f.flightNo)}</b><div class="muted"><code>${esc(f.bookingCode || '–')}</code></div></td>
         <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
-        <td><code>${esc(f.bookingCode || '–')}</code></td>
         <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
         <td class="cls">${clsBadge(f.bookedClass)}</td>
-        <td class="cls">${up ? clsBadge(f.upgradeClass) : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
-        <td>${up ? (f.upgradePaid ? 'Yes' : 'No') : '–'}</td>
-        ${showCO2 ? `<td>${f.co2Level && f.co2Level !== 'none' ? esc(MM.CO2_LABEL[f.co2Level]) : '–'}</td>` : ''}
+        <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradePaid ? 'paid' : 'not paid'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
         <td class="num">${money(r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
-        ${showCO2 ? `<td class="num">${f.co2Level && f.co2Level !== 'none' ? money(r.c.co2) : '–'}</td>` : ''}
-        <td>${r.planned ? `<span class="pill planned">${r.counts ? 'Planned' : 'Excluded'}</span>` : '<span class="pill">Flown</span>'}</td>
+        ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
       </tr>`;
     };
     const tot = (rs) => rs.reduce((a, r) => {
@@ -359,10 +377,9 @@
       a.p += r.e.p; a.qp += r.e.qp; a.hon += r.e.hon; a.flight += r.c.flight; a.upgrade += r.c.upgrade; a.co2 += r.c.co2;
       return a;
     }, { p: 0, qp: 0, hon: 0, flight: 0, upgrade: 0, co2: 0 });
-    const footRow = (label, t) => `<tr><td colspan="${showCO2 ? 10 : 9}">${label}</td>
+    const footRow = (label, t) => `<tr><td colspan="7">${label} <span class="muted">· costs ${money(t.flight + t.upgrade + t.co2)}</span></td>
       <td class="num">${num(t.p)}</td><td class="num">${num(t.qp)}</td><td class="num">${num(t.hon)}</td>
-      <td class="num">${money(t.flight)}</td><td class="num">${money(t.upgrade)}</td>${showCO2 ? `<td class="num">${money(t.co2)}</td>` : ''}
-      <td class="num">${money(t.flight + t.upgrade + t.co2)}</td></tr>`;
+      <td class="num">${money(t.flight)}</td><td class="num">${money(t.upgrade)}</td>${showCO2 ? `<td class="num">${money(t.co2)}</td>` : ''}</tr>`;
 
     host.innerHTML = `
       <div class="card">
@@ -376,10 +393,9 @@
         </div>
         ${sum.rows.length ? `<div class="table-wrap"><table>
           <thead><tr>
-            <th>Date</th><th>Flight</th><th>Airline</th><th>Booking</th><th>Route</th><th>Haul</th><th>Booked</th><th>Upgrade</th><th>Upg. paid</th>
-            ${showCO2 ? '<th>CO₂</th>' : ''}
-            <th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th class="num">Flight cost</th><th class="num">Upgrade cost</th>
-            ${showCO2 ? '<th class="num">CO₂ cost</th>' : ''}<th></th>
+            <th>Date</th><th>Flight</th><th>Airline</th><th>Route</th><th>Haul</th><th>Booked</th><th>Upgrade</th>
+            <th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th class="num">Fare</th><th class="num">Upg. cost</th>
+            ${showCO2 ? '<th class="num">CO₂ cost</th>' : ''}
           </tr></thead>
           <tbody>
             ${flown.length ? `<tr class="sep-row"><td colspan="${cols}">Flown</td></tr>${flown.map(row).join('')}` : ''}
@@ -932,7 +948,7 @@
   window.addEventListener('resize', () => {
     C.hideTip();
     clearTimeout(resizeT);
-    resizeT = setTimeout(() => { if (view === 'dashboard' && !dlg.open) renderDashboard(); }, 150);
+    resizeT = setTimeout(() => { if (view === 'dashboard' && !dlg.open) renderDashboard(); enhanceTables(); }, 150);
   });
   /* ---------- light / dark / system theme (per browser, not part of the .json) ---------- */
   const THEME_KEY = 'mm-status-tracker:theme';

@@ -302,3 +302,15 @@ label.btn { font-size: 14px; color: var(--ink); }
 .cls-C { --c: var(--cls-C); }
 .cls-F { --c: var(--cls-F); }
 :root[data-theme="dark"] .cls-badge { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); }
+
+/* ---------- horizontal scroll hint for wide tables ---------- */
+.table-scroll { position: relative; margin: 0 -18px; }
+.table-scroll > .table-wrap { margin: 0; }
+.table-scroll::before, .table-scroll::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 32px; z-index: 2;
+  pointer-events: none; opacity: 0; transition: opacity .15s;
+}
+.table-scroll::before { left: 0; background: linear-gradient(to right, var(--surface) 20%, transparent); }
+.table-scroll::after { right: 0; background: linear-gradient(to left, var(--surface) 20%, transparent); }
+.table-scroll.more-left::before, .table-scroll.more-right::after { opacity: 1; }
+th, td { padding-left: 7px; padding-right: 7px; }
