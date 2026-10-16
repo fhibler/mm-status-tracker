@@ -51,7 +51,7 @@
 
   /**
    * Cumulative progress across one calendar year (step line).
-   * opts: { year, key: 'p'|'qp'|'hon', color, label, rows (from engine.yearSummary), thresholds:[{v,label}], today }
+   * opts: { year, key: 'p'|'qp'|'hon', color, label, rows (events of engine.yearSummary), thresholds:[{v,label}], today }
    */
   C.cumulative = (host, opts) => {
     host.innerHTML = '';
@@ -65,7 +65,7 @@
     const act = [{ d: 0, v: 0 }], fc = [];
     let a = 0, f = 0, lastAct = 0;
     for (const r of opts.rows) {
-      const d = dayOfYear(r.f.date, year);
+      const d = dayOfYear(r.date, year);
       if (!r.planned) { a += r.e[k]; act.push({ d, v: a, r }); lastAct = a; }
       if (r.counts) {
         f += r.e[k];
@@ -120,7 +120,7 @@
       let va = 0, vf = 0;
       const on = [];
       for (const r of opts.rows) {
-        const rd = dayOfYear(r.f.date, year);
+        const rd = dayOfYear(r.date, year);
         if (rd > d) break;
         if (!r.planned) va += r.e[k];
         if (r.counts) vf += r.e[k];
@@ -154,7 +154,8 @@
 
   /**
    * Stacked vertical bars.
-   * opts: { categories:[label], series:[{key,label,color}], data:[{key:value,...}], format(v), note(i) }
+   * opts: { label, categories:[label], series:[{key,label,color}], data:[{key:value,...}], format(v),
+   *   dim(i) (faded bar), tipTitle(i), note(i) (extra tooltip HTML) }
    */
   C.stackedBars = (host, opts) => {
     host.innerHTML = '';
@@ -169,7 +170,7 @@
     const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': opts.label || 'bar chart' }, host);
     for (const v of yt) {
       el('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), class: 'gridline' }, svg);
-      el('text', { x: m.l - 6, y: Y(v) + 4, 'text-anchor': 'end' }, svg).textContent = opts.format(v, true);
+      el('text', { x: m.l - 6, y: Y(v) + 4, 'text-anchor': 'end' }, svg).textContent = opts.format(v);
     }
     el('line', { x1: m.l, x2: W - m.r, y1: m.t + ih, y2: m.t + ih, class: 'axis' }, svg);
     opts.categories.forEach((c, i) => {

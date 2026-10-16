@@ -21,6 +21,11 @@
     };
   };
 
+  /** What a flight remembers about the lookup of `flightNo` (f.routeLookup); via: the operating flight that gave the route. */
+  A.lookupInfo = (entry, flightNo, via) => ({
+    queried: true, status: entry.status, fetchedAt: entry.fetchedAt, source: entry.fromCache ? 'cache' : 'api', flightNo, via, error: entry.error,
+  });
+
   /** Airport by IATA code: from a cached route lookup, else from the bundled airport table (MM.airport). */
   A.airport = (state, iata) => {
     for (const c of Object.values(state.apiCache)) {

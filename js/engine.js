@@ -25,7 +25,7 @@
   /** Operating carrier of a codeshare (from f.operatingFlightNo), or null. */
   E.operating = (f) => {
     const p = f.operatingFlightNo ? E.parseFlightNo(f.operatingFlightNo) : null;
-    return p ? { ...p, name: (p.airline && p.airline.name) || p.code, group: p.airline ? p.airline.group : 'NONE' } : null;
+    return p ? { ...p, name: (p.airline && p.airline.name) || p.code } : null;
   };
 
   /** SWISS code-share LX8000–8499 operated by Edelweiss (WK): earns like SWISS (Miles & More FAQ). */
@@ -47,7 +47,7 @@
     const mkt = a ? a.group : 'NONE';
     const op = E.operating(f);
     if (!op || !op.airline || E.isEdelweissCodeshare(f)) return mkt;
-    return op.group;
+    return op.airline.group;
   };
 
   E.distanceKm = (a, b) => {
@@ -91,9 +91,9 @@
     const group = bus ? 'NONE' : E.earningGroup(f);
     const cls = E.earningClass(f);
     const rail = f.transport === 'rail';
-    const zero = { p: 0, qp: 0, hon: 0, base: { p: 0, qp: 0, hon: 0 }, haul, group, cls, rail, unknown: !haul };
+    const zero = { p: 0, qp: 0, hon: 0, haul, group, cls, rail, unknown: !haul };
     if (!haul || group === 'NONE') return zero;
-    const per = (rules.points[haul] || {})[cls] || 0;
+    const per = rules.points[haul][cls];
     const base = {
       p: per,
       qp: group === 'LHG' ? per : 0,
@@ -104,7 +104,7 @@
       p: Math.round(base.p * (1 + b.p / 100)),
       qp: Math.round(base.qp * (1 + b.qp / 100)),
       hon: Math.round(base.hon * (1 + b.hon / 100)),
-      base, haul, group, cls, rail, unknown: false,
+      haul, group, cls, rail, unknown: false,
     };
   };
 
@@ -128,12 +128,11 @@
     return b ? (+b.fare || 0) / (segs[k] || 1) : (+f.flightCost || 0);
   };
 
-  /** Costs of one segment; `fare` defaults to the segment's own fare (see E.fareShare). */
-  E.cost = (f, fare = +f.flightCost || 0) => {
-    const flight = fare;
-    const upgrade = f.upgradeClass && f.upgradeClass !== f.bookedClass ? (+f.upgradeCost || 0) : 0;
-    const co2 = f.co2Level && f.co2Level !== 'none' ? (+f.co2Cost || 0) : 0;
-    return { flight, upgrade, co2, total: flight + upgrade + co2 };
+  /** Costs of one segment; `fare` is its share of the fare (see E.fareShare). */
+  E.cost = (f, fare) => {
+    const upgrade = f.upgradeClass !== f.bookedClass ? (+f.upgradeCost || 0) : 0;
+    const co2 = f.co2Level !== 'none' ? (+f.co2Cost || 0) : 0;
+    return { flight: fare, upgrade, co2, total: fare + upgrade + co2 };
   };
 
   /**
@@ -157,15 +156,22 @@
     return 'NONE';
   };
   E.rank = (s) => MM.STATUS_ORDER.indexOf(s);
+  const best = (a, b) => (E.rank(a) >= E.rank(b) ? a : b);
 
   /** A status reached in `year` is valid immediately until the end of February of the year after next. */
   E.validUntil = (year) => new Date(Date.UTC(year + 2, 2, 0)).toISOString().slice(0, 10);
 
+  /** Starting status from the account statement (settings.startStatus) if it was earned in `year`, else 'NONE'. */
+  E.statementStatus = (state, year) => {
+    const s = state.settings.startStatus;
+    return s.year === year ? s.status : 'NONE';
+  };
+
   /** Calendar years that have flights, corrections or stays, plus the current year. */
-  E.years = (state) => {
+  E.years = (state, today = E.todayISO()) => {
     const items = [...state.flights, ...state.adjustments, ...state.stays];
     const ys = new Set(items.map(x => +x.date.slice(0, 4)));
-    ys.add(new Date().getFullYear());
+    ys.add(+today.slice(0, 4));
     return [...ys].sort((a, b) => a - b);
   };
 
@@ -185,10 +191,13 @@
   };
 
   /**
-   * Walks one calendar year in date order (flights, manual corrections and Marriott stays).
-   * rows: flights; adjustments: corrections; stays: hotel stays; events: all of them in date order.
-   * Also returns totals (actual vs. incl. plan), the dates on which each status was (or will be) reached and,
-   * for the forecast, the item that reached it (reached.forecastBy). Items after `today` are planned.
+   * Walks one calendar year in date order (flights, manual corrections and Marriott stays; on the same day in
+   * that order). rows: flights; adjustments: corrections; stays: hotel stays; events: all of them in date order.
+   * Also returns totals (actual vs. incl. plan), costs (actual, plan, all), the dates on which each status was
+   * (or will be) reached and, for the forecast, the item that reached it (reached.forecastBy). Items after `today`
+   * are planned. A starting status from the statement earned in this year raises statusActual / statusForecast
+   * (fromStatement: it is higher than the status earned with the tracked items); it has no date in `reached`.
+   * unknown: flights in the forecast that would earn but have no haul.
    */
   E.yearSummary = (state, year, today = E.todayISO()) => {
     const rules = state.settings.rules;
@@ -199,55 +208,56 @@
       ...state.adjustments.filter(inYear).map(a => ({ kind: 'adj', a, date: a.date })),
       ...state.stays.filter(inYear).map(s => ({ kind: 'stay', s, date: s.date })),
     ].sort((x, y) => x.date.localeCompare(y.date) || ORDER[x.kind] - ORDER[y.kind]);
-    const act = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 }, all = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 };
-    const cost = { actual: { flight: 0, upgrade: 0, co2: 0, total: 0 }, plan: { flight: 0, upgrade: 0, co2: 0, total: 0 } };
+    const zero = () => ({ p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 });
+    const noCost = () => ({ flight: 0, upgrade: 0, co2: 0, total: 0 });
+    const act = zero(), all = zero();
+    const cost = { actual: noCost(), plan: noCost(), all: noCost() };
     const reached = { actual: {}, forecast: {}, forecastBy: {} };
-    const adjTotal = { p: 0, qp: 0, hon: 0 }, stayTotal = { p: 0, qp: 0, hon: 0 };
+    const adjTotal = { p: 0, qp: 0, hon: 0 }, stayTotal = { p: 0 };
     const rows = [], adjustments = [], stays = [], events = [];
     let unknown = 0;
-    const NO_COST = { flight: 0, upgrade: 0, co2: 0, total: 0 };
     const segs = E.bookingSegments(state);
     const add = (t, e) => { t.p += e.p; t.qp += e.qp; t.hon += e.hon; if (e.rail) { t.qpRail += e.qp; t.honRail += e.hon; } };
+    /** Notes the first date on which totals t reach each status and, for the forecast, the item that did it. */
+    const markReached = (t, dates, date, by) => {
+      const s = E.status(t, rules);
+      for (const k of MM.STATUSES) if (E.rank(s) >= E.rank(k) && !dates[k]) { dates[k] = date; if (by) reached.forecastBy[k] = by; }
+    };
     for (const it of items) {
       const isAdj = it.kind === 'adj', isStay = it.kind === 'stay';
       const date = it.date;
       const planned = E.isPlanned(it, today);
       const counts = isAdj || isStay || !planned || it.f.includeInPlan !== false;
       const e = isAdj ? E.adjustmentEarn(it.a) : isStay ? E.stayEarn(it.s, rules, stayTotal.p) : E.earn(it.f, rules);
-      const c = isAdj || isStay ? NO_COST : E.cost(it.f, E.fareShare(state, it.f, segs));
-      const label = isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : it.f.flightNo;
-      if (it.kind === 'flight' && e.unknown) unknown++;
+      const c = isAdj || isStay ? noCost() : E.cost(it.f, E.fareShare(state, it.f, segs));
+      if (it.kind === 'flight' && counts && e.unknown && e.group !== 'NONE') unknown++;
       if (counts) {
         add(all, e);
-        const bucket = planned ? cost.plan : cost.actual;
-        for (const k of ['flight', 'upgrade', 'co2', 'total']) bucket[k] += c[k];
-        const s = E.status(all, rules);
-        for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.forecast[k]) { reached.forecast[k] = date; reached.forecastBy[k] = label; }
+        for (const k of Object.keys(c)) { (planned ? cost.plan : cost.actual)[k] += c[k]; cost.all[k] += c[k]; }
+        markReached(all, reached.forecast, date, isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : it.f.flightNo);
       }
       if (!planned) {
         add(act, e);
-        const s = E.status(act, rules);
-        for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.actual[k]) reached.actual[k] = date;
+        markReached(act, reached.actual, date);
       }
-      const base = { e, c, planned, counts, cum: { ...all }, cumActual: { ...act } };
-      const row = isAdj ? { ...base, adj: it.a, f: { date, flightNo: label } }
-        : isStay ? { ...base, stay: it.s, f: { date, flightNo: label } }
-        : { ...base, f: it.f };
+      const base = { date, e, c, planned, counts };
+      const row = isAdj ? { ...base, adj: it.a } : isStay ? { ...base, stay: it.s } : { ...base, f: it.f };
       if (isAdj) { adjustments.push(row); adjTotal.p += e.p; adjTotal.qp += e.qp; adjTotal.hon += e.hon; }
       else if (isStay) { stays.push(row); stayTotal.p += e.p; }
       else rows.push(row);
       events.push(row);
     }
+    const stmt = E.statementStatus(state, year), earned = E.status(act, rules);
     return {
       year, rows, adjustments, stays, events, adjTotal, stayTotal, actual: act, forecast: all, cost, reached, unknown,
-      statusActual: E.status(act, rules),
-      statusForecast: E.status(all, rules),
+      statusActual: best(earned, stmt),
+      statusForecast: best(E.status(all, rules), stmt),
+      fromStatement: E.rank(stmt) > E.rank(earned),
     };
   };
 
   /** Soft landing: one level below `s` (HON -> SEN -> FTL -> NONE). */
   E.softLanding = (s) => MM.STATUS_ORDER[Math.max(0, E.rank(s) - 1)];
-  const best = (a, b) => (E.rank(a) >= E.rank(b) ? a : b);
 
   /**
    * Status timeline per calendar year (gap years filled in, so soft landings cascade).
@@ -256,27 +266,21 @@
    * held: best of carriedIn and the status earned so far in `year`.
    * downgraded: held is below the status held in year-1 (prevHeld).
    * A starting status from the account statement (settings.startStatus = { status, year }) counts as
-   * earned in that year; the timeline then starts in that year at the latest.
+   * earned in that year (see E.yearSummary); the timeline then starts in that year at the latest.
    * hasPrev: the timeline has a year before `year` (otherwise nothing could be carried in).
    */
   E.history = (state, untilYear, today = E.todayISO()) => {
-    const ys = E.years(state);
+    const ys = E.years(state, today);
     if (untilYear && untilYear > ys[ys.length - 1]) ys.push(untilYear);
     const start = state.settings.startStatus;
-    const startYear = start.status !== 'NONE' && +start.year ? +start.year : null;
-    const first = startYear ? Math.min(ys[0], startYear) : ys[0];
+    const first = start.status !== 'NONE' && start.year ? Math.min(ys[0], start.year) : ys[0];
     const out = [];
     let prevHeld = 'NONE', prevEarned = 'NONE';
     for (let y = first; y <= ys[ys.length - 1]; y++) {
       const s = E.yearSummary(state, y, today);
-      const fromStatement = y === startYear && E.rank(start.status) > E.rank(s.statusActual);
-      if (fromStatement) {
-        s.statusActual = start.status;
-        s.statusForecast = best(s.statusForecast, start.status);
-      }
       const carriedIn = best(prevEarned, E.softLanding(prevHeld));
       const held = best(carriedIn, s.statusActual);
-      out.push({ ...s, carriedIn, held, prevHeld, fromStatement, hasPrev: y > first, downgraded: E.rank(held) < E.rank(prevHeld) });
+      out.push({ ...s, carriedIn, held, prevHeld, hasPrev: y > first, downgraded: E.rank(held) < E.rank(prevHeld) });
       prevHeld = held;
       prevEarned = s.statusActual;
     }
@@ -290,14 +294,6 @@
     return { p: Math.max(0, th.p - eff.p), qp: Math.max(0, th.qp - eff.qp) };
   };
 
-  /** Simple planning helper: how many extra LHG segments of a type would close the gap? */
-  E.segmentsNeeded = (t, key, haul, cls, co2Level, rules) => {
-    const e = E.earn({ haulOverride: haul, earningGroup: 'LHG', bookedClass: cls, co2Level }, rules);
-    const g = E.gap(t, key, rules);
-    const need = Object.keys(g).map(k => (g[k] === 0 ? 0 : e[k] ? Math.ceil(g[k] / e[k]) : Infinity));
-    return Math.max(0, ...need);
-  };
-
   /* ---------- planner scenarios ---------- */
   /**
    * One row of a planned mix: `count` extra segments of a kind.
@@ -308,9 +304,18 @@
     const rail = row.kind === 'RAIL';
     return E.earn({
       transport: rail ? 'rail' : 'flight', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
-      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, upgradeClass: row.cls,
-      co2Level: rail ? 'none' : row.co2Level,
+      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, co2Level: rail ? 'none' : row.co2Level,
     }, rules);
+  };
+
+  /**
+   * "Fill the gap": how many more Lufthansa Group flights of one type (seg = { haul, cls, co2Level }) close the gap
+   * to status `key` on top of totals t (Infinity if they can't). e: the earning of one of them.
+   */
+  E.segmentsNeeded = (t, key, seg, rules) => {
+    const e = E.mixRowEarn({ ...seg, kind: 'LHG' }, rules), g = E.gap(t, key, rules);
+    const n = Math.max(0, ...Object.keys(g).map(k => (g[k] === 0 ? 0 : e[k] ? Math.ceil(g[k] / e[k]) : Infinity)));
+    return { n, e };
   };
 
   /** Points a flight gains (or loses) with CO₂ booster `level` instead of its own. */
@@ -329,30 +334,32 @@
    * What-if scenario for a calendar year, on top of the forecast (flown + planned flights, corrections, stays):
    *  1. plan.co2 = { flightId: { level, cost } } – a CO₂ booster per existing or planned flight instead of its own
    *  2. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in)
-   * Returns the totals after each step, the extra cost of each step and the status reached.
+   * Returns the totals after each step, the extra cost of each step and the status reached (a starting status
+   * from the statement counts in every step, see E.yearSummary).
    */
   E.planScenario = (state, year, plan, today = E.todayISO()) => {
     const rules = state.settings.rules;
     const over = plan.co2;
     const base = E.yearSummary(state, year, today);
-    const flights = state.flights.map(f => (over[f.id] ? { ...f, co2Level: over[f.id].level, co2Cost: +over[f.id].cost || 0 } : f));
+    const flights = state.flights.map(f => (over[f.id] ? { ...f, co2Level: over[f.id].level, co2Cost: over[f.id].cost } : f));
     const withCo2 = E.yearSummary({ ...state, flights }, year, today);
-    const costOf = (s) => s.cost.actual.total + s.cost.plan.total;
     const total = { ...withCo2.forecast };
     let mixCost = 0;
     const mix = plan.mix.map(row => {
-      const n = Math.max(0, Math.round(+row.count || 0));
-      const e = E.mixRowEarn(row, rules);
+      const n = row.count, e = E.mixRowEarn(row, rules), cost = n * row.cost;
       total.p += n * e.p; total.qp += n * e.qp; total.hon += n * e.hon;
       if (e.rail) { total.qpRail += n * e.qp; total.honRail += n * e.hon; }
-      const cost = n * (+row.cost || 0);
       mixCost += cost;
       return { row, n, e, sum: { p: n * e.p, qp: n * e.qp, hon: n * e.hon }, cost };
     });
+    const costOf = (s) => s.cost.all.total;
     return {
       base, withCo2, mix, total,
       cost: { base: costOf(base), co2Extra: costOf(withCo2) - costOf(base), mix: mixCost, total: costOf(withCo2) + mixCost },
-      status: { actual: base.statusActual, forecast: base.statusForecast, withCo2: withCo2.statusForecast, total: E.status(total, rules) },
+      status: {
+        actual: base.statusActual, forecast: base.statusForecast, withCo2: withCo2.statusForecast,
+        total: best(E.status(total, rules), E.statementStatus(state, year)),
+      },
     };
   };
 })();

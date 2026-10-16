@@ -21,7 +21,7 @@
     (() => {
       const get = (p) => {
         const x = new XMLHttpRequest();
-        x.open('GET', '../' + p.replace(/^.*?(js|tests)\//, '$1/') + '?t=' + Date.now(), false);
+        x.open('GET', '../' + p + '?t=' + Date.now(), false);   // p is relative to the project root
         x.send();
         if (x.status !== 200) throw new Error('HTTP ' + x.status + ' for ' + p);
         return x.responseText;

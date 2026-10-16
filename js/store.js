@@ -2,7 +2,7 @@
 (function () {
   const S = (MM.store = {});
   const E = MM.engine;
-  const LS_KEY = 'mm-status-tracker:v1';
+  const LS_KEY = 'mm-status-tracker:v1';   // not the file format version: renaming it would lose the data saved in browsers
   const FORMAT = 'mm-status-tracker';
   const VERSION = 2;   // file format; older data (version 1) is refused by S.parse
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -57,16 +57,16 @@
     if (k) state.bookings[k] = { fare };
     const i = state.flights.findIndex(x => x.id === f.id);
     i >= 0 ? (state.flights[i] = f) : state.flights.push(f);
-    S.prune(state);
+    prune(state);
     return f;
   };
   S.deleteFlight = (state, id) => {
     state.flights = state.flights.filter(f => f.id !== id);
-    S.prune(state);
+    prune(state);
   };
 
   /** Drops bookings without segments and CO₂ what-ifs for flights that no longer exist or moved to another year. */
-  S.prune = (state) => {
+  const prune = (state) => {
     const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
     for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
     const yearOf = new Map(state.flights.map(f => [f.id, f.date.slice(0, 4)]));
@@ -80,6 +80,26 @@
   const safeId = (id) => (typeof id === 'string' && /^[\w-]{1,40}$/.test(id) ? id : S.uid());
   const list = (xs, make) => (Array.isArray(xs) ? xs : []).filter(x => isObj(x) && DATE.test(x.date))
     .map(x => ({ ...make(x.date), ...x, id: safeId(x.id) }));
+
+  /** Allowed values of a flight's choice fields; others get a new flight's default (upgradeClass: the booked class). */
+  const FLIGHT_CHOICES = {
+    transport: ['flight', 'rail', 'bus'],
+    earningGroup: ['auto', ...Object.keys(MM.GROUP_LABEL)],
+    haulOverride: ['auto', 'continental', 'intercontinental'],
+    bookedClass: MM.CLASSES,
+    upgradeClass: MM.CLASSES,
+    earnClassOverride: ['auto', ...MM.CLASSES],
+    upgradeType: ['', ...Object.keys(MM.UPGRADE_TYPES)],
+    co2Level: MM.CO2_LEVELS,
+  };
+  const normalizeFlight = (f) => {
+    const d = S.newFlight(f.date);
+    for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
+    return f;
+  };
+
+  /** Calendar years the app accepts, e.g. for the starting status. */
+  S.validYear = (y) => Number.isInteger(y) && y >= 2000 && y <= 2100;
 
   /** Saved rules over the defaults, value by value: only numbers are taken (no NaN from partial files), unknown keys are dropped. */
   const mergeRules = (d, r) => Object.fromEntries(Object.entries(d).map(([k, v]) => {
@@ -99,7 +119,7 @@
       }
       const mix = (Array.isArray(p.mix) ? p.mix : []).filter(isObj).map(r => S.newMixRow({
         id: safeId(r.id), count: Math.max(0, Math.round(+r.count || 0)),
-        kind: ['LHG', 'STAR', 'RAIL'].includes(r.kind) ? r.kind : 'LHG',
+        kind: Object.keys(MM.MIX_KIND).includes(r.kind) ? r.kind : 'LHG',
         haul: r.haul === 'intercontinental' ? 'intercontinental' : 'continental',
         cls: MM.CLASSES.includes(r.cls) ? r.cls : 'Economy',
         co2Level: MM.CO2_LEVELS.includes(r.co2Level) ? r.co2Level : 'none',
@@ -115,20 +135,21 @@
     if (!isObj(raw)) return s;
     const set = isObj(raw.settings) ? raw.settings : {};
     s.settings.rules = mergeRules(MM.DEFAULT_RULES, set.rules);
-    if (['EUR', 'CHF', 'USD', 'GBP'].includes(set.currency)) s.settings.currency = set.currency;
+    if (MM.CURRENCIES.includes(set.currency)) s.settings.currency = set.currency;
     s.settings.memberNumber = S.memberNumber(set.memberNumber);
     if (isObj(set.startStatus) && MM.STATUS_ORDER.includes(set.startStatus.status)) {
-      s.settings.startStatus = { status: set.startStatus.status, year: +set.startStatus.year || null };
+      const y = +set.startStatus.year;
+      s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };
     }
     s.apiCache = isObj(raw.apiCache) ? raw.apiCache : {};
-    s.flights = list(raw.flights, S.newFlight);
+    s.flights = list(raw.flights, S.newFlight).map(normalizeFlight);
     s.adjustments = list(raw.adjustments, S.newAdjustment);
     s.stays = list(raw.stays, S.newStay);
     for (const [k, b] of Object.entries(isObj(raw.bookings) ? raw.bookings : {})) {
       if (E.bookingKey(k)) s.bookings[E.bookingKey(k)] = { fare: Math.max(0, +(isObj(b) && b.fare) || 0) };
     }
     s.plans = normalizePlans(raw.plans);
-    return S.prune(s);
+    return prune(s);
   };
 
   /** Parses saved data (a .json file or localStorage). Throws for other files and for the old format (version 1). */
@@ -214,7 +235,7 @@
         upgradeCost: uco, co2Level: co2, co2Cost: co2c };
       s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
       f.route = MM.api.routeFromCache(s.apiCache[no]);
-      f.routeLookup = { queried: true, status: 'ok', fetchedAt: s.apiCache[no].fetchedAt, source: 'cache' };
+      f.routeLookup = MM.api.lookupInfo({ ...s.apiCache[no], fromCache: true }, no);
       s.flights.push(f);
     });
     // One statement correction, 10 days after the LX318 segment.

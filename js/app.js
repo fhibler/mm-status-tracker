@@ -30,10 +30,22 @@
   /** "Senator → Frequent Traveller (not requalified)" for a soft-landing year, else ''. */
   const downgradeTxt = (h, when = '') => (h.downgraded ? `${esc(MM.STATUS_LABEL[h.prevHeld])} → ${esc(MM.STATUS_LABEL[h.held])}${when} (not requalified)` : '');
   const routeTxt = (f) => (f.route && f.route.origin && f.route.destination ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}` : '<span class="pill warn">no route</span>');
-  const isFlight = (f) => !f.transport || f.transport === 'flight';
-  /** A flight whose route can still be looked up (trains and buses are not in adsbdb). */
-  const needsLookup = (f) => isFlight(f) && !f.route;
+  const isFlight = (f) => f.transport === 'flight';
+  /** A flight without route that a lookup may still find: no train or bus (not in adsbdb), no haul override, not "not found". */
+  const needsLookup = (f) => isFlight(f) && !f.route && f.haulOverride === 'auto'
+    && !(f.routeLookup && f.routeLookup.status === 'notfound' && f.routeLookup.flightNo === f.flightNo);
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
+  const PT_LABEL = { p: 'Points', qp: 'QP', hon: 'HON Points' };
+  /** "50 Points, 20 QP" for the non-zero values of a gap (see E.gap). */
+  const missingTxt = (g) => Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${PT_LABEL[k]}`).join(', ');
+  /** Anything that "Load demo data" would replace. */
+  const hasData = () => state.flights.length || state.adjustments.length || state.stays.length || state.settings.memberNumber
+    || Object.values(state.plans).some(p => p.mix.length || Object.keys(p.co2).length);
+  /** Date for a new item in the selected year: today in the current year, else mid-January (future) or mid-June (past). */
+  const newItemDate = () => {
+    const today = E.todayISO(), y = +today.slice(0, 4);
+    return y === year ? today : `${year}-${year > y ? '01' : '06'}-15`;
+  };
 
   /* ================= navigation ================= */
   const setView = (v) => {
@@ -49,7 +61,7 @@
     ys.add(new Date().getFullYear() + 1);
     ys.add(year);
     const ss = state.settings.startStatus;
-    if (ss && ss.status !== 'NONE' && ss.year) ys.add(ss.year);
+    if (ss.status !== 'NONE' && ss.year) ys.add(ss.year);
     const sel = $('#yearSelect');
     sel.innerHTML = [...ys].sort((a, b) => b - a).map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
   };
@@ -113,15 +125,15 @@
     const sum = hist.find(h => h.year === year) || { ...E.yearSummary(state, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
     const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
-      : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
+      : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${sum.fromStatement ? 'as per your statement' : C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
       : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}${prevYear && prevYear.fromStatement ? ' (statement)' : ''}`
       : sum.fromStatement ? `${esc(MM.STATUS_LABEL[sum.statusActual])} earned ${year} as per your statement`
       : !sum.hasPrev ? `No data for ${year - 1} – <a href="#" data-act="goto-settings">set your starting status</a>`
       : `No status carried in from ${year - 1}`;
     const nFlown = sum.rows.filter(r => !r.planned).length;
     const nPlan = sum.rows.filter(r => r.planned && r.counts).length;
-    const totalCost = sum.cost.actual.total + sum.cost.plan.total;
-    const nextKey = ['FTL', 'SEN', 'HON'].find(k => E.rank(sum.statusActual) < E.rank(k));
+    const totalCost = sum.cost.all.total;
+    const nextKey = MM.STATUSES.find(k => E.rank(sum.statusActual) < E.rank(k));
     const nextFc = nextKey && sum.reached.forecast[nextKey];
 
     const kpis = `
@@ -201,16 +213,12 @@
     const line = (key) => {
       // values that count towards this status (train QP / HON capped per status)
       const a = E.effective(sum.actual, key, rules), f = E.effective(sum.forecast, key, rules), th = t[key];
-      const railCapped = (key === 'HON' ? sum.forecast.honRail : sum.forecast.qpRail) > (rules.railCaps || {})[key];
+      const railCapped = (key === 'HON' ? sum.forecast.honRail : sum.forecast.qpRail) > rules.railCaps[key];
       const ra = sum.reached.actual[key], rf = sum.reached.forecast[key];
-      let sub;
-      if (ra) sub = `✓ Reached on ${C.fmtDate(ra)}`;
-      else if (rf) {
-        sub = `Forecast: reached on ${C.fmtDate(rf)} with ${esc(sum.reached.forecastBy[key])}`;
-      } else {
-        const g = E.gap(sum.forecast, key, rules);
-        sub = 'Missing after plan: ' + Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${k === 'p' ? 'Points' : k === 'qp' ? 'QP' : 'HON Points'}`).join(', ');
-      }
+      const sub = ra ? `✓ Reached on ${C.fmtDate(ra)}`
+        : sum.fromStatement && E.rank(sum.statusActual) >= E.rank(key) ? '✓ Earned as per your statement'
+        : rf ? `Forecast: reached on ${C.fmtDate(rf)} with ${esc(sum.reached.forecastBy[key])}`
+        : `Missing after plan: ${missingTxt(E.gap(sum.forecast, key, rules))}`;
       const bars = key === 'HON'
         ? `<div class="muted">HON Circle Points ${num(a.hon)} / ${num(th.hon)}</div>${bar(a.hon, f.hon, th.hon, 'var(--s-hon)')}`
         : `<div class="muted">Points ${num(a.p)} / ${num(th.p)}</div>${bar(a.p, f.p, th.p, 'var(--s-p)')}
@@ -221,7 +229,7 @@
         <div class="prog-sub">${sub}${railCapped ? ` · train ${key === 'HON' ? 'HON' : 'QP'} capped at ${num(rules.railCaps[key])}` : ''}</div>
       </div>`;
     };
-    $('#progList').innerHTML = ['FTL', 'SEN', 'HON'].map(line).join('');
+    $('#progList').innerHTML = MM.STATUSES.map(line).join('');
   };
 
   const renderCumCharts = (sum, rules) => {
@@ -251,13 +259,13 @@
     const data = C.MONTHS.map(() => ({ flight: 0, upgrade: 0, co2: 0, planned: 0, n: 0 }));
     for (const r of sum.rows) {
       if (!r.counts) continue;
-      const mIdx = +r.f.date.slice(5, 7) - 1;
+      const mIdx = +r.date.slice(5, 7) - 1;
       const d = data[mIdx];
       d.flight += r.c.flight; d.upgrade += r.c.upgrade; d.co2 += r.c.co2; d.n++;
       if (r.planned) d.planned += r.c.total;
     }
     C.stackedBars($('#costChart'), {
-      label: 'Costs per month', categories: C.MONTHS.map(m => m[0] + m.slice(1, 3)), series: costSeries(), data,
+      label: 'Costs per month', categories: C.MONTHS, series: costSeries(), data,
       format: (v) => money(v, true),
       dim: (i) => data[i].planned > 0 && data[i].planned >= (data[i].flight + data[i].upgrade + data[i].co2) - 0.001,
       tipTitle: (i) => `${C.MONTHS[i]} ${year}`,
@@ -292,7 +300,7 @@
 
   const renderHistory = (hist) => {
     const rows = hist.slice().reverse().map(h => {
-      const total = h.cost.actual.total + h.cost.plan.total;
+      const total = h.cost.all.total;
       const hasPlan = h.rows.some(r => r.planned && r.counts);
       return `<tr data-year="${h.year}" ${h.year === year ? 'style="font-weight:600"' : ''}>
         <td>${h.year}</td>
@@ -313,13 +321,8 @@
     $$('#histTable tr[data-year]').forEach(tr => tr.addEventListener('click', () => { year = +tr.dataset.year; render(); }));
     const yc = $('#yearCost');
     if (yc) {
-      const data = hist.map(h => {
-        const d = { flight: 0, upgrade: 0, co2: 0 };
-        for (const r of h.rows) if (r.counts) { d.flight += r.c.flight; d.upgrade += r.c.upgrade; d.co2 += r.c.co2; }
-        return d;
-      });
       C.stackedBars(yc, {
-        label: 'Costs per year', categories: hist.map(h => String(h.year)), series: costSeries(), data,
+        label: 'Costs per year', categories: hist.map(h => String(h.year)), series: costSeries(), data: hist.map(h => h.cost.all),
         format: (v) => money(v, true),
         note: (i) => `<div class="row muted"><span>Status earned</span><span>${esc(MM.STATUS_LABEL[hist[i].statusForecast])}</span></div>`,
       });
@@ -390,10 +393,10 @@
           <tfoot>
             ${footRow('Flown total', tot(flown))}
             ${planned.length ? footRow('Incl. planned', tot(sum.rows)) : ''}
-            ${sum.adjustments.length || sum.stays.length ? footRow(sum.stays.length ? 'Incl. corrections &amp; hotel stays' : 'Incl. point corrections', tot(sum.events)) : ''}
+            ${sum.adjustments.length || sum.stays.length ? footRow(`Incl. ${[sum.adjustments.length && 'point corrections', sum.stays.length && 'hotel stays'].filter(Boolean).join(' &amp; ')}`, { ...sum.forecast, ...sum.cost.all }) : ''}
           </tfoot>
         </table></div>` : `<div class="empty"><h2>No flights in ${year}</h2><p>Add a flown or planned segment to start tracking.</p>
-          <div class="btns"><button class="btn primary" data-act="add">Add flight</button>${state.flights.length ? '' : '<button class="btn" data-act="demo">Load demo data</button>'}</div></div>`}
+          <div class="btns"><button class="btn primary" data-act="add">Add flight</button>${hasData() ? '' : '<button class="btn" data-act="demo">Load demo data</button>'}</div></div>`}
       </div>
       ${renderAdjustmentsCard(sum)}
       ${renderStaysCard(sum)}`;
@@ -450,12 +453,23 @@
     </div>`;
   };
 
+  /** Runs fn on the second click; the first one changes the button's text to `label` for 4 seconds. */
+  const confirmInline = (btn, label, fn) => {
+    if (btn.dataset.armed) { fn(); return; }
+    btn.dataset.armed = '1';
+    const old = btn.textContent;
+    btn.textContent = label;
+    setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = old; } }, 4000);
+  };
+  /** The Delete button of a dialog: hidden for new items, else unarmed (see confirmInline). */
+  const resetDelete = (btn, hidden) => { btn.hidden = hidden; btn.textContent = 'Delete'; btn.dataset.armed = ''; };
+
   /* ================= Marriott stay dialog (wired up below, after the date helpers) ================= */
   const stayDlg = $('#stayDialog'), stayForm = $('#stayForm');
   let stayDraft = null;
   const openStayDialog = (stay) => {
     const isNewStay = !stay;
-    stayDraft = stay ? { ...stay } : S.newStay(+E.todayISO().slice(0, 4) === year ? E.todayISO() : `${year}-12-31`);
+    stayDraft = stay ? { ...stay } : S.newStay(newItemDate());
     $('#stayTitle').textContent = isNewStay ? 'Add Marriott Bonvoy stay' : 'Edit Marriott Bonvoy stay';
     const m = state.settings.rules.marriott;
     $('#stayHint').textContent = `With linked Miles & More and Marriott Bonvoy accounts, every qualifying stay of at least ${num(m.minNights)} nights earns ${num(m.pointsPerStay)} Points (no QP / HON Circle Points), up to ${num(m.maxPointsPerYear)} Points per calendar year. The values can be changed in Settings.`;
@@ -463,8 +477,7 @@
     stayForm.hotel.value = stayDraft.hotel || '';
     stayForm.nights.value = stayDraft.nights || '';
     stayForm.remark.value = stayDraft.remark || '';
-    const del = $('#btnStayDelete');
-    del.hidden = isNewStay; del.textContent = 'Delete'; del.dataset.armed = '';
+    resetDelete($('#btnStayDelete'), isNewStay);
     stayDlg.showModal();
     (isNewStay ? stayForm.hotel : stayForm.nights).focus();
   };
@@ -474,13 +487,12 @@
   let adjDraft = null;
   const openAdjDialog = (adj) => {
     const isNewAdj = !adj;
-    adjDraft = adj ? { ...adj } : S.newAdjustment(+E.todayISO().slice(0, 4) === year ? E.todayISO() : `${year}-12-31`);
+    adjDraft = adj ? { ...adj } : S.newAdjustment(newItemDate());
     $('#adjTitle').textContent = isNewAdj ? 'Add point correction' : 'Edit point correction';
     adjForm.date.value = dateToField(adjDraft.date);
     for (const k of ['p', 'qp', 'hon']) adjForm[k].value = adjDraft[k] || '';
     adjForm.remark.value = adjDraft.remark || '';
-    const del = $('#btnAdjDelete');
-    del.hidden = isNewAdj; del.textContent = 'Delete'; del.dataset.armed = '';
+    resetDelete($('#btnAdjDelete'), isNewAdj);
     adjDlg.showModal();
     (isNewAdj ? adjForm.p : adjForm.remark).focus();
   };
@@ -489,7 +501,6 @@
   /* Scenario per calendar year (saved in the .json): CO₂ what-ifs for existing and planned flights, plus a mix of
      extra segments. Inputs only update the plan and the computed cells; adding / removing rows re-renders the view. */
   const planFor = (y) => state.plans[y] || (state.plans[y] = { co2: {}, mix: [] });
-  const MIX_KIND = { LHG: 'Lufthansa Group', STAR: 'Star Alliance', RAIL: 'Train' };
   const HAUL_LABEL = { continental: 'Continental', intercontinental: 'Intercontinental' };
   const MIX_PRESETS = [
     { count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none' },
@@ -530,7 +541,7 @@
       const rail = r.kind === 'RAIL';
       return `<tr data-mix-id="${esc(r.id)}" style="cursor:default">
         <td class="num"><input type="number" min="0" step="1" data-mix="count" value="${r.count}" aria-label="Number of segments" class="num-input" style="width:64px"></td>
-        <td><select data-mix="kind" aria-label="Type">${opts(Object.keys(MIX_KIND), r.kind, k => MIX_KIND[k])}</select></td>
+        <td><select data-mix="kind" aria-label="Type">${opts(Object.keys(MM.MIX_KIND), r.kind, k => MM.MIX_KIND[k])}</select></td>
         <td><select data-mix="haul" aria-label="Haul" ${rail ? 'disabled' : ''}>${opts(['continental', 'intercontinental'], rail ? 'continental' : r.haul, h => HAUL_LABEL[h])}</select></td>
         <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? Object.keys(RAIL_CLASSES) : MM.CLASSES, r.cls)}</select></td>
         <td><select data-mix="co2Level" aria-label="CO₂ booster" ${rail ? 'disabled' : ''}>${opts(MM.CO2_LEVELS, rail ? 'none' : r.co2Level, l => MM.CO2_LABEL[l])}</select></td>
@@ -647,9 +658,7 @@
 
     // mix rows and totals
     for (const m of sc.mix) {
-      const tr = $(`tr[data-mix-id="${m.row.id}"]`, host);
-      if (!tr) continue;
-      set('[data-cell="sum"]', `<b>${pts(m.sum)}</b><div class="muted">${pts(m.e)} each · ${money(m.cost, true)}</div>`, tr);
+      set('[data-cell="sum"]', `<b>${pts(m.sum)}</b><div class="muted">${pts(m.e)} each · ${money(m.cost, true)}</div>`, $(`tr[data-mix-id="${m.row.id}"]`, host));
     }
     const mixSum = sc.mix.reduce((a, m) => ({ p: a.p + m.sum.p, qp: a.qp + m.sum.qp, hon: a.hon + m.sum.hon }), { p: 0, qp: 0, hon: 0 });
     const nSeg = sc.mix.reduce((a, m) => a + m.n, 0);
@@ -661,7 +670,7 @@
     set('[data-cell="co2-cost"]', `${sc.cost.co2Extra < 0 ? '−' : '+'}${money(Math.abs(sc.cost.co2Extra))}`);
 
     // result card
-    const nCo2 = Object.keys(plan.co2).filter(id => sc.base.rows.some(r => r.f.id === id)).length;
+    const nCo2 = Object.keys(plan.co2).filter(id => sc.base.rows.some(r => r.f.id === id && r.counts)).length;
     const steps = [
       ['Flown so far', sc.base.actual, sc.status.actual, sc.base.cost.actual.total, ''],
       ['+ planned flights', sc.base.forecast, sc.status.forecast, sc.base.cost.plan.total, 'your forecast'],
@@ -669,17 +678,18 @@
       ['+ extra segments', sc.total, sc.status.total, sc.cost.mix, plan.mix.length ? plan.mix.map(r => esc(mixLabel(r))).join(', ') : 'none'],
     ];
     const target = (key) => {
-      const g = E.gap(sc.total, key, rules), ok = Object.values(g).every(v => v === 0);
+      const ok = E.rank(sc.status.total) >= E.rank(key);
       // reached.forecast includes flown segments, so check what was already flown first
       const done = sc.base.reached.actual[key], fc = sc.base.reached.forecast[key];
-      const miss = Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${k === 'p' ? 'Points' : k === 'qp' ? 'QP' : 'HON'}`).join(' · ');
-      const how = done ? `✓ reached on ${C.fmtDate(done)}` : fc ? `✓ with your planned flights on ${C.fmtDate(fc)}` : '✓ reached with this scenario';
-      return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? how : `missing ${miss}`}</span></div>`;
+      const how = done ? `✓ reached on ${C.fmtDate(done)}`
+        : sc.base.fromStatement && E.rank(sc.status.actual) >= E.rank(key) ? '✓ earned as per your statement'
+        : fc ? `✓ with your planned flights on ${C.fmtDate(fc)}` : '✓ reached with this scenario';
+      return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? how : `missing ${missingTxt(E.gap(sc.total, key, rules))}`}</span></div>`;
     };
     const signedMoney = (v, i) => (i > 0 && v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v), true);
     set('#planResult', `
       <div class="card-head"><h2>Scenario · CY ${year}</h2><span class="sub">your forecast plus the extra segments and CO₂ what-ifs below · saved in your .json</span></div>
-      <div class="plan-targets">${['FTL', 'SEN', 'HON'].map(target).join('')}</div>
+      <div class="plan-targets">${MM.STATUSES.map(target).join('')}</div>
       <div class="table-wrap"><table>
         <thead><tr><th>Step</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th><th class="num">Cost</th></tr></thead>
         <tbody>${steps.map(([label, t, s, cost, note], i) => `<tr style="cursor:default">
@@ -690,39 +700,37 @@
           <td>${badge(sc.status.total)}</td><td class="num">${money(sc.cost.total, true)}${sc.total.qp ? `<div class="muted">${money(sc.cost.total / sc.total.qp)} / QP</div>` : ''}</td></tr></tfoot>
       </table></div>`);
 
-    renderGap(sc.total);
+    renderGap(sc.total, sc.status.total);
     enhanceTables();
   };
 
-  /** "Fill the gap": how many more segments of one type close the remaining gap after the scenario. */
-  const gapPrefs = { target: null, haul: 'intercontinental', cls: 'Business', co2: 'none' };
-  const renderGap = (total) => {
-    const host = $('#gapCard'), rules = state.settings.rules;
-    if (!host) return;
-    const st = E.status(total, rules);
-    const target = gapPrefs.target || ['FTL', 'SEN', 'HON'].find(k => E.rank(st) < E.rank(k)) || 'HON';
-    const n = E.segmentsNeeded(total, target, gapPrefs.haul, gapPrefs.cls, gapPrefs.co2, rules);
-    const e = E.earn({ haulOverride: gapPrefs.haul, earningGroup: 'LHG', bookedClass: gapPrefs.cls, co2Level: gapPrefs.co2 }, rules);
-    const g = E.gap(total, target, rules);
+  /** "Fill the gap": how many more segments of one type close the remaining gap after the scenario (status st). */
+  const gapPrefs = { target: null, haul: 'intercontinental', cls: 'Business', co2Level: 'none' };
+  const renderGap = (total, st) => {
+    const host = $('#gapCard'), rules = state.settings.rules, { haul, cls, co2Level } = gapPrefs;
+    const target = gapPrefs.target || MM.STATUSES.find(k => E.rank(st) < E.rank(k)) || 'HON';
+    const reached = E.rank(st) >= E.rank(target);   // also when the status comes from the statement
+    const need = E.segmentsNeeded(total, target, { haul, cls, co2Level }, rules), e = need.e;
+    const n = reached ? 0 : need.n;
     host.innerHTML = `
       <div class="card-head"><h2>Fill the gap</h2><span class="sub">how many more segments of one type you need on top of the scenario</span></div>
       <div class="grid">
-        <label>Target status<select data-gap="target">${opts(['FTL', 'SEN', 'HON'], target, k => MM.STATUS_LABEL[k])}</select></label>
-        <label>Haul<select data-gap="haul">${opts(['continental', 'intercontinental'], gapPrefs.haul, h => HAUL_LABEL[h])}</select></label>
-        <label>Cabin<select data-gap="cls">${opts(MM.CLASSES, gapPrefs.cls)}</select></label>
-        <label>CO₂ booster<select data-gap="co2">${opts(MM.CO2_LEVELS, gapPrefs.co2, l => MM.CO2_LABEL[l])}</select></label>
+        <label>Target status<select data-gap="target">${opts(MM.STATUSES, target, k => MM.STATUS_LABEL[k])}</select></label>
+        <label>Haul<select data-gap="haul">${opts(['continental', 'intercontinental'], haul, h => HAUL_LABEL[h])}</select></label>
+        <label>Cabin<select data-gap="cls">${opts(MM.CLASSES, cls)}</select></label>
+        <label>CO₂ booster<select data-gap="co2Level">${opts(MM.CO2_LEVELS, co2Level, l => MM.CO2_LABEL[l])}</select></label>
       </div>
       <div class="earn-preview" style="margin-top:12px">
         <div><div class="k">Per segment (Lufthansa Group)</div><b>${num(e.p)} P · ${num(e.qp)} QP · ${num(e.hon)} HON</b></div>
-        <div><div class="k">Still missing after scenario</div><b>${Object.entries(g).map(([k, v]) => `${num(v)} ${k.toUpperCase()}`).join(' · ')}</b></div>
+        <div><div class="k">Still missing after scenario</div><b>${reached ? '–' : missingTxt(E.gap(total, target, rules))}</b></div>
         <div><div class="k">Extra segments needed</div><b style="font-size:20px">${n === Infinity ? 'not reachable' : n === 0 ? '✓ none' : n + '×'}</b></div>
       </div>
-      ${n > 0 && n !== Infinity ? `<div style="margin-top:10px"><button class="btn small" data-gap-add>+ Add ${n} × ${esc(gapPrefs.cls)} ${gapPrefs.haul === 'continental' ? 'continental' : 'intercont.'}${gapPrefs.co2 !== 'none' ? ` + ${esc(MM.CO2_LABEL[gapPrefs.co2])}` : ''} to the extra segments</button></div>` : ''}
+      ${n > 0 && n !== Infinity ? `<div style="margin-top:10px"><button class="btn small" data-gap-add>+ Add ${esc(mixLabel({ count: n, kind: 'LHG', haul, cls, co2Level }))} to the extra segments</button></div>` : ''}
       <p class="hint">HON Circle Points are only earned in ${esc(rules.honClasses.join(' / '))}.</p>`;
-    $$('[data-gap]', host).forEach(s => s.addEventListener('change', () => { gapPrefs[s.dataset.gap] = s.value; renderGap(total); }));
+    $$('[data-gap]', host).forEach(s => s.addEventListener('change', () => { gapPrefs[s.dataset.gap] = s.value; renderGap(total, st); }));
     const add = $('[data-gap-add]', host);
     if (add) add.addEventListener('click', () => {
-      planFor(year).mix.push(S.newMixRow({ count: n, kind: 'LHG', haul: gapPrefs.haul, cls: gapPrefs.cls, co2Level: gapPrefs.co2 }));
+      planFor(year).mix.push(S.newMixRow({ count: n, kind: 'LHG', haul, cls, co2Level }));
       save(); renderPlanner();
     });
   };
@@ -739,7 +747,7 @@
     const host = $('#view-settings');
     const cacheN = Object.keys(state.apiCache).length;
     const cacheOk = Object.values(state.apiCache).filter(c => c.status === 'ok').length;
-    const ss = state.settings.startStatus || { status: 'NONE', year: null };
+    const ss = state.settings.startStatus;
     const ssYear = ss.year || new Date().getFullYear() - 1;
     host.innerHTML = `
       <div class="settings-grid">
@@ -798,7 +806,7 @@
           <div class="grid">
             <label>Miles &amp; More number<input id="memberNumber" inputmode="numeric" autocomplete="off" placeholder="992 000 000 000 000" value="${esc(groupDigits(state.settings.memberNumber))}">
               <small class="field-hint" id="memberHint">${memberHint(state.settings.memberNumber)}</small></label>
-            <label>Currency<select id="currency">${['EUR', 'CHF', 'USD', 'GBP'].map(c => `<option ${c === state.settings.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+            <label>Currency<select id="currency">${MM.CURRENCIES.map(c => `<option ${c === state.settings.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
           </div>
           <p class="hint">Data is kept in this browser (localStorage) and can be saved / loaded as <code>.json</code>.
             The file contains your flights, these settings and the cached route lookups
@@ -835,7 +843,7 @@
     const saveStart = () => {
       const status = $('#startStatus', host).value;
       const y = Math.round(+$('#startYear', host).value);
-      const valid = y >= 2000 && y <= 2100;
+      const valid = S.validYear(y);
       if (status !== 'NONE' && !valid) { toast('Please enter a valid year'); return; }
       state.settings.startStatus = { status, year: valid ? y : null };   // year is kept even while status is None
       save(); renderSettings(); toast('Starting status updated');
@@ -940,7 +948,7 @@
     if (!op) return '';
     const decides = !op.airline ? ' · airline not in list, earns as marketing airline'
       : E.isEdelweissCodeshare(draft) ? ' · LX8000–8499 earns like SWISS'
-      : ` · operator decides earning: ${esc(MM.GROUP_LABEL[op.group])}`;
+      : ` · operator decides earning: ${esc(MM.GROUP_LABEL[op.airline.group])}`;
     const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)}${decides}`;
     const entry = state.apiCache[op.iata];
     const opRoute = A.routeFromCache(entry);
@@ -963,7 +971,7 @@
     const route = A.routeFromCache(entry);
     if (route && !(draft.route && draft.route.origin && draft.route.destination)) {
       draft.route = { ...route, via: op.iata };
-      draft.routeLookup = { queried: true, status: 'ok', fetchedAt: entry.fetchedAt, source: entry.fromCache ? 'cache' : 'api', flightNo: draft.flightNo, via: op.iata };
+      draft.routeLookup = A.lookupInfo(entry, draft.flightNo, op.iata);
       form.origin.value = route.origin.iata || '';
       form.destination.value = route.destination.iata || '';
     }
@@ -1050,13 +1058,12 @@
   };
 
   const applyLookup = (entry, flightNo) => {
-    draft.routeLookup = { queried: true, status: entry.status, fetchedAt: entry.fetchedAt, source: entry.fromCache ? 'cache' : 'api', flightNo, error: entry.error };
+    draft.routeLookup = A.lookupInfo(entry, flightNo);
     const route = A.routeFromCache(entry);
-    if (route) {
+    if (route) {   // without one, a route typed by hand stays
       draft.route = route;
       form.origin.value = route.origin.iata || '';
       form.destination.value = route.destination.iata || '';
-      if (!MM.AIRLINES[draft.airlineCode] && route.airlineName) draft.airlineName = route.airlineName;
     }
     save();
     updatePreview();
@@ -1073,7 +1080,7 @@
     if (seq !== lookupSeq || stale(d)) return;
     applyLookup(entry, parsed.iata);
     if (entry.status !== 'ok' && E.operating(draft)) await lookupOperating();
-    if (force && !entry.fromCache) toast(draft.route ? 'Route updated from API' : 'No route found');
+    if (force && !entry.fromCache) toast(entry.status === 'ok' ? 'Route updated from API' : 'No route found');
   };
 
   const autoLookup = () => {
@@ -1101,12 +1108,7 @@
   const openDialog = (flight) => {
     fillSelects();
     isNew = !flight;
-    if (flight) draft = JSON.parse(JSON.stringify(flight));
-    else {
-      let iso = E.todayISO();
-      if (+iso.slice(0, 4) !== year) iso = year > +iso.slice(0, 4) ? `${year}-01-15` : `${year}-06-15`;
-      draft = S.newFlight(iso);
-    }
+    draft = flight ? structuredClone(flight) : S.newFlight(newItemDate());
     upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
     form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
@@ -1114,23 +1116,22 @@
     form.bookingCode.value = draft.bookingCode;
     form.origin.value = draft.route && draft.route.origin ? draft.route.origin.iata : '';
     form.destination.value = draft.route && draft.route.destination ? draft.route.destination.iata : '';
-    form.haulOverride.value = draft.haulOverride || 'auto';
-    form.earningGroup.value = draft.earningGroup || 'auto';
-    form.transport.value = draft.transport || 'flight';
-    form.earnClassOverride.value = draft.earnClassOverride || 'auto';
-    fillBookedClass(form.transport.value, draft.bookedClass);
-    form.upgradeClass.value = draft.upgradeClass || draft.bookedClass;
-    form.upgradeType.value = draft.upgradeType || '';
+    form.haulOverride.value = draft.haulOverride;
+    form.earningGroup.value = draft.earningGroup;
+    form.transport.value = draft.transport;
+    form.earnClassOverride.value = draft.earnClassOverride;
+    fillBookedClass(draft.transport, draft.bookedClass);
+    form.upgradeClass.value = draft.upgradeClass;
+    form.upgradeType.value = draft.upgradeType;
     const booking = state.bookings[E.bookingKey(draft.bookingCode)];
     form.fare.value = (booking ? booking.fare : draft.flightCost) || '';
     fareFrom = booking ? E.bookingKey(draft.bookingCode) : '';
     form.upgradeCost.value = draft.upgradeCost || '';
-    form.co2Level.value = draft.co2Level || 'none';
+    form.co2Level.value = draft.co2Level;
     form.co2Cost.value = draft.co2Cost || '';
     form.includeInPlan.checked = draft.includeInPlan !== false;
     form.notes.value = draft.notes || '';
-    const del = $('#btnDelete');
-    del.hidden = isNew; del.textContent = 'Delete'; del.dataset.armed = '';
+    resetDelete($('#btnDelete'), isNew);
     applyTransport();
     updatePreview();
     dlg.showModal();
@@ -1164,12 +1165,10 @@
 
   wireDateField(stayForm.date, $('#btnStayDatePick'), $('#stayDatePicker'));
   $$('[data-close]', stayDlg).forEach(b => b.addEventListener('click', () => stayDlg.close()));
-  $('#btnStayDelete').addEventListener('click', (e) => {
-    const b = e.currentTarget;
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
+  $('#btnStayDelete').addEventListener('click', (e) => confirmInline(e.currentTarget, 'Click again to delete', () => {
     state.stays = state.stays.filter(s => s.id !== stayDraft.id);
     save(); stayDlg.close(); toast('Stay deleted'); render();
-  });
+  }));
   stayForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const date = dateToISO(stayForm.date.value);
@@ -1187,12 +1186,10 @@
 
   wireDateField(adjForm.date, $('#btnAdjDatePick'), $('#adjDatePicker'));
   $$('[data-close]', adjDlg).forEach(b => b.addEventListener('click', () => adjDlg.close()));
-  $('#btnAdjDelete').addEventListener('click', (e) => {
-    const b = e.currentTarget;
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
+  $('#btnAdjDelete').addEventListener('click', (e) => confirmInline(e.currentTarget, 'Click again to delete', () => {
     state.adjustments = state.adjustments.filter(a => a.id !== adjDraft.id);
     save(); adjDlg.close(); toast('Correction deleted'); render();
-  });
+  }));
   adjForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const date = dateToISO(adjForm.date.value);
@@ -1247,22 +1244,17 @@
       updatePreview();
     }
   });
-  $('#btnLookup').addEventListener('click', () => {
-    draft.route = null;
-    doLookup(true);
-  });
+  $('#btnLookup').addEventListener('click', () => doLookup(true));
   $$('[data-close]', dlg).forEach(b => b.addEventListener('click', () => dlg.close()));
-  $('#btnDelete').addEventListener('click', (e) => {
-    const b = e.currentTarget;
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
+  $('#btnDelete').addEventListener('click', (e) => confirmInline(e.currentTarget, 'Click again to delete', () => {
     S.deleteFlight(state, draft.id);
     save(); dlg.close(); toast(`${nounOf(draft)} deleted`); render();
-  });
+  }));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     readForm();
     const T = TRANSPORT[draft.transport];
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) { toast('Please enter the date as YYYY/MM/DD'); form.date.focus(); return; }
+    if (!draft.date) { toast('Please enter the date as YYYY/MM/DD'); form.date.focus(); return; }
     if (!E.parseFlightNo(draft.flightNo)) { toast(`Please enter a valid ${T.number.toLowerCase()} number, e.g. ${T.placeholder}`); form.flightNo.focus(); return; }
     if (isFlight(draft) && !draft.route && !(draft.routeLookup && draft.routeLookup.queried && draft.routeLookup.flightNo === draft.flightNo)) {
       const d = draft;
@@ -1270,7 +1262,7 @@
       if (stale(d)) return;   // cancelled while waiting
       applyLookup(entry, draft.flightNo);
     }
-    const flight = JSON.parse(JSON.stringify(draft));
+    const flight = structuredClone(draft);
     if (flight.routeLookup && flight.routeLookup.status === 'loading') flight.routeLookup = null;
     S.saveFlight(state, flight, fareInfo().fare);
     year = +flight.date.slice(0, 4);
@@ -1280,25 +1272,23 @@
   });
 
   /* ================= global actions ================= */
+  /** Looks up the routes of this year's flights that have none; like the dialog, a codeshare falls back to its operating flight. */
   const lookupMissing = async () => {
     const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && needsLookup(f));
     let ok = 0;
     for (const f of todo) {
-      const entry = await A.lookup(state, f.flightNo);
-      f.routeLookup = { queried: true, status: entry.status, fetchedAt: entry.fetchedAt, source: entry.fromCache ? 'cache' : 'api', flightNo: f.flightNo };
-      const r = A.routeFromCache(entry);
-      if (r) { f.route = r; ok++; }
+      let entry = await A.lookup(state, f.flightNo), via;
+      const op = E.operating(f);
+      if (entry.status !== 'ok' && op) {
+        const opEntry = await A.lookup(state, op.iata);
+        if (opEntry.status === 'ok') { entry = opEntry; via = op.iata; }
+      }
+      f.routeLookup = A.lookupInfo(entry, f.flightNo, via);
+      const route = A.routeFromCache(entry);
+      if (route) { f.route = via ? { ...route, via } : route; ok++; }
     }
     save(); render();
     toast(`${ok} of ${todo.length} route(s) found`);
-  };
-
-  const confirmInline = (btn, label, fn) => {
-    if (btn.dataset.armed) { fn(); return; }
-    btn.dataset.armed = '1';
-    const old = btn.textContent;
-    btn.textContent = label;
-    setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = old; } }, 4000);
   };
 
   document.addEventListener('click', (e) => {
@@ -1315,15 +1305,15 @@
     if (act === 'lookup-missing') lookupMissing();
     if (act === 'demo') {
       const go = () => { state = S.demo(); year = new Date().getFullYear(); save(); render(); toast('Demo data loaded'); };
-      state.flights.length ? confirmInline(b, 'Replace all data? Click again', go) : go();
+      hasData() ? confirmInline(b, 'Replace all data? Click again', go) : go();
     }
-    if (act === 'reset-rules') { state.settings.rules = JSON.parse(JSON.stringify(MM.DEFAULT_RULES)); save(); render(); toast('Rules reset to defaults'); }
+    if (act === 'reset-rules') { state.settings.rules = S.empty().settings.rules; save(); render(); toast('Rules reset to defaults'); }
     if (act === 'clear-cache') confirmInline(b, 'Clear cache? Click again', () => { state.apiCache = {}; save(); render(); toast('API cache cleared'); });
     if (act === 'clear-all') confirmInline(b, 'Delete everything? Click again', () => { state = S.empty(); save(); render(); toast('All data deleted'); });
   });
 
   $$('.tabs button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
-  $('#yearSelect').addEventListener('change', (e) => { if (+e.target.value) { year = +e.target.value; render(); } });
+  $('#yearSelect').addEventListener('change', (e) => { year = +e.target.value; render(); });
   $('#btnSave').addEventListener('click', () => { S.exportJSON(state); toast('Saved .json'); });
   $('#fileLoad').addEventListener('change', async (e) => {
     const file = e.target.files[0];

@@ -23,7 +23,7 @@ const r = (o, d) => ({ origin: ap(o), destination: ap(d) });
 const fraJfk = r('DE', 'US'), fraZrh = r('DE', 'CH');
 const flight = (o) => ({ ...S.newFlight('2026-03-01'), ...o });
 const lhBiz = (o) => flight({ airlineCode: 'LH', flightNo: 'LH400', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', ...o });
-const state = (o = {}) => S.normalize({ version: 2, ...o });   // a state as the app holds it
+const state = (o = {}) => S.normalize(o);   // a state as the app holds it
 const pts = (e) => [e.p, e.qp, e.hon].join(',');
 const earn = (o) => E.earn(flight(o), rules);
 
@@ -52,8 +52,8 @@ assert.strictEqual(MM.airport('XXX'), null);
   assert.strictEqual(E.haul(flight({ route: fraJfk, haulOverride: 'continental' })), 'continental');
   assert.strictEqual(E.haul(flight({ route: null })), null);     // flight without route: unknown
   assert.strictEqual(E.haul(flight({ route: null, transport: 'rail' })), 'continental');
-  assert.ok(earn({ airlineCode: 'LH', route: null }).unknown);   // unknown haul earns nothing
-  assert.strictEqual(earn({ airlineCode: 'LH', route: null }).p, 0);
+  const e = earn({ airlineCode: 'LH', route: null });
+  assert.strictEqual(`${e.unknown}:${pts(e)}`, 'true:0,0,0');      // unknown haul earns nothing
 }
 
 /* ---------- earning per segment ---------- */
@@ -146,6 +146,21 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // costs: half of booking B1 each; upgrade cost only when upgraded, CO₂ cost only with a booster; f3 not counted
   assert.strictEqual(Object.values(s.cost.actual).join(','), '500,0,0,500');
   assert.strictEqual(Object.values(s.cost.plan).join(','), '600,300,0,900');
+  assert.strictEqual(Object.values(s.cost.all).join(','), '1100,300,0,1400');
+  // an item dated today is flown; on the same day flights come before corrections, which decides the reached date
+  const sameDay = state({
+    flights: [lhBiz({ id: 'g1', date: TODAY }), lhBiz({ id: 'g2', date: '2026-06-01' })],
+    adjustments: [{ id: 'a', date: TODAY, p: 250, qp: 0, hon: 0, remark: 'r' }],
+  });
+  const t = E.yearSummary(sameDay, 2026, TODAY);
+  assert.strictEqual(`${t.rows[1].planned}:${t.events.map(x => (x.f ? x.f.id : 'adj')).join(',')}`, 'false:g2,g1,adj');
+  assert.strictEqual(`${t.reached.actual.FTL}:${t.reached.forecastBy.FTL}`, `${TODAY}:Correction`);   // 400 P after g1, 650 with the correction
+  // unknown haul: counted only for flights in the forecast that would earn
+  const unknown = state({ flights: [
+    flight({ id: 'u1', airlineCode: 'LH' }), flight({ id: 'u2', airlineCode: 'CX' }),
+    flight({ id: 'u3', date: '2026-09-01', airlineCode: 'LH', includeInPlan: false }),
+  ] });
+  assert.strictEqual(E.yearSummary(unknown, 2026, TODAY).unknown, 1);
   // a booking with segments in two years: each year counts its share
   const two = state({ flights: [lhBiz({ id: 'x', date: '2026-12-20', bookingCode: 'X' }), lhBiz({ id: 'y', date: '2027-01-10', bookingCode: 'X' })], bookings: { X: { fare: 900 } } });
   assert.strictEqual(`${E.yearSummary(two, 2026, TODAY).cost.plan.flight}:${E.yearSummary(two, 2027, TODAY).cost.plan.flight}`, '450:450');
@@ -172,7 +187,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(s.stays.map(x => `${x.e.p}${x.e.reason}`).join(','), '0short,40ok,40ok,20partial,0cap');
   assert.strictEqual(`${pts(s.actual)}:${s.stayTotal.p}`, '100,0,0:100');
   assert.strictEqual(E.yearSummary(st, 2021, TODAY).stayTotal.p, 40);   // the cap resets each year
-  assert.ok(E.years(st).includes(2021));
+  assert.strictEqual(E.years(st, TODAY).join(','), '2020,2021,2026');    // years with items, plus the current one
 }
 
 /* ---------- history: soft landing and starting status ---------- */
@@ -201,6 +216,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(`${y(hist, 2025).statusActual}:${y(hist, 2025).fromStatement}`, 'SEN:true');
   assert.strictEqual(`${y(hist, 2026).carriedIn}:${y(hist, 2026).held}:${y(hist, 2026).hasPrev}`, 'SEN:SEN:true');
   assert.strictEqual(y(hist, 2027).held, 'FTL');   // not requalified in 2026: soft landing
+  // a statement status below the one earned with tracked flights changes nothing
+  const lower = y(E.history(state({ flights: segs(2025, 10), settings: { startStatus: { status: 'FTL', year: 2025 } } }), undefined, TODAY), 2025);
+  assert.strictEqual(`${lower.statusActual}:${lower.fromStatement}`, 'SEN:false');
+  // the planner counts it in every step: Senator from the statement in 2026 with a single flight
+  const sc = E.planScenario(state({ flights: segs(2026, 1), settings: { startStatus: { status: 'SEN', year: 2026 } } }), 2026, { co2: {}, mix: [] }, TODAY);
+  assert.strictEqual(`${sc.status.actual}:${sc.status.forecast}:${sc.status.total}:${sc.base.fromStatement}`, 'SEN:SEN:SEN:true');
   const none = y(E.history(state({ flights: segs(2026, 1) }), undefined, TODAY), 2026);
   assert.strictEqual(`${none.carriedIn}:${none.hasPrev}`, 'NONE:false');
 }
@@ -217,6 +238,8 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // without a booking code the fare belongs to the flight; the booking left without segments is dropped
   S.saveFlight(st, { ...st.flights[1], bookingCode: '' }, 120);
   assert.strictEqual(`${st.flights[1].flightCost}:${E.fareShare(st, st.flights[1])}:${'XYZ999' in st.bookings}`, '120:120:false');
+  // a booking code without a booking entry (e.g. edited in the .json) falls back to the segment's own fare
+  assert.strictEqual(E.fareShare(state(), flight({ bookingCode: 'NOPE', flightCost: 75 })), 75);
   // deleting a flight drops its booking and its planner what-ifs
   st.plans['2026'] = { co2: { a: { level: 'small', cost: 5 } }, mix: [] };
   S.deleteFlight(st, 'a');
@@ -253,9 +276,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(E.effective(rail.total, 'SEN', rules).qp, 300 + 500);
   // "fill the gap"
   const t0 = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 };
-  assert.strictEqual(E.segmentsNeeded(t0, 'FTL', 'intercontinental', 'Business', 'none', rules), 4);           // 650 P / 200
-  assert.strictEqual(E.segmentsNeeded(t0, 'HON', 'intercontinental', 'Economy', 'none', rules), Infinity);     // no HON in Economy
-  assert.strictEqual(E.segmentsNeeded({ ...t0, p: 650, qp: 325 }, 'FTL', 'continental', 'Economy', 'none', rules), 0);
+  const need = (t, key, haul, cls) => E.segmentsNeeded(t, key, { haul, cls, co2Level: 'none' }, rules).n;
+  assert.strictEqual(need(t0, 'FTL', 'intercontinental', 'Business'), 4);           // 650 P / 200
+  assert.strictEqual(need(t0, 'HON', 'intercontinental', 'Economy'), Infinity);     // no HON in Economy
+  assert.strictEqual(need({ ...t0, p: 650, qp: 325 }, 'FTL', 'continental', 'Economy'), 0);
+  assert.strictEqual(need({ ...t0, p: 700, qp: 400, qpRail: 300 }, 'FTL', 'continental', 'Economy'), 4);   // 100 + 160 QP count: 65 missing
+  assert.strictEqual(pts(E.segmentsNeeded(t0, 'FTL', { haul: 'continental', cls: 'Business', co2Level: 'medium' }, rules).e), '48,48,48');
   assert.strictEqual(Object.values(E.gap({ ...t0, p: 600, qp: 400 }, 'FTL', rules)).join(','), '50,0');
 }
 
@@ -274,6 +300,13 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.ok(/^[\w-]+$/.test(st.flights[0].id) && st.flights[0].id !== 'x"><b>');
   assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.settings.currency}`, '2:ok-1:EUR');
   assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${st.plans['2025'].mix[0].count}:${st.plans['2025'].mix[0].kind}`, '0:2:LHG');
+  // flight choices outside the allowed values get a new flight's defaults (the upgrade class: the booked class)
+  const choices = ['transport', 'bookedClass', 'upgradeClass', 'co2Level', 'haulOverride', 'earningGroup', 'earnClassOverride', 'upgradeType'];
+  const bad = state({ flights: [{ date: '2026-01-01', ...Object.fromEntries(choices.map(k => [k, 'x'])), bookedClass: 'Business' }] }).flights[0];
+  assert.strictEqual(choices.map(k => bad[k]).join(','), 'flight,Business,Business,none,auto,auto,auto,');
+  // booking codes are normalised and fares never negative; an implausible starting status year is dropped
+  const bk = state({ flights: [flight({ bookingCode: 'AB1' })], bookings: { 'ab 1': { fare: -5 } }, settings: { startStatus: { status: 'SEN', year: 1 } } });
+  assert.strictEqual(`${Object.keys(bk.bookings).join()}:${bk.bookings.AB1.fare}:${bk.settings.startStatus.year}`, 'AB1:0:null');
   // the Miles & More number (digits only) names the .json file
   assert.strictEqual(S.fileName(st), 'miles-and-more-992000123456789.json');
   assert.ok(/^miles-and-more-status-\d{4}-\d{2}-\d{2}\.json$/.test(S.fileName(state())));

@@ -1,4 +1,4 @@
-/* Static reference data and default rules. Everything here can be overridden in Settings. */
+/* Static reference data and default rules. Only the rules (MM.DEFAULT_RULES) can be changed in Settings. */
 window.MM = window.MM || {};
 
 MM.CLASSES = ['Economy', 'Premium Economy', 'Business', 'First'];
@@ -109,7 +109,7 @@ MM.UPGRADE_TYPES = {
   'operational':   { label: 'Operational',     earnsUpgrade: false },
 };
 
-MM.CO2_LEVELS =['none', 'small', 'medium', 'large', 'xlarge'];
+MM.CO2_LEVELS = ['none', 'small', 'medium', 'large', 'xlarge'];
 MM.CO2_LABEL = { none: 'None', small: 'Small', medium: 'Medium', large: 'Large', xlarge: 'X-Large' };
 
 /* Default rules (Miles & More status programme since 2024). Editable in Settings. */
@@ -139,4 +139,9 @@ MM.DEFAULT_RULES = {
 };
 
 MM.STATUS_ORDER = ['NONE', 'FTL', 'SEN', 'HON'];
+MM.STATUSES = MM.STATUS_ORDER.slice(1);   // the statuses that can be reached
 MM.STATUS_LABEL = { NONE: 'Base', FTL: 'Frequent Traveller', SEN: 'Senator', HON: 'HON Circle' };
+
+MM.CURRENCIES = ['EUR', 'CHF', 'USD', 'GBP'];
+/* Kinds of extra segments in the planner (see MM.engine.mixRowEarn). */
+MM.MIX_KIND = { LHG: 'Lufthansa Group', STAR: 'Star Alliance', RAIL: 'Train' };
