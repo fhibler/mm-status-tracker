@@ -43,6 +43,9 @@ HON Circle Points are earned only in Business and First.
 | Senator | 2,000 Points, incl. 1,000 QP |
 | HON Circle | 6,000 HON Circle Points |
 
+A status is valid from the day you reach it until the end of February of the year after next.
+For example, a status reached in June 2026 is valid until 28 Feb 2028.
+
 | CO₂ booster | Points | QP | HON |
 |---|---:|---:|---:|
 | Small   | +5%  | +5%  | +5%  |

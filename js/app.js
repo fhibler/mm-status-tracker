@@ -81,7 +81,7 @@
           <div class="meta">${sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}` : 'No status carried in'}</div></div>
         <div class="card kpi"><div class="label">Earned in ${year} (flown)</div>
           <div class="value">${badge(sum.statusActual)}</div>
-          <div class="meta">${sum.statusActual !== 'NONE' ? `Valid until 31 Dec ${year + 1}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
+          <div class="meta">${sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
         <div class="card kpi"><div class="label">Forecast incl. plan</div>
           <div class="value">${badge(sum.statusForecast)}</div>
           <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
@@ -125,7 +125,7 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">status earned in a year is valid until the end of the following year</span></div>
+        <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">a status is valid from the day it is reached until the end of February of the year after next</span></div>
         <div class="table-wrap" id="histTable"></div>
         ${hist.length > 1 ? `<div class="chart" id="yearCost" style="margin-top:14px"></div>
           <div class="legend"><span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span><span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span><span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span></div>` : ''}
@@ -269,7 +269,7 @@
         <td class="num">${num(h.actual.qp)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.qp)}</span>` : ''}</td>
         <td class="num">${num(h.actual.hon)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.hon)}</span>` : ''}</td>
         <td>${badge(h.statusActual)}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
-        <td>${h.statusActual !== 'NONE' || h.statusForecast !== 'NONE' ? `31 Dec ${h.year + 1}` : '–'}</td>
+        <td>${h.statusActual !== 'NONE' || h.statusForecast !== 'NONE' ? C.fmtDate(E.validUntil(h.year)) : '–'}</td>
         <td>${badge(h.held)}</td>
         <td class="num">${money(total, true)}${hasPlan ? ` <span class="muted">(${money(h.cost.plan.total, true)} plan)</span>` : ''}</td>
         <td class="num">${h.forecast.qp ? money(total / h.forecast.qp) : '–'}</td>

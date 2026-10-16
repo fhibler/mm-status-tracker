@@ -56,6 +56,10 @@ assert.strictEqual(E.statusFor(2000, 999, 0, rules), 'FTL');
 assert.strictEqual(E.statusFor(2000, 1000, 0, rules), 'SEN');
 assert.strictEqual(E.statusFor(0, 0, 6000, rules), 'HON');
 
+// status validity: until end of February of the year after next (leap year aware)
+assert.strictEqual(E.validUntil(2026), '2028-02-29');
+assert.strictEqual(E.validUntil(2025), '2027-02-28');
+
 // unknown haul earns nothing
 e = E.earn(flight({ airlineCode: 'LH', route: null }), rules);
 assert.ok(e.unknown && e.p === 0);

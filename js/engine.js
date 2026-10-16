@@ -99,6 +99,9 @@
   };
   E.rank = (s) => MM.STATUS_ORDER.indexOf(s);
 
+  /** A status reached in `year` is valid immediately until the end of February of the year after next. */
+  E.validUntil = (year) => new Date(Date.UTC(year + 2, 2, 0)).toISOString().slice(0, 10);
+
   E.years = (flights) => {
     const ys = new Set(flights.map(f => +f.date.slice(0, 4)));
     ys.add(new Date().getFullYear());
