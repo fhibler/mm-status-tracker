@@ -60,7 +60,11 @@
   };
   E.haul = (f) => (f.haulOverride && f.haulOverride !== 'auto' ? f.haulOverride : E.autoHaul(f));
 
-  E.earningClass = (f) => (f.upgradePaid && f.upgradeClass ? f.upgradeClass : f.bookedClass);
+  /** Cabin that earns: manual override, else the paid upgrade class, else the booked class. */
+  E.earningClass = (f) => {
+    if (f.earnClassOverride && f.earnClassOverride !== 'auto') return f.earnClassOverride;
+    return f.upgradePaid && f.upgradeClass ? f.upgradeClass : f.bookedClass;
+  };
 
   /** Points earned for one segment, incl. CO2 booster. */
   E.earn = (f, rules) => {

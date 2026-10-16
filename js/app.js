@@ -318,7 +318,7 @@
         <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
         <td class="cls">${esc(f.bookedClass)}</td>
-        <td class="cls ${up ? 'up' : ''}">${esc(f.upgradeClass || f.bookedClass)}</td>
+        <td class="cls ${up ? 'up' : ''}">${esc(f.upgradeClass || f.bookedClass)}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td>${up ? (f.upgradePaid ? 'Yes' : 'No') : '–'}</td>
         ${showCO2 ? `<td>${f.co2Level && f.co2Level !== 'none' ? esc(MM.CO2_LABEL[f.co2Level]) : '–'}</td>` : ''}
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
@@ -446,6 +446,7 @@
     const opts = MM.CLASSES.map(c => `<option>${c}</option>`).join('');
     form.bookedClass.innerHTML = opts;
     form.upgradeClass.innerHTML = opts;
+    form.earnClassOverride.innerHTML = '<option value="auto">Auto (from classes)</option>' + opts;
     form.co2Level.innerHTML = MM.CO2_LEVELS.map(l => {
       const b = state.settings.rules.co2[l];
       return `<option value="${l}">${MM.CO2_LABEL[l]}${b ? ` (+${b.p}% P, +${b.qp}% QP, +${b.hon}% HON)` : ''}</option>`;
@@ -545,6 +546,7 @@
       bookingCode: form.bookingCode.value.toUpperCase().trim(),
       haulOverride: form.haulOverride.value,
       earningGroup: form.earningGroup.value,
+      earnClassOverride: form.earnClassOverride.value,
       bookedClass: form.bookedClass.value,
       upgradeClass: form.upgradeClass.value,
       upgradePaid: form.upgradePaid.checked,
@@ -572,7 +574,7 @@
     const e = E.earn(draft, state.settings.rules);
     const c = E.cost(draft);
     $('#earnPreview').innerHTML = `
-      <div><div class="k">Earning basis</div><b>${esc(e.cls)} · ${e.haul ? (e.haul === 'continental' ? 'Continental' : 'Intercontinental') : 'haul unknown'}</b></div>
+      <div><div class="k">Earning basis${[draft.earnClassOverride, draft.haulOverride, draft.earningGroup].some(v => v && v !== 'auto') ? ' (override)' : ''}</div><b>${esc(e.cls)} · ${e.haul ? (e.haul === 'continental' ? 'Continental' : 'Intercontinental') : 'haul unknown'} · ${esc(MM.GROUP_LABEL[e.group])}</b></div>
       <div><div class="k">Points</div><b>${num(e.p)}</b></div>
       <div><div class="k">Qualifying Points</div><b>${num(e.qp)}</b></div>
       <div><div class="k">HON Circle Points</div><b>${num(e.hon)}</b></div>
@@ -648,6 +650,7 @@
     form.destination.value = draft.route && draft.route.destination ? draft.route.destination.iata : '';
     form.haulOverride.value = draft.haulOverride || 'auto';
     form.earningGroup.value = draft.earningGroup || 'auto';
+    form.earnClassOverride.value = draft.earnClassOverride || 'auto';
     form.bookedClass.value = draft.bookedClass;
     form.upgradeClass.value = draft.upgradeClass || draft.bookedClass;
     form.upgradePaid.checked = !!draft.upgradePaid;

@@ -18,7 +18,7 @@
     id: S.uid(), bookingCode: '', date: date || MM.engine.todayISO(), flightNo: '', airlineCode: '', airlineName: '', operatingFlightNo: '',
     earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradePaid: false,
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
-    haulOverride: 'auto', route: null, routeLookup: null, includeInPlan: true, notes: '',
+    earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, includeInPlan: true, notes: '',
   });
 
   /** Fill gaps so that older/handwritten files keep working. */

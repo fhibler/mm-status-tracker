@@ -93,7 +93,20 @@
             <button type="button" class="btn" id="btnLookup">Look up route</button>
           </div>
           <p class="hint" id="routeInfo">Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.</p>
+        </fieldset>
+
+        <div class="grid">
+          <label>Booked class<select name="bookedClass"></select></label>
+          <label>Upgrade class<select name="upgradeClass"></select></label>
+          <label class="check"><input type="checkbox" name="upgradePaid"> Upgrade paid <small>(earn in upgrade class)</small></label>
+        </div>
+
+        <fieldset>
+          <legend>Earning basis <small class="muted">– leave on Auto unless your statement differs</small></legend>
           <div class="grid">
+            <label>Cabin
+              <select name="earnClassOverride"></select>
+            </label>
             <label>Haul
               <select name="haulOverride">
                 <option value="auto">Auto (from airports)</option>
@@ -111,12 +124,6 @@
             </label>
           </div>
         </fieldset>
-
-        <div class="grid">
-          <label>Booked class<select name="bookedClass"></select></label>
-          <label>Upgrade class<select name="upgradeClass"></select></label>
-          <label class="check"><input type="checkbox" name="upgradePaid"> Upgrade paid <small>(earn in upgrade class)</small></label>
-        </div>
         <div class="grid">
           <label>Flight cost<input type="number" name="flightCost" min="0" step="0.01" inputmode="decimal"></label>
           <label>Upgrade cost<input type="number" name="upgradeCost" min="0" step="0.01" inputmode="decimal"></label>

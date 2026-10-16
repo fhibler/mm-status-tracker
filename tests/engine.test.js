@@ -38,6 +38,10 @@ assert.deepStrictEqual([e.p, e.qp, e.hon], [60, 60, 0]);
 e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: true }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [200, 200, 200]);
 
+// cabin override beats booked class and paid upgrade
+e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: true, earnClassOverride: 'Premium Economy' }), rules);
+assert.deepStrictEqual([e.cls, e.p, e.qp, e.hon], ['Premium Economy', 80, 80, 0]);
+
 // Star Alliance: points only
 e = E.earn(flight({ airlineCode: 'TG', route: fraJfk, bookedClass: 'Economy' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [60, 0, 0]);
