@@ -86,7 +86,10 @@ powershell -ExecutionPolicy Bypass -File tools/build-airports.ps1
 node tests/engine.test.js
 ```
 
-The tests expect `js/airports.js`, so build it first (see above).
+The tests expect `js/airports.js`, so build it first (see above). Without Node, serve the folder and open
+http://localhost:8765/tests/browser.html to run the same tests in the browser.
+
+To update airline or points rules, follow [docs/UPDATING-RULES.md](docs/UPDATING-RULES.md).
 
 ## Deploy (GitHub Pages)
 
@@ -111,6 +114,12 @@ site to GitHub Pages.
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
   Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland
   belongs to North America. Every other flight counts as intercontinental. You can override the haul per flight.
+- **Trains** (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail; set "Transport" to Train) earn like
+  flights, but their QP / HON Circle Points count towards a status only up to 160 QP (Frequent Traveller),
+  500 QP (Senator) and 1,000 HON (HON Circle). The limits can be changed in Settings. The **Lufthansa Express
+  Bus** earns nothing, and neither do award flights and some special fares (set "Earning" to "No status credit").
+- **Edelweiss** earns only on LX8000–8499 code-shares booked with SWISS under the LX number.
+- **Retro credits** count in the calendar year of the flight, so date a point correction on the flight date.
 - Other Miles & More airline partners (Air Astana, Cathay Pacific, LATAM, Olympic Air) earn award miles
   only, so they count as "No status credit". Edelweiss isn't listed for Points either; if your statement
   shows credit, set "Earning" for that flight.
