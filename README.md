@@ -17,6 +17,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 - **Planning mode**: any flight dated in the future counts as planned. The forecast shows the date you
   reach each status. Each planned flight can be left out of the forecast to try what-if scenarios.
   A planner works out how many more segments you need.
+- **Point corrections** (Flights tab): add manual adjustments of Points, QP and HON Circle Points with a
+  date and a remark, e.g. a retro credit or a deduction from your account statement. Negative values are
+  allowed. Corrections count in all totals, status dates, charts and forecasts, and are saved in the `.json`.
 - **CO₂ compensation boosters** per flight (Small / Medium / Large / X-Large), with a CO₂ cost column
   that appears as soon as one flight uses a booster.
 - **Dashboard**: KPI tiles, status progress (flown and forecast), cumulative P/QP/HON charts with status

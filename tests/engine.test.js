@@ -104,6 +104,20 @@ h = held([...segs(2020, 10), ...segs(2022, 10)]);
 assert.deepStrictEqual(h[2022], ['FTL', 'SEN', false]);
 assert.deepStrictEqual(h[2023], ['SEN', 'SEN', false]);
 
+// manual point corrections count in totals and status (also negative)
+{
+  const st = { flights: segs(2020, 3), adjustments: [
+    { id: 'a1', date: '2020-06-01', p: 1400, qp: 400, hon: 0, remark: 'retro credit' },
+    { id: 'a2', date: '2020-07-01', p: -10, qp: 0, hon: 0, remark: 'deduction' },
+  ], settings: { rules } };
+  const s = E.yearSummary(st, 2020);
+  assert.deepStrictEqual([s.actual.p, s.actual.qp, s.adjTotal.p], [600 + 1390, 600 + 400, 1390]);
+  assert.strictEqual(s.rows.length, 3);
+  assert.strictEqual(s.events.length, 5);
+  assert.strictEqual(s.statusActual, 'FTL');            // 1,990 P < 2,000 for Senator
+  assert.deepStrictEqual(E.years(st).slice(0, 1), [2020]);
+}
+
 // unknown haul earns nothing
 e = E.earn(flight({ airlineCode: 'LH', route: null }), rules);
 assert.ok(e.unknown && e.p === 0);

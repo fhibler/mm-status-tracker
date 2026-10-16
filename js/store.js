@@ -11,6 +11,7 @@
     format: FORMAT, version: 1,
     settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR' },
     flights: [],
+    adjustments: [],   // manual point corrections from the account statement
     apiCache: {},
   });
 
@@ -20,6 +21,9 @@
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
     earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, includeInPlan: true, notes: '',
   });
+
+  /** Manual correction as shown on the Miles & More account statement (values may be negative). */
+  S.newAdjustment = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), p: 0, qp: 0, hon: 0, remark: '' });
 
   /** Fill gaps so that older/handwritten files keep working. */
   S.normalize = (raw) => {
@@ -43,6 +47,9 @@
     s.flights = (Array.isArray(raw.flights) ? raw.flights : [])
       .filter(f => f && /^\d{4}-\d{2}-\d{2}$/.test(f.date))
       .map(f => ({ ...S.newFlight(f.date), ...f, id: f.id || S.uid() }));
+    s.adjustments = (Array.isArray(raw.adjustments) ? raw.adjustments : [])
+      .filter(a => a && /^\d{4}-\d{2}-\d{2}$/.test(a.date))
+      .map(a => ({ ...S.newAdjustment(a.date), ...a, id: a.id || S.uid() }));
     return s;
   };
 
@@ -132,6 +139,10 @@
       f.routeLookup = { queried: true, status: 'ok', fetchedAt: s.apiCache[no].fetchedAt, source: 'cache' };
       s.flights.push(f);
     });
+    // One statement correction, 10 days after the LX318 segment.
+    const lx = s.flights.find(f => f.flightNo === 'LX318');
+    const cd = new Date(lx.date + 'T12:00:00'); cd.setDate(cd.getDate() + 10);
+    s.adjustments.push({ ...S.newAdjustment(cd.toISOString().slice(0, 10)), p: 20, qp: 20, hon: 0, remark: 'Statement: retro credit for missing LX segment' });
     return s;
   };
 })();

@@ -148,6 +148,40 @@
     </form>
   </dialog>
 
+  <dialog id="adjDialog">
+    <form id="adjForm" method="dialog" novalidate>
+      <header class="dlg-head">
+        <h2 id="adjTitle">Add point correction</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
+      </header>
+      <div class="dlg-body">
+        <p class="hint" style="margin:0">Enter the difference shown on your Miles &amp; More account statement – e.g. a retro credit, a
+          missing segment or a deduction. Use negative values to reduce.</p>
+        <div class="grid">
+          <label>Date
+            <span class="date-field">
+              <input name="date" placeholder="YYYY/MM/DD" inputmode="numeric" maxlength="10" autocomplete="off" required>
+              <button type="button" class="date-btn" id="btnAdjDatePick" aria-label="Open calendar" title="Open calendar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+              </button>
+              <input type="date" id="adjDatePicker" class="date-native" tabindex="-1" aria-hidden="true">
+            </span>
+          </label>
+          <label>Points<input type="number" name="p" step="1" inputmode="numeric" placeholder="0"></label>
+          <label>Qualifying Points<input type="number" name="qp" step="1" inputmode="numeric" placeholder="0"></label>
+          <label>HON Circle Points<input type="number" name="hon" step="1" inputmode="numeric" placeholder="0"></label>
+        </div>
+        <label>Remark<input name="remark" placeholder="e.g. Statement 03/2026: retro credit LX325" autocomplete="off" required></label>
+      </div>
+      <footer class="dlg-foot">
+        <button type="button" class="btn danger" id="btnAdjDelete">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save correction</button>
+      </footer>
+    </form>
+  </dialog>
+
   <div class="tooltip" id="tooltip" role="status" hidden></div>
   <div class="toast" id="toast" role="status" hidden></div>
 

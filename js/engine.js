@@ -108,50 +108,70 @@
   /** A status reached in `year` is valid immediately until the end of February of the year after next. */
   E.validUntil = (year) => new Date(Date.UTC(year + 2, 2, 0)).toISOString().slice(0, 10);
 
-  E.years = (flights) => {
-    const ys = new Set(flights.map(f => +f.date.slice(0, 4)));
+  /** Calendar years that have flights or corrections, plus the current year. */
+  E.years = (state) => {
+    const items = [...(state.flights || []), ...(state.adjustments || [])];
+    const ys = new Set(items.map(x => +x.date.slice(0, 4)));
     ys.add(new Date().getFullYear());
     return [...ys].sort((a, b) => a - b);
   };
 
+  /** Manual correction (from the account statement) as earned values; may be negative. */
+  E.adjustmentEarn = (a) => ({ p: Math.round(+a.p || 0), qp: Math.round(+a.qp || 0), hon: Math.round(+a.hon || 0) });
+
   /**
-   * Walks one calendar year in date order.
-   * Returns rows with cumulative values, totals (actual vs. incl. plan) and the dates
-   * on which each status was (or will be) reached.
+   * Walks one calendar year in date order (flights and manual corrections).
+   * rows: flights with their earnings; adjustments: corrections; events: both, in date order.
+   * Also returns totals (actual vs. incl. plan) and the dates on which each status was
+   * (or will be) reached.
    */
   E.yearSummary = (state, year) => {
     const rules = state.settings.rules;
     const today = E.todayISO();
-    const rows = state.flights
-      .filter(f => +f.date.slice(0, 4) === year)
-      .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+    const inYear = x => +x.date.slice(0, 4) === year;
+    const items = [
+      ...state.flights.filter(inYear).map(f => ({ kind: 'flight', f })),
+      ...(state.adjustments || []).filter(inYear).map(a => ({ kind: 'adj', a })),
+    ].sort((x, y) => {
+      const dx = (x.f || x.a).date, dy = (y.f || y.a).date;
+      return dx.localeCompare(dy) || (x.kind === y.kind ? 0 : x.kind === 'flight' ? -1 : 1);
+    });
     const act = { p: 0, qp: 0, hon: 0 }, all = { p: 0, qp: 0, hon: 0 };
     const cost = { actual: { flight: 0, upgrade: 0, co2: 0, total: 0 }, plan: { flight: 0, upgrade: 0, co2: 0, total: 0 } };
     const reached = { actual: {}, forecast: {} };
+    const adjTotal = { p: 0, qp: 0, hon: 0 };
+    const rows = [], adjustments = [], events = [];
     let unknown = 0;
-    const out = rows.map(f => {
-      const planned = E.isPlanned(f, today);
-      const counts = !planned || f.includeInPlan !== false;
-      const e = E.earn(f, rules);
-      const c = E.cost(f);
-      if (e.unknown) unknown++;
+    const NO_COST = { flight: 0, upgrade: 0, co2: 0, total: 0 };
+    for (const it of items) {
+      const isAdj = it.kind === 'adj';
+      const date = isAdj ? it.a.date : it.f.date;
+      const planned = date > today;
+      const counts = isAdj || !planned || it.f.includeInPlan !== false;
+      const e = isAdj ? E.adjustmentEarn(it.a) : E.earn(it.f, rules);
+      const c = isAdj ? NO_COST : E.cost(it.f);
+      if (!isAdj && e.unknown) unknown++;
       if (counts) {
         all.p += e.p; all.qp += e.qp; all.hon += e.hon;
         const bucket = planned ? cost.plan : cost.actual;
         for (const k of ['flight', 'upgrade', 'co2', 'total']) bucket[k] += c[k];
         const s = E.statusFor(all.p, all.qp, all.hon, rules);
-        for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.forecast[k]) reached.forecast[k] = f.date;
+        for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.forecast[k]) reached.forecast[k] = date;
       }
       if (!planned) {
         act.p += e.p; act.qp += e.qp; act.hon += e.hon;
         const s = E.statusFor(act.p, act.qp, act.hon, rules);
-        for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.actual[k]) reached.actual[k] = f.date;
+        for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.actual[k]) reached.actual[k] = date;
       }
-      return { f, e, c, planned, counts, cum: { ...all }, cumActual: { ...act } };
-    });
-    // HON Circle also implies Senator-level benefits; keep reached dates consistent.
+      const row = isAdj
+        ? { adj: it.a, f: { date, flightNo: 'Correction' }, e, c, planned, counts, cum: { ...all }, cumActual: { ...act } }
+        : { f: it.f, e, c, planned, counts, cum: { ...all }, cumActual: { ...act } };
+      if (isAdj) { adjustments.push(row); adjTotal.p += e.p; adjTotal.qp += e.qp; adjTotal.hon += e.hon; }
+      else rows.push(row);
+      events.push(row);
+    }
     return {
-      year, rows: out, actual: act, forecast: all, cost, reached, unknown,
+      year, rows, adjustments, events, adjTotal, actual: act, forecast: all, cost, reached, unknown,
       statusActual: E.statusFor(act.p, act.qp, act.hon, rules),
       statusForecast: E.statusFor(all.p, all.qp, all.hon, rules),
     };
@@ -169,7 +189,7 @@
    * downgraded: held is below the status held in year-1 (prevHeld).
    */
   E.history = (state) => {
-    const ys = E.years(state.flights);
+    const ys = E.years(state);
     const out = [];
     let prevHeld = 'NONE', prevEarned = 'NONE';
     for (let y = ys[0]; y <= ys[ys.length - 1]; y++) {

@@ -38,7 +38,7 @@
   };
 
   const renderYearSelect = () => {
-    const ys = new Set(E.years(state.flights));
+    const ys = new Set(E.years(state));
     ys.add(new Date().getFullYear() + 1);
     ys.add(year);
     const sel = $('#yearSelect');
@@ -215,7 +215,7 @@
         <div class="chart" data-cum="${d.key}"></div>
         <div class="legend"><span><i style="--c:${d.color}"></i>Flown</span><span><i class="dash" style="--c:${d.color}"></i>Forecast</span><span><i style="--c:var(--accent)"></i>Today</span></div>
       </div>`).join('');
-    for (const d of defs) C.cumulative($(`[data-cum="${d.key}"]`, host), { ...d, year, rows: sum.rows, today: E.todayISO() });
+    for (const d of defs) C.cumulative($(`[data-cum="${d.key}"]`, host), { ...d, year, rows: sum.events, today: E.todayISO() });
   };
 
   const costSeries = () => [
@@ -258,7 +258,9 @@
       <div class="table-wrap"><table>
         <thead><tr><th>Earning cabin</th><th>Haul</th><th class="num">Flown</th><th class="num">Planned</th><th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th class="num">Cost</th></tr></thead>
         <tbody>${list.map(g => `<tr style="cursor:default"><td>${esc(g.cls)}</td><td>${haulTxt(g.haul)}</td><td class="num">${g.flown}</td><td class="num">${g.planned}</td>
-          <td class="num">${num(g.p)}</td><td class="num">${num(g.qp)}</td><td class="num">${num(g.hon)}</td><td class="num">${money(g.cost, true)}</td></tr>`).join('')}</tbody>
+          <td class="num">${num(g.p)}</td><td class="num">${num(g.qp)}</td><td class="num">${num(g.hon)}</td><td class="num">${money(g.cost, true)}</td></tr>`).join('')}
+          ${sum.adjustments.length ? `<tr style="cursor:default"><td colspan="2"><i>Point corrections</i></td><td class="num" colspan="2">${sum.adjustments.length}×</td>
+          <td class="num">${signed(sum.adjTotal.p)}</td><td class="num">${signed(sum.adjTotal.qp)}</td><td class="num">${signed(sum.adjTotal.hon)}</td><td class="num">–</td></tr>` : ''}</tbody>
       </table></div>
       <p class="hint">${lhg} Lufthansa Group segment(s) · ${star} Star Alliance segment(s) (Points only)</p>` : '<p class="muted">No segments in this year.</p>';
   };
@@ -361,11 +363,52 @@
           <tfoot>
             ${footRow('Flown total', tot(flown))}
             ${planned.length ? footRow('Incl. planned', tot(sum.rows)) : ''}
+            ${sum.adjustments.length ? footRow('Incl. point corrections', tot(sum.events)) : ''}
           </tfoot>
         </table></div>` : `<div class="empty"><h2>No flights in ${year}</h2><p>Add a flown or planned segment to start tracking.</p>
           <div class="btns"><button class="btn primary" data-act="add">Add flight</button>${state.flights.length ? '' : '<button class="btn" data-act="demo">Load demo data</button>'}</div></div>`}
-      </div>`;
+      </div>
+      ${renderAdjustmentsCard(sum)}`;
     $$('tbody tr[data-id]', host).forEach(tr => tr.addEventListener('click', () => openDialog(state.flights.find(f => f.id === tr.dataset.id))));
+    $$('tbody tr[data-adj-id]', host).forEach(tr => tr.addEventListener('click', () => openAdjDialog(state.adjustments.find(a => a.id === tr.dataset.adjId))));
+  };
+
+  const signed = (v) => (v > 0 ? '+' : '') + num(v);
+  const renderAdjustmentsCard = (sum) => {
+    const rows = sum.adjustments.map(r => `<tr data-adj-id="${esc(r.adj.id)}" class="${r.planned ? 'planned' : ''}">
+        <td>${C.fmtDate(r.adj.date)}</td>
+        <td class="num">${signed(r.e.p)}</td><td class="num">${signed(r.e.qp)}</td><td class="num">${signed(r.e.hon)}</td>
+        <td style="white-space:normal">${esc(r.adj.remark)}</td>
+      </tr>`).join('');
+    const t = sum.adjTotal;
+    return `<div class="card">
+      <div class="card-head">
+        <h2>Point corrections · CY ${year}</h2>
+        <span class="sub">manual adjustments as per your Miles &amp; More account statement · counted in all totals and forecasts</span>
+        <div class="right"><button class="btn" data-act="add-adj">+ Add correction</button></div>
+      </div>
+      ${rows ? `<div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th>Remark</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td>Total</td><td class="num">${signed(t.p)}</td><td class="num">${signed(t.qp)}</td><td class="num">${signed(t.hon)}</td><td></td></tr></tfoot>
+      </table></div>` : '<p class="muted" style="margin:0">No corrections in this year. Add one if your statement shows different Points, QP or HON Circle Points than calculated here.</p>'}
+    </div>`;
+  };
+
+  /* ================= point correction dialog (wired up below, after the date helpers) ================= */
+  const adjDlg = $('#adjDialog'), adjForm = $('#adjForm');
+  let adjDraft = null;
+  const openAdjDialog = (adj) => {
+    const isNewAdj = !adj;
+    adjDraft = adj ? { ...adj } : S.newAdjustment(+E.todayISO().slice(0, 4) === year ? E.todayISO() : `${year}-12-31`);
+    $('#adjTitle').textContent = isNewAdj ? 'Add point correction' : 'Edit point correction';
+    adjForm.date.value = dateToField(adjDraft.date);
+    for (const k of ['p', 'qp', 'hon']) adjForm[k].value = adjDraft[k] || '';
+    adjForm.remark.value = adjDraft.remark || '';
+    const del = $('#btnAdjDelete');
+    del.hidden = isNewAdj; del.textContent = 'Delete'; del.dataset.armed = '';
+    adjDlg.showModal();
+    (isNewAdj ? adjForm.p : adjForm.remark).focus();
   };
 
   /* ================= settings view ================= */
@@ -667,26 +710,54 @@
     (isNew ? form.date : form.flightNo).focus();
   };
 
-  // Date field: auto-insert slashes while typing, normalise on blur, calendar via a hidden native picker.
+  /** YYYY/MM/DD text field: auto-insert slashes while typing, normalise on blur, calendar via a hidden native picker. */
+  const wireDateField = (input, btn, picker, onPick) => {
+    input.addEventListener('input', (e) => {
+      if (!e.inputType || !e.inputType.startsWith('insert')) return;
+      const digits = input.value.replace(/\D/g, '').slice(0, 8);
+      input.value = [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean).join('/');
+    });
+    input.addEventListener('blur', () => {
+      const iso = dateToISO(input.value);
+      if (iso) input.value = dateToField(iso);
+    });
+    btn.addEventListener('click', () => {
+      picker.value = dateToISO(input.value) || E.todayISO();
+      try { picker.showPicker(); } catch { picker.focus(); picker.click(); }
+    });
+    picker.addEventListener('change', () => {
+      if (!picker.value) return;
+      input.value = dateToField(picker.value);
+      if (onPick) onPick();
+      input.focus();
+    });
+  };
   const datePicker = $('#datePicker');
-  form.date.addEventListener('input', (e) => {
-    if (!e.inputType || !e.inputType.startsWith('insert')) return;
-    const digits = form.date.value.replace(/\D/g, '').slice(0, 8);
-    form.date.value = [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean).join('/');
+  wireDateField(form.date, $('#btnDatePick'), datePicker, () => updatePreview());
+
+  wireDateField(adjForm.date, $('#btnAdjDatePick'), $('#adjDatePicker'));
+  $$('[data-close]', adjDlg).forEach(b => b.addEventListener('click', () => adjDlg.close()));
+  $('#btnAdjDelete').addEventListener('click', (e) => {
+    const b = e.currentTarget;
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
+    state.adjustments = state.adjustments.filter(a => a.id !== adjDraft.id);
+    save(); adjDlg.close(); toast('Correction deleted'); render();
   });
-  form.date.addEventListener('blur', () => {
-    const iso = dateToISO(form.date.value);
-    if (iso) form.date.value = dateToField(iso);
-  });
-  $('#btnDatePick').addEventListener('click', () => {
-    datePicker.value = dateToISO(form.date.value) || E.todayISO();
-    try { datePicker.showPicker(); } catch { datePicker.focus(); datePicker.click(); }
-  });
-  datePicker.addEventListener('change', () => {
-    if (!datePicker.value) return;
-    form.date.value = dateToField(datePicker.value);
-    updatePreview();
-    form.date.focus();
+  adjForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const date = dateToISO(adjForm.date.value);
+    if (!date) { toast('Please enter the date as YYYY/MM/DD'); adjForm.date.focus(); return; }
+    const vals = Object.fromEntries(['p', 'qp', 'hon'].map(k => [k, Math.round(+adjForm[k].value || 0)]));
+    if (!vals.p && !vals.qp && !vals.hon) { toast('Enter at least one value (P, QP or HON)'); adjForm.p.focus(); return; }
+    const remark = adjForm.remark.value.trim();
+    if (!remark) { toast('Please add a remark'); adjForm.remark.focus(); return; }
+    const adj = { ...adjDraft, date, ...vals, remark };
+    const i = state.adjustments.findIndex(a => a.id === adj.id);
+    i >= 0 ? (state.adjustments[i] = adj) : state.adjustments.push(adj);
+    year = +date.slice(0, 4);
+    save(); adjDlg.close();
+    toast(i >= 0 ? 'Correction saved' : 'Correction added');
+    render();
   });
 
   form.addEventListener('input', (e) => {
@@ -774,6 +845,7 @@
     if (!b) return;
     const act = b.dataset.act;
     if (act === 'add') openDialog(null);
+    if (act === 'add-adj') openAdjDialog(null);
     if (act === 'goto-flights') setView('flights');
     if (act === 'load') $('#fileLoad').click();
     if (act === 'lookup-missing') lookupMissing();
@@ -795,7 +867,7 @@
     if (!file) return;
     try {
       state = await S.importFile(file);
-      const ys = E.years(state.flights);
+      const ys = E.years(state);
       if (!ys.includes(year)) year = ys[ys.length - 1];
       save(); render();
       toast(`Loaded ${state.flights.length} flight(s) · ${Object.keys(state.apiCache).length} cached route lookup(s)`);
