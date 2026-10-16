@@ -47,6 +47,11 @@ assert.deepStrictEqual([e.p, e.qp, e.hon], [200, 200, 200]);
 e = E.earn(flight({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradePaid: true, earnClassOverride: 'Premium Economy' }), rules);
 assert.deepStrictEqual([e.cls, e.p, e.qp, e.hon], ['Premium Economy', 80, 80, 0]);
 
+// Luxair (co-issuing Miles & More partner) earns like a Lufthansa Group airline
+e = E.earn(flight({ airlineCode: 'LG', route: fraZrh, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+assert.deepStrictEqual([e.p, e.qp, e.hon, e.group], [40, 40, 40, 'LHG']);
+assert.strictEqual(E.parseFlightNo('LGL4591').code, 'LG');
+
 // Star Alliance: points only
 e = E.earn(flight({ airlineCode: 'TG', route: fraJfk, bookedClass: 'Economy' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [60, 0, 0]);

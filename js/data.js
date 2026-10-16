@@ -21,6 +21,7 @@ MM.AIRLINES = {
   VL: { name: 'Lufthansa City Airlines', icao: 'LHX', group: 'LHG' },
   AZ: { name: 'ITA Airways', icao: 'ITY', group: 'LHG' },
   LO: { name: 'LOT Polish Airlines', icao: 'LOT', group: 'LHG' },
+  LG: { name: 'Luxair', icao: 'LGL', group: 'LHG' },          // co-issuing Miles & More partner: P, QP and HON
   A3: { name: 'Aegean Airlines', icao: 'AEE', group: 'STAR' },
   AC: { name: 'Air Canada', icao: 'ACA', group: 'STAR' },
   CA: { name: 'Air China', icao: 'CCA', group: 'STAR' },
