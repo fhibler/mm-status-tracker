@@ -41,8 +41,10 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 
 1. **"You can earn Points with these airlines" + "Airlines at a glance" table.** Rows with all three ticks
    (Points, Qualifying Points, HON Circle Points) belong to group `LHG`. The "Star Alliance airlines" row (Points only)
-   is group `STAR`. As of the last check, the full-earning rows are: Air Dolomiti, Austrian, Brussels, Croatia,
-   Discover, Eurowings, ITA, LOT, Lufthansa, Lufthansa City, Luxair, SWISS.
+   is group `STAR`. The page says Points, QP and HON are credited "for flights operated by" these airlines, so
+   `E.earningGroup` uses the operating airline of a codeshare ("Operated by"), not the marketing one.
+   As of the last check, the full-earning rows are:
+   Air Dolomiti, Austrian, Brussels, Croatia, Discover, Eurowings, ITA, LOT, Lufthansa, Lufthansa City, Luxair, SWISS.
 2. **"Points, Qualifying Points and HON Circle Points per flight segment" table.** Gives the continental and
    intercontinental values per cabin. Footnote: HON Circle Points only in Business and First.
 3. **The three examples** (ZRH–BKK LX Business 200/200/200, FRA–BKK TG Economy 60/0/0, ZRH–MUC–BKK Business 240).

@@ -28,17 +28,26 @@
     return p ? { ...p, name: (p.airline && p.airline.name) || p.code, group: p.airline ? p.airline.group : 'NONE' } : null;
   };
 
+  /** SWISS code-share LX8000–8499 operated by Edelweiss: earns like SWISS (Miles & More FAQ). */
+  E.isEdelweissCodeshare = (f) => {
+    const p = E.parseFlightNo(f.flightNo);
+    const n = p ? parseInt(p.number, 10) : NaN;
+    return !!p && p.code === 'LX' && n >= 8000 && n <= 8499;
+  };
+
   /**
-   * Earning group: explicit override, else the better of marketing and operating airline
-   * (a codeshare operated by a Lufthansa Group airline earns like a Lufthansa Group flight).
+   * Earning group: explicit override, else the operating airline ("Points are credited for flights operated
+   * by …"), so LH9246 operated by United earns Points only and UA9414 operated by Lufthansa earns like Lufthansa.
+   * Without an operator, or with one that isn't in MM.AIRLINES, the marketing airline decides.
+   * Exception: LX8000–8499 operated by Edelweiss earns like SWISS.
    */
-  const GROUP_RANK = { NONE: 0, STAR: 1, LHG: 2 };
   E.earningGroup = (f) => {
     if (f.earningGroup && f.earningGroup !== 'auto') return f.earningGroup;
     const a = MM.AIRLINES[f.airlineCode];
     const mkt = a ? a.group : 'NONE';
     const op = E.operating(f);
-    return op && GROUP_RANK[op.group] > GROUP_RANK[mkt] ? op.group : mkt;
+    if (!op || !op.airline || E.isEdelweissCodeshare(f)) return mkt;
+    return op.group;
   };
 
   E.distanceKm = (a, b) => {

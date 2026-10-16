@@ -660,7 +660,10 @@
   const operatingInfo = () => {
     const op = E.operating(draft);
     if (!op) return '';
-    const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)} · ${esc(MM.GROUP_LABEL[op.group])}`;
+    const decides = !op.airline ? ' · airline not in list, earns as marketing airline'
+      : E.isEdelweissCodeshare(draft) && op.code === 'WK' ? ' · LX8000–8499 earns like SWISS'
+      : ` · operator decides earning: ${esc(MM.GROUP_LABEL[op.group])}`;
+    const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)}${decides}`;
     const entry = state.apiCache[op.iata];
     const opRoute = A.routeFromCache(entry);
     const r = draft.route;

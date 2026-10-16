@@ -106,10 +106,11 @@ site to GitHub Pages.
 
 ## Notes
 
-- **Codeshares**: enter the operating flight in "Operated by" (e.g. UA9414 → `LH488`). If the operating
-  airline belongs to the Lufthansa Group, the segment earns Points, QP and HON Circle Points like a
-  Lufthansa Group flight. The app checks the operating flight's route and uses it when the marketing number
-  has none. Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
+- **Codeshares**: enter the operating flight in "Operated by" (e.g. UA9414 → `LH488`). Miles & More credits by
+  the **operating** airline: UA9414 operated by Lufthansa earns Points, QP and HON Circle Points, while LH9246
+  operated by United earns Points only (Star Alliance). Exception: SWISS LX8000–8499 operated by Edelweiss
+  earns like SWISS. The app checks the operating flight's route and uses it when the marketing number has none.
+  Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
 - adsbdb returns the route a flight number currently operates. If a flight number changed routes,
   correct the airports or the haul by hand in the dialog.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,

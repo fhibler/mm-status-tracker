@@ -24,7 +24,7 @@ MM.AIRLINES = {
   LG: { name: 'Luxair', icao: 'LGL', group: 'LHG' },
   LX: { name: 'SWISS', icao: 'SWR', group: 'LHG' },
   // Edelweiss earns only on LX code-shares LX8000–8499 booked with SWISS under the LX number – enter those
-  // as LX flights (or WK with "Operated by" the LX number). WK-numbered bookings earn no status credit.
+  // as LX flights (optionally "Operated by" the WK number, see E.isEdelweissCodeshare). WK-numbered bookings earn nothing.
   WK: { name: 'Edelweiss Air', icao: 'EDW', group: 'NONE' },
   // Star Alliance: Points only
   A3: { name: 'Aegean Airlines', icao: 'AEE', group: 'STAR' },

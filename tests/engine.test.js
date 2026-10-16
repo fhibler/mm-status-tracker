@@ -147,8 +147,13 @@ assert.deepStrictEqual([e.p, e.qp, e.hon], [60, 0, 0]);
 // codeshare: marketed by a Star partner, operated by Lufthansa Group -> earns as Lufthansa Group
 e = E.earn(flight({ airlineCode: 'UA', operatingFlightNo: 'LH488', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon, e.group], [200, 200, 200, 'LHG']);
-e = E.earn(flight({ airlineCode: 'LH', operatingFlightNo: 'UA123', route: fraJfk, bookedClass: 'Economy' }), rules);
-assert.strictEqual(e.group, 'LHG');
+e = E.earn(flight({ airlineCode: 'LH', flightNo: 'LH9246', operatingFlightNo: 'UA679', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+assert.deepStrictEqual([e.p, e.qp, e.hon, e.group], [200, 0, 0, 'STAR']);   // marketed by Lufthansa, operated by United: Points only
+e = E.earn(flight({ airlineCode: 'LH', flightNo: 'LH1234', operatingFlightNo: 'ZZ1', route: fraJfk, bookedClass: 'Economy' }), rules);
+assert.strictEqual(e.group, 'LHG');   // unknown operator: the marketing airline decides
+e = E.earn(flight({ airlineCode: 'LX', flightNo: 'LX8123', operatingFlightNo: 'WK123', route: fraJfk, bookedClass: 'Economy' }), rules);
+assert.strictEqual(e.group, 'LHG');   // Edelweiss-operated LX8000–8499 earns like SWISS
+assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LX', flightNo: 'LX1000', operatingFlightNo: 'WK1000' })), 'NONE');
 
 // CO2 boosters
 e = E.earn(flight({ airlineCode: 'LX', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', co2Level: 'large' }), rules);
