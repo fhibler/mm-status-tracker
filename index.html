@@ -81,6 +81,7 @@
           <label>Flight number<input name="flightNo" placeholder="LH400" autocomplete="off" required></label>
           <label>Booking code<input name="bookingCode" placeholder="ABC123" maxlength="8" autocomplete="off"></label>
           <label>Airline<input name="airlineName" readonly tabindex="-1" placeholder="from flight number"></label>
+          <label>Operated by <small class="muted">(codeshare only)</small><input name="operatingFlightNo" placeholder="e.g. LH488" autocomplete="off"></label>
         </div>
 
         <fieldset class="route-box">
@@ -102,7 +103,7 @@
             </label>
             <label>Earning
               <select name="earningGroup">
-                <option value="auto">Auto (from airline)</option>
+                <option value="auto">Auto (airline or operator)</option>
                 <option value="LHG">Lufthansa Group – P, QP, HON</option>
                 <option value="STAR">Star Alliance – Points only</option>
                 <option value="NONE">No status credit</option>

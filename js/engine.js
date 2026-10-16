@@ -22,11 +22,23 @@
 
   E.airlineName = (f) => f.airlineName || (MM.AIRLINES[f.airlineCode] || {}).name || f.airlineCode || '–';
 
-  /** Earning group: explicit override, else from airline table, else Star Alliance assumption = none. */
+  /** Operating carrier of a codeshare (from f.operatingFlightNo), or null. */
+  E.operating = (f) => {
+    const p = f.operatingFlightNo ? E.parseFlightNo(f.operatingFlightNo) : null;
+    return p ? { ...p, name: (p.airline && p.airline.name) || p.code, group: p.airline ? p.airline.group : 'NONE' } : null;
+  };
+
+  /**
+   * Earning group: explicit override, else the better of marketing and operating airline
+   * (a codeshare operated by a Lufthansa Group airline earns like a Lufthansa Group flight).
+   */
+  const GROUP_RANK = { NONE: 0, STAR: 1, LHG: 2 };
   E.earningGroup = (f) => {
     if (f.earningGroup && f.earningGroup !== 'auto') return f.earningGroup;
     const a = MM.AIRLINES[f.airlineCode];
-    return a ? a.group : 'NONE';
+    const mkt = a ? a.group : 'NONE';
+    const op = E.operating(f);
+    return op && GROUP_RANK[op.group] > GROUP_RANK[mkt] ? op.group : mkt;
   };
 
   E.distanceKm = (a, b) => {

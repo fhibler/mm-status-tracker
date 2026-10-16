@@ -20,22 +20,36 @@
     };
   };
 
+  /** Callsigns to try: adsbdb often knows only the ICAO form (UAL9414) and not the IATA form (UA9414). */
+  const callsigns = (key) => {
+    const p = MM.engine.parseFlightNo(key);
+    const out = [key];
+    if (p && p.airline && p.airline.icao) out.push(p.airline.icao + p.number);
+    return out;
+  };
+
   /**
    * Returns the cache entry for a flight number. Queries the API only when no
    * cached answer exists (or `force` is set). Network errors are not cached as final.
+   * A "not found" cached before the ICAO fallback existed (no `tried` list) is retried once.
    */
   A.lookup = async (state, iataFlightNo, { force = false } = {}) => {
     const key = iataFlightNo.toUpperCase();
     const cached = state.apiCache[key];
-    if (cached && cached.queried && cached.status !== 'error' && !force) return { ...cached, fromCache: true };
-    const entry = { queried: true, source: 'adsbdb.com', fetchedAt: new Date().toISOString() };
+    const stale = cached && cached.status === 'notfound' && !cached.tried;
+    if (cached && cached.queried && cached.status !== 'error' && !stale && !force) return { ...cached, fromCache: true };
+    const entry = { queried: true, source: 'adsbdb.com', fetchedAt: new Date().toISOString(), tried: [] };
     try {
-      const res = await fetch(BASE + encodeURIComponent(key), { headers: { Accept: 'application/json' } });
-      const json = await res.json().catch(() => null);
-      if (json && json.response && json.response.flightroute) {
-        entry.status = 'ok';
-        entry.response = json.response;
-      } else {
+      for (const cs of callsigns(key)) {
+        entry.tried.push(cs);
+        const res = await fetch(BASE + encodeURIComponent(cs), { headers: { Accept: 'application/json' } });
+        const json = await res.json().catch(() => null);
+        if (json && json.response && json.response.flightroute) {
+          entry.status = 'ok';
+          entry.queriedAs = cs;
+          entry.response = json.response;
+          break;
+        }
         entry.status = 'notfound';
         entry.response = json ? json.response : null;
       }

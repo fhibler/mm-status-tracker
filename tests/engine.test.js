@@ -38,6 +38,12 @@ assert.deepStrictEqual([e.p, e.qp, e.hon], [200, 200, 200]);
 e = E.earn(flight({ airlineCode: 'TG', route: fraJfk, bookedClass: 'Economy' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [60, 0, 0]);
 
+// codeshare: marketed by a Star partner, operated by Lufthansa Group -> earns as Lufthansa Group
+e = E.earn(flight({ airlineCode: 'UA', operatingFlightNo: 'LH488', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+assert.deepStrictEqual([e.p, e.qp, e.hon, e.group], [200, 200, 200, 'LHG']);
+e = E.earn(flight({ airlineCode: 'LH', operatingFlightNo: 'UA123', route: fraJfk, bookedClass: 'Economy' }), rules);
+assert.strictEqual(e.group, 'LHG');
+
 // CO2 boosters
 e = E.earn(flight({ airlineCode: 'LX', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', co2Level: 'large' }), rules);
 assert.deepStrictEqual([e.p, e.qp, e.hon], [300, 300, 240]);

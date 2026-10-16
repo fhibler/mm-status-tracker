@@ -79,6 +79,10 @@ pull request. On pushes to `main`, it also deploys the site to GitHub Pages.
 
 ## Notes
 
+- **Codeshares**: enter the operating flight in "Operated by" (e.g. UA9414 → `LH488`). If the operating
+  airline belongs to the Lufthansa Group, the segment earns Points, QP and HON Circle Points like a
+  Lufthansa Group flight. The app checks the operating flight's route and uses it when the marketing number
+  has none. Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
 - adsbdb returns the route a flight number currently operates. If a flight number changed routes,
   correct the airports or the haul by hand in the dialog.
 - Continental means both airports are in Europe or on the Mediterranean rim (North Africa, Levant,

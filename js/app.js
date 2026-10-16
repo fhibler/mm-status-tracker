@@ -308,7 +308,7 @@
       return `<tr data-id="${f.id}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
         <td class="num" style="text-align:left">${C.fmtDate(f.date)}</td>
         <td><b>${esc(f.flightNo)}</b></td>
-        <td>${esc(E.airlineName(f))}<div class="muted">${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
+        <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
         <td><code>${esc(f.bookingCode || '–')}</code></td>
         <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
@@ -466,7 +466,7 @@
     if (r && r.origin && r.destination) {
       const km = E.distanceKm(r.origin, r.destination);
       const name = a => esc([a.city || a.name, a.country].filter(Boolean).join(', ') || a.iata);
-      const src = r.source === 'manual' ? 'entered manually' : `from adsbdb.com${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
+      const src = r.source === 'manual' ? 'entered manually' : `from adsbdb.com${r.via ? ` via ${esc(r.via)}` : ''}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
       const unknown = !r.origin.country || !r.destination.country;
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
         (unknown ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '');
@@ -479,6 +479,42 @@
     } else {
       info.textContent = 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
     }
+    info.insertAdjacentHTML('beforeend', operatingInfo());
+  };
+
+  /** Second line in the route box for codeshares: operator, its earning group and a route cross-check. */
+  const operatingInfo = () => {
+    const op = E.operating(draft);
+    if (!op) return '';
+    const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)} · ${esc(MM.GROUP_LABEL[op.group])}`;
+    const entry = state.apiCache[op.iata];
+    const opRoute = A.routeFromCache(entry);
+    const r = draft.route;
+    let check = '';
+    if (entry && entry.status === 'loading') check = ' · checking route…';
+    else if (opRoute && r && r.origin && r.destination) {
+      const same = opRoute.origin.iata === r.origin.iata && opRoute.destination.iata === r.destination.iata;
+      check = same ? ' · <span style="color:var(--s-hon)">✓ same route</span>'
+        : ` · <b style="color:var(--danger)">⚠ ${esc(op.iata)} is listed as ${esc(opRoute.origin.iata)}→${esc(opRoute.destination.iata)}</b>`;
+    } else if (entry && entry.status === 'notfound') check = ` · route of ${esc(op.iata)} unknown`;
+    return `<br>${head}${check}`;
+  };
+
+  /** Looks up the operating flight (cached like any other lookup); uses its route when the marketing number has none. */
+  const lookupOperating = async () => {
+    const op = E.operating(draft);
+    if (!op) { updatePreview(); return; }
+    const entry = await A.lookup(state, op.iata);
+    if (!dlg.open || !E.operating(draft) || E.operating(draft).iata !== op.iata) return;
+    const route = A.routeFromCache(entry);
+    if (route && !(draft.route && draft.route.origin && draft.route.destination)) {
+      draft.route = { ...route, via: op.iata };
+      draft.routeLookup = { queried: true, status: 'ok', fetchedAt: entry.fetchedAt, source: entry.fromCache ? 'cache' : 'api', flightNo: draft.flightNo, via: op.iata };
+      form.origin.value = route.origin.iata || '';
+      form.destination.value = route.destination.iata || '';
+    }
+    save();
+    updatePreview();
   };
 
   /* Date field shows YYYY/MM/DD; the model stores ISO YYYY-MM-DD. */
@@ -493,7 +529,9 @@
 
   const readForm = () => {
     const parsed = E.parseFlightNo(form.flightNo.value);
+    const opParsed = E.parseFlightNo(form.operatingFlightNo.value);
     Object.assign(draft, {
+      operatingFlightNo: opParsed ? opParsed.iata : form.operatingFlightNo.value.toUpperCase().replace(/\s/g, ''),
       date: dateToISO(form.date.value),
       flightNo: parsed ? parsed.iata : form.flightNo.value.toUpperCase().replace(/\s/g, ''),
       airlineCode: parsed ? parsed.code : '',
@@ -515,7 +553,7 @@
 
   const updatePreview = () => {
     readForm();
-    form.airlineName.value = draft.flightNo ? (draft.airlineName ? `${draft.airlineName} · ${MM.GROUP_LABEL[E.earningGroup(draft)]}` : 'Unknown airline') : '';
+    form.airlineName.value = draft.flightNo ? (draft.airlineName ? `${draft.airlineName} · earns as ${MM.GROUP_LABEL[E.earningGroup(draft)]}` : 'Unknown airline') : '';
     $('[data-co2-only]', form).hidden = draft.co2Level === 'none';
     const planned = !!draft.date && E.isPlanned(draft);
     $('[data-plan-only]', form).hidden = !planned;
@@ -560,7 +598,8 @@
     const entry = await A.lookup(state, parsed.iata, { force });
     if (seq !== lookupSeq || !dlg.open) return;
     applyLookup(entry, parsed.iata);
-    if (force && !entry.fromCache) toast(entry.status === 'ok' ? 'Route updated from API' : 'No route found');
+    if (entry.status !== 'ok' && E.operating(draft)) await lookupOperating();
+    if (force && !entry.fromCache) toast(draft.route ? 'Route updated from API' : 'No route found');
   };
 
   const autoLookup = () => {
@@ -597,6 +636,7 @@
     $('#dlgTitle').textContent = isNew ? 'Add flight' : `Edit ${draft.flightNo}`;
     form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
+    form.operatingFlightNo.value = draft.operatingFlightNo || '';
     form.bookingCode.value = draft.bookingCode;
     form.origin.value = draft.route && draft.route.origin ? draft.route.origin.iata : '';
     form.destination.value = draft.route && draft.route.destination ? draft.route.destination.iata : '';
@@ -656,6 +696,15 @@
       }
       updatePreview();
       autoLookup();
+    }
+    if (e.target.name === 'operatingFlightNo') {
+      const parsed = E.parseFlightNo(form.operatingFlightNo.value);
+      if (parsed) form.operatingFlightNo.value = parsed.iata;
+      if (draft.route && draft.route.via && (!parsed || parsed.iata !== draft.route.via)) {
+        draft.route = null; form.origin.value = ''; form.destination.value = '';
+      }
+      readForm();
+      lookupOperating();
     }
   });
   $('#btnLookup').addEventListener('click', () => {
