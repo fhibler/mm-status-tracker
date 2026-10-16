@@ -5,6 +5,7 @@
   const A = (MM.api = {});
   const BASE = 'https://api.adsbdb.com/v0/callsign/';
 
+  /** adsbdb airport -> the app's airport shape. */
   const mapAirport = (a) => a && {
     iata: a.iata_code, icao: a.icao_code, name: a.name, city: a.municipality,
     country: a.country_iso_name, countryName: a.country_name, lat: a.latitude, lon: a.longitude,
@@ -20,6 +21,16 @@
     };
   };
 
+  /** Airport by IATA code: from a cached route lookup, else from the bundled airport table (MM.airport). */
+  A.airport = (state, iata) => {
+    for (const c of Object.values(state.apiCache)) {
+      const fr = c.status === 'ok' && c.response && c.response.flightroute;
+      const a = fr && [fr.origin, fr.destination].find(x => x && x.iata_code === iata);
+      if (a) return mapAirport(a);
+    }
+    return MM.airport(iata) || { iata, country: null, lat: null, lon: null };
+  };
+
   /** Callsigns to try: adsbdb often knows only the ICAO form (UAL9414) and not the IATA form (UA9414). */
   const callsigns = (key) => {
     const p = MM.engine.parseFlightNo(key);
@@ -30,19 +41,19 @@
 
   /**
    * Returns the cache entry for a flight number. Queries the API only when no
-   * cached answer exists (or `force` is set). Network errors are not cached as final.
-   * A "not found" cached before the ICAO fallback existed (no `tried` list) is retried once.
+   * cached answer exists (or `force` is set). Network and server errors (anything but 200 / 404,
+   * e.g. 429 rate limit) are cached as 'error', which is not final: the next lookup asks again.
    */
   A.lookup = async (state, iataFlightNo, { force = false } = {}) => {
     const key = iataFlightNo.toUpperCase();
     const cached = state.apiCache[key];
-    const stale = cached && cached.status === 'notfound' && !cached.tried;
-    if (cached && cached.queried && cached.status !== 'error' && !stale && !force) return { ...cached, fromCache: true };
+    if (cached && cached.status !== 'error' && !force) return { ...cached, fromCache: true };
     const entry = { queried: true, source: 'adsbdb.com', fetchedAt: new Date().toISOString(), tried: [] };
     try {
       for (const cs of callsigns(key)) {
         entry.tried.push(cs);
         const res = await fetch(BASE + encodeURIComponent(cs), { headers: { Accept: 'application/json' } });
+        if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
         const json = await res.json().catch(() => null);
         if (json && json.response && json.response.flightroute) {
           entry.status = 'ok';

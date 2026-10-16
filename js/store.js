@@ -1,14 +1,17 @@
 /* State, persistence (localStorage autosave + .json save/load) and demo data. */
 (function () {
   const S = (MM.store = {});
+  const E = MM.engine;
   const LS_KEY = 'mm-status-tracker:v1';
   const FORMAT = 'mm-status-tracker';
+  const VERSION = 2;   // file format; older data (version 1) is refused by S.parse
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
   const clone = (o) => JSON.parse(JSON.stringify(o));
 
   S.uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
   S.empty = () => ({
-    format: FORMAT, version: 2,   // file format; older files (version 1) are refused by S.importFile
+    format: FORMAT, version: VERSION,
     settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '' },
     flights: [],
     bookings: {},      // booking code -> { fare }: one fare per booking, split evenly over its segments
@@ -19,7 +22,7 @@
   });
 
   S.newFlight = (date) => ({
-    id: S.uid(), bookingCode: '', date: date || MM.engine.todayISO(), transport: 'flight',   // 'flight' | 'rail' | 'bus'
+    id: S.uid(), bookingCode: '', date: date || E.todayISO(), transport: 'flight',   // 'flight' | 'rail' | 'bus'
     flightNo: '', airlineCode: '', airlineName: '', operatingFlightNo: '',
     earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradeType: '',   // see MM.UPGRADE_TYPES
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
@@ -27,116 +30,128 @@
   });
 
   /** Manual correction as shown on the Miles & More account statement (values may be negative). */
-  S.newAdjustment = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), p: 0, qp: 0, hon: 0, remark: '' });
+  S.newAdjustment = (date) => ({ id: S.uid(), date: date || E.todayISO(), p: 0, qp: 0, hon: 0, remark: '' });
 
   /** One row of a planned mix of extra segments (see MM.engine.planScenario); cost = estimated cost per segment. */
   S.newMixRow = (o) => ({ id: S.uid(), count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 0, ...o });
 
   /** Marriott Bonvoy stay; date = check-out date (the stay is credited when it is completed). */
-  S.newStay = (date) => ({ id: S.uid(), date: date || MM.engine.todayISO(), hotel: '', nights: 2, remark: '' });
-
-  S.bookingKey = (code) => MM.engine.bookingKey(code);
+  S.newStay = (date) => ({ id: S.uid(), date: date || E.todayISO(), hotel: '', nights: 2, remark: '' });
 
   /** Miles & More number: digits only (cards show it in groups, e.g. "992 000 123 456 789"). */
   S.memberNumber = (v) => String(v || '').replace(/\D/g, '').slice(0, 20);
 
   /** "miles-and-more-992000123456789.json" with a Miles & More number, else "miles-and-more-status-2026-10-16.json". */
   S.fileName = (state) => {
-    const n = S.memberNumber(state.settings && state.settings.memberNumber);
-    return n ? `miles-and-more-${n}.json` : `miles-and-more-status-${MM.engine.todayISO()}.json`;
+    const n = S.memberNumber(state.settings.memberNumber);
+    return n ? `miles-and-more-${n}.json` : `miles-and-more-status-${E.todayISO()}.json`;
   };
 
   /**
-   * Fares are stored once per booking code (state.bookings); segments without a booking code keep their own
-   * fare (flightCost). Bookings without any segment are dropped.
+   * Adds or replaces a flight. `fare` is the whole booking's fare when the flight has a booking code (shared by all
+   * segments with that code), else the flight's own fare.
    */
-  const normalizeBookings = (raw, flights) => {
-    const out = {};
-    const src = raw.bookings && typeof raw.bookings === 'object' ? raw.bookings : {};
-    for (const [k, b] of Object.entries(src)) if (S.bookingKey(k)) out[S.bookingKey(k)] = { fare: Math.max(0, +(b && b.fare) || 0) };
-    return S.pruneBookings({ bookings: out, flights }).bookings;
+  S.saveFlight = (state, flight, fare) => {
+    const k = E.bookingKey(flight.bookingCode);
+    const f = { ...flight, bookingCode: k, flightCost: k ? 0 : fare };
+    if (k) state.bookings[k] = { fare };
+    const i = state.flights.findIndex(x => x.id === f.id);
+    i >= 0 ? (state.flights[i] = f) : state.flights.push(f);
+    S.prune(state);
+    return f;
+  };
+  S.deleteFlight = (state, id) => {
+    state.flights = state.flights.filter(f => f.id !== id);
+    S.prune(state);
   };
 
-  /** Planner scenarios: keeps valid rows and drops CO₂ what-ifs for flights that no longer exist. */
-  const normalizePlans = (raw, flights) => {
+  /** Drops bookings without segments and CO₂ what-ifs for flights that no longer exist or moved to another year. */
+  S.prune = (state) => {
+    const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
+    for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
+    const yearOf = new Map(state.flights.map(f => [f.id, f.date.slice(0, 4)]));
+    for (const [y, p] of Object.entries(state.plans)) for (const id of Object.keys(p.co2)) if (yearOf.get(id) !== y) delete p.co2[id];
+    return state;
+  };
+
+  /* ---------- normalize: fills missing fields with defaults and drops invalid entries ---------- */
+  const isObj = (x) => !!x && typeof x === 'object';
+  /** IDs end up in HTML attributes and CSS selectors, so only simple ones are kept. */
+  const safeId = (id) => (typeof id === 'string' && /^[\w-]{1,40}$/.test(id) ? id : S.uid());
+  const list = (xs, make) => (Array.isArray(xs) ? xs : []).filter(x => isObj(x) && DATE.test(x.date))
+    .map(x => ({ ...make(x.date), ...x, id: safeId(x.id) }));
+
+  /** Saved rules over the defaults, value by value: only numbers are taken (no NaN from partial files), unknown keys are dropped. */
+  const mergeRules = (d, r) => Object.fromEntries(Object.entries(d).map(([k, v]) => {
+    const x = isObj(r) ? r[k] : undefined;
+    if (Array.isArray(v)) return [k, Array.isArray(x) ? MM.CLASSES.filter(c => x.includes(c)) : v];   // honClasses
+    if (isObj(v)) return [k, mergeRules(v, x)];
+    return [k, x !== null && x !== '' && Number.isFinite(+x) ? +x : v];
+  }));
+
+  const normalizePlans = (raw) => {
     const out = {};
-    if (!raw || typeof raw !== 'object') return out;
-    const ids = new Set(flights.map(f => f.id));
-    for (const [y, p] of Object.entries(raw)) {
-      if (!/^\d{4}$/.test(y) || !p || typeof p !== 'object') continue;
+    for (const [y, p] of Object.entries(isObj(raw) ? raw : {})) {
+      if (!/^\d{4}$/.test(y) || !isObj(p)) continue;
       const co2 = {};
-      for (const [id, o] of Object.entries(p.co2 || {})) {
-        if (ids.has(id) && o && MM.CO2_LEVELS.includes(o.level)) co2[id] = { level: o.level, cost: Math.max(0, +o.cost || 0) };
+      for (const [id, o] of Object.entries(isObj(p.co2) ? p.co2 : {})) {
+        if (isObj(o) && MM.CO2_LEVELS.includes(o.level)) co2[id] = { level: o.level, cost: Math.max(0, +o.cost || 0) };
       }
-      const mix = (Array.isArray(p.mix) ? p.mix : []).filter(r => r && typeof r === 'object').map(r => S.newMixRow({
-        id: r.id || S.uid(), count: Math.max(0, Math.round(+r.count || 0)),
+      const mix = (Array.isArray(p.mix) ? p.mix : []).filter(isObj).map(r => S.newMixRow({
+        id: safeId(r.id), count: Math.max(0, Math.round(+r.count || 0)),
         kind: ['LHG', 'STAR', 'RAIL'].includes(r.kind) ? r.kind : 'LHG',
         haul: r.haul === 'intercontinental' ? 'intercontinental' : 'continental',
         cls: MM.CLASSES.includes(r.cls) ? r.cls : 'Economy',
         co2Level: MM.CO2_LEVELS.includes(r.co2Level) ? r.co2Level : 'none',
         cost: Math.max(0, +r.cost || 0),
       }));
-      if (Object.keys(co2).length || mix.length) out[y] = { co2, mix };
+      out[y] = { co2, mix };
     }
     return out;
   };
-  S.pruneBookings = (state) => {
-    const used = new Set(state.flights.map(f => S.bookingKey(f.bookingCode)).filter(Boolean));
-    for (const k of Object.keys(state.bookings || {})) if (!used.has(k)) delete state.bookings[k];
-    return state;
-  };
 
-  /** Fills missing fields with defaults and drops invalid entries (e.g. in handwritten files). */
   S.normalize = (raw) => {
     const s = S.empty();
-    if (!raw || typeof raw !== 'object') return s;
-    if (raw.settings && raw.settings.rules) {
-      const r = raw.settings.rules, d = s.settings.rules;
-      s.settings.rules = {
-        points: { ...d.points, ...(r.points || {}) },
-        honClasses: Array.isArray(r.honClasses) ? r.honClasses : d.honClasses,
-        thresholds: {
-          FTL: { ...d.thresholds.FTL, ...((r.thresholds || {}).FTL || {}) },
-          SEN: { ...d.thresholds.SEN, ...((r.thresholds || {}).SEN || {}) },
-          HON: { ...d.thresholds.HON, ...((r.thresholds || {}).HON || {}) },
-        },
-        railCaps: { ...d.railCaps, ...(r.railCaps || {}) },
-        marriott: { ...d.marriott, ...(r.marriott || {}) },
-        co2: { ...d.co2, ...(r.co2 || {}) },
-      };
+    if (!isObj(raw)) return s;
+    const set = isObj(raw.settings) ? raw.settings : {};
+    s.settings.rules = mergeRules(MM.DEFAULT_RULES, set.rules);
+    if (['EUR', 'CHF', 'USD', 'GBP'].includes(set.currency)) s.settings.currency = set.currency;
+    s.settings.memberNumber = S.memberNumber(set.memberNumber);
+    if (isObj(set.startStatus) && MM.STATUS_ORDER.includes(set.startStatus.status)) {
+      s.settings.startStatus = { status: set.startStatus.status, year: +set.startStatus.year || null };
     }
-    if (raw.settings && raw.settings.currency) s.settings.currency = raw.settings.currency;
-    if (raw.settings && raw.settings.memberNumber) s.settings.memberNumber = S.memberNumber(raw.settings.memberNumber);
-    if (raw.settings && raw.settings.startStatus && MM.STATUS_ORDER.includes(raw.settings.startStatus.status)) {
-      s.settings.startStatus = { status: raw.settings.startStatus.status, year: +raw.settings.startStatus.year || null };
+    s.apiCache = isObj(raw.apiCache) ? raw.apiCache : {};
+    s.flights = list(raw.flights, S.newFlight);
+    s.adjustments = list(raw.adjustments, S.newAdjustment);
+    s.stays = list(raw.stays, S.newStay);
+    for (const [k, b] of Object.entries(isObj(raw.bookings) ? raw.bookings : {})) {
+      if (E.bookingKey(k)) s.bookings[E.bookingKey(k)] = { fare: Math.max(0, +(isObj(b) && b.fare) || 0) };
     }
-    s.apiCache = raw.apiCache && typeof raw.apiCache === 'object' ? raw.apiCache : {};
-    s.flights = (Array.isArray(raw.flights) ? raw.flights : [])
-      .filter(f => f && /^\d{4}-\d{2}-\d{2}$/.test(f.date))
-      .map(f => ({ ...S.newFlight(f.date), ...f, id: f.id || S.uid() }));
-    s.adjustments = (Array.isArray(raw.adjustments) ? raw.adjustments : [])
-      .filter(a => a && /^\d{4}-\d{2}-\d{2}$/.test(a.date))
-      .map(a => ({ ...S.newAdjustment(a.date), ...a, id: a.id || S.uid() }));
-    s.stays = (Array.isArray(raw.stays) ? raw.stays : [])
-      .filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date))
-      .map(x => ({ ...S.newStay(x.date), ...x, id: x.id || S.uid() }));
-    s.bookings = normalizeBookings(raw, s.flights);
-    s.plans = normalizePlans(raw.plans, s.flights);
-    return s;
+    s.plans = normalizePlans(raw.plans);
+    return S.prune(s);
   };
 
-  S.load = () => {
-    try {
-      const txt = localStorage.getItem(LS_KEY);
-      return txt ? S.normalize(JSON.parse(txt)) : null;
-    } catch { return null; }
+  /** Parses saved data (a .json file or localStorage). Throws for other files and for the old format (version 1). */
+  S.parse = (text) => {
+    const raw = JSON.parse(text);
+    if (!isObj(raw) || (raw.format && raw.format !== FORMAT)) throw new Error('Not a Miles & More Status Tracker file.');
+    if (!(+raw.version >= VERSION)) throw new Error('This data was saved by an older version of the tracker and can no longer be loaded.');
+    return S.normalize(raw);
   };
+
+  /** Data saved in this browser, or null. Throws like S.parse for old or broken data. */
+  S.load = () => {
+    let txt = null;
+    try { txt = localStorage.getItem(LS_KEY); } catch { /* storage blocked */ }
+    return txt ? S.parse(txt) : null;
+  };
+  /** Saves to localStorage; false when that isn't possible (storage full, or blocked in private mode). */
   S.persist = (state) => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* storage unavailable – .json export still works */ }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); return true; } catch { return false; }
   };
 
   S.exportJSON = (state) => {
-    const data = { ...state, format: FORMAT, version: 2, savedAt: new Date().toISOString() };
+    const data = { ...state, format: FORMAT, version: VERSION, savedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -146,20 +161,7 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
   };
 
-  S.importFile = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const raw = JSON.parse(reader.result);
-        if (raw.format && raw.format !== FORMAT) throw new Error('Not a Miles & More Status Tracker file.');
-        // Version 1 files (per-segment fares, "upgrade paid") are no longer converted; they would load with wrong values.
-        if (!(+raw.version >= 2)) throw new Error('This file was saved by an older version of the tracker and can no longer be loaded.');
-        resolve(S.normalize(raw));
-      } catch (e) { reject(e); }
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
+  S.importFile = (file) => file.text().then(S.parse);
 
   /* ---------- demo data (routes pre-cached, so no API calls are needed) ---------- */
   const AP = {
@@ -181,9 +183,9 @@
 
   S.demo = () => {
     const s = S.empty();
-    const today = MM.engine.todayISO();
+    const today = E.todayISO();
     const plan = [
-      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, paid, fare (added to the booking), upgradeCost, co2, co2Cost, pnr]
+      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, bid (else voucher), fare (added to the booking), upgradeCost, co2, co2Cost, pnr]
       [-14, 'LH400', 'FRA', 'JFK', 'Economy', 'Business', true, 780, 650, 'medium', 18, 'K7XQ2P'],
       [-14, 'LH401', 'JFK', 'FRA', 'Economy', 'Economy', false, 0, 0, 'none', 0, 'K7XQ2P'],
       [-9, 'LX318', 'ZRH', 'LHR', 'Economy', 'Economy', false, 189, 0, 'none', 0, 'R2MM8D'],
@@ -201,14 +203,14 @@
       [2, 'LX38', 'ZRH', 'SFO', 'Business', 'Business', false, 2200, 0, 'medium', 30, 'PLAN03'],
     ];
     const base = new Date(today + 'T12:00:00');
-    plan.forEach(([mo, no, from, to, bc, uc, paid, fc, uco, co2, co2c, pnr], i) => {
+    plan.forEach(([mo, no, from, to, bc, uc, bid, fc, uco, co2, co2c, pnr], i) => {
       const d = new Date(base); d.setMonth(d.getMonth() + mo); d.setDate(Math.min(27, 3 + (i * 5) % 25));
       const date = d.toISOString().slice(0, 10);
-      const p = MM.engine.parseFlightNo(no);
+      const p = E.parseFlightNo(no);
       const resp = { flightroute: { callsign: no, callsign_iata: no, airline: { name: p.airline.name, iata: p.code, icao: p.airline.icao }, origin: apResp(from), destination: apResp(to) } };
       s.apiCache[no] = { queried: true, source: 'adsbdb.com (demo)', fetchedAt: new Date().toISOString(), status: 'ok', response: resp };
       const f = { ...S.newFlight(date), flightNo: no, airlineCode: p.code, airlineName: p.airline.name, bookingCode: pnr,
-        bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : paid ? 'bid' : 'voucher',
+        bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : bid ? 'bid' : 'voucher',
         upgradeCost: uco, co2Level: co2, co2Cost: co2c };
       s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
       f.route = MM.api.routeFromCache(s.apiCache[no]);

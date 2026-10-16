@@ -3,30 +3,36 @@
   const E = MM.engine, S = MM.store, A = MM.api, C = MM.charts;
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const esc = C.esc;
   const num = (v) => Math.round(v).toLocaleString('en-US');
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-  let state = S.load() || S.empty();
+  let state, loadError = '';
+  try { state = S.load() || S.empty(); } catch (err) { state = S.empty(); loadError = err.message; }   // old data stays stored until the first change
   let year = new Date().getFullYear();
   let view = 'dashboard';
 
-  const money = (v, compact) => {
-    try {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: state.settings.currency || 'EUR', maximumFractionDigits: compact ? 0 : 2, minimumFractionDigits: compact ? 0 : 2 }).format(v || 0);
-    } catch { return (v || 0).toFixed(compact ? 0 : 2); }
-  };
-  const save = () => S.persist(state);
-  const toast = (msg) => {
+  const money = (v, compact) => new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: state.settings.currency, maximumFractionDigits: compact ? 0 : 2, minimumFractionDigits: compact ? 0 : 2,
+  }).format(v || 0);
+  const toast = (msg, ms = 2600) => {
     const t = $('#toast');
     t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), 2600);
+    clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), ms);
+  };
+  let saveFailed = false;
+  const save = () => {
+    const ok = S.persist(state);
+    if (!ok && !saveFailed) toast('This browser can\'t store your data (storage full or blocked). Use Save .json to keep it.', 8000);
+    saveFailed = !ok;
   };
   const badge = (s) => `<span class="badge ${s}">${esc(MM.STATUS_LABEL[s])}</span>`;
   /** "Senator → Frequent Traveller (not requalified)" for a soft-landing year, else ''. */
   const downgradeTxt = (h, when = '') => (h.downgraded ? `${esc(MM.STATUS_LABEL[h.prevHeld])} → ${esc(MM.STATUS_LABEL[h.held])}${when} (not requalified)` : '');
   const routeTxt = (f) => (f.route && f.route.origin && f.route.destination ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}` : '<span class="pill warn">no route</span>');
   const isFlight = (f) => !f.transport || f.transport === 'flight';
+  /** A flight whose route can still be looked up (trains and buses are not in adsbdb). */
+  const needsLookup = (f) => isFlight(f) && !f.route;
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
 
   /* ================= navigation ================= */
@@ -101,7 +107,7 @@
 
   const renderDashboard = () => {
     const host = $('#view-dashboard');
-    if (!state.flights.length) { host.innerHTML = emptyState(); return; }
+    if (!state.flights.length && !state.adjustments.length && !state.stays.length) { host.innerHTML = emptyState(); return; }
     const rules = state.settings.rules;
     const hist = E.history(state, year);
     const sum = hist.find(h => h.year === year) || { ...E.yearSummary(state, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
@@ -200,8 +206,7 @@
       let sub;
       if (ra) sub = `✓ Reached on ${C.fmtDate(ra)}`;
       else if (rf) {
-        const r = sum.rows.find(x => x.f.date === rf && x.planned);
-        sub = `Forecast: reached on ${C.fmtDate(rf)}${r ? ` with ${esc(r.f.flightNo)}` : ''}`;
+        sub = `Forecast: reached on ${C.fmtDate(rf)} with ${esc(sum.reached.forecastBy[key])}`;
       } else {
         const g = E.gap(sum.forecast, key, rules);
         sub = 'Missing after plan: ' + Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${k === 'p' ? 'Points' : k === 'qp' ? 'QP' : 'HON Points'}`).join(', ');
@@ -253,7 +258,7 @@
     }
     C.stackedBars($('#costChart'), {
       label: 'Costs per month', categories: C.MONTHS.map(m => m[0] + m.slice(1, 3)), series: costSeries(), data,
-      format: (v, axis) => money(v, axis || true),
+      format: (v) => money(v, true),
       dim: (i) => data[i].planned > 0 && data[i].planned >= (data[i].flight + data[i].upgrade + data[i].co2) - 0.001,
       tipTitle: (i) => `${C.MONTHS[i]} ${year}`,
       note: (i) => `<div class="row muted"><span>${data[i].n} segment(s)</span><span>${data[i].planned ? money(data[i].planned, true) + ' planned' : ''}</span></div>`,
@@ -327,7 +332,7 @@
     const sum = E.yearSummary(state, year);
     const showCO2 = sum.rows.some(r => r.f.co2Level && r.f.co2Level !== 'none');
     const flown = sum.rows.filter(r => !r.planned), planned = sum.rows.filter(r => r.planned);
-    const missing = sum.rows.filter(r => isFlight(r.f) && (!r.f.route || r.e.unknown)).length;
+    const missing = sum.rows.filter(r => needsLookup(r.f)).length;
     // Flown / planned is shown by the section rows, so there is no status column.
     const cols = 12 + (showCO2 ? 1 : 0);
     const segs = E.bookingSegments(state);
@@ -340,7 +345,7 @@
     const row = (r) => {
       const f = r.f, up = f.upgradeClass && f.upgradeClass !== f.bookedClass;
       const co2 = f.co2Level && f.co2Level !== 'none';
-      return `<tr data-id="${f.id}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
+      return `<tr data-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
         <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
         <td><b>${esc(f.flightNo)}</b>${f.transport === 'rail' ? ' <span class="pill">Train</span>' : f.transport === 'bus' ? ' <span class="pill">Bus</span>' : ''}<div class="muted"><code>${esc(f.bookingCode || '–')}</code></div></td>
         <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
@@ -452,6 +457,8 @@
     const isNewStay = !stay;
     stayDraft = stay ? { ...stay } : S.newStay(+E.todayISO().slice(0, 4) === year ? E.todayISO() : `${year}-12-31`);
     $('#stayTitle').textContent = isNewStay ? 'Add Marriott Bonvoy stay' : 'Edit Marriott Bonvoy stay';
+    const m = state.settings.rules.marriott;
+    $('#stayHint').textContent = `With linked Miles & More and Marriott Bonvoy accounts, every qualifying stay of at least ${num(m.minNights)} nights earns ${num(m.pointsPerStay)} Points (no QP / HON Circle Points), up to ${num(m.maxPointsPerYear)} Points per calendar year. The values can be changed in Settings.`;
     stayForm.date.value = dateToField(stayDraft.date);
     stayForm.hotel.value = stayDraft.hotel || '';
     stayForm.nights.value = stayDraft.nights || '';
@@ -495,11 +502,6 @@
   const plusPts = (e) => [e.p, e.qp, e.hon].map(v => (v ? '+' + num(v) : '0')).join(' · ');
   const opts = (list, cur, lab = (x) => x) => list.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(lab(v))}</option>`).join('');
 
-  /** Extra Points of one flight when it uses `level` instead of its own booster. */
-  const co2Delta = (f, level) => {
-    const rules = state.settings.rules, a = E.earn(f, rules), b = E.earn({ ...f, co2Level: level }, rules);
-    return { p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon };
-  };
   /** Cost to suggest for a booster level: the flight's own cost for its own level, else the average you paid. */
   const co2CostFor = (f, level) => (level === 'none' ? 0 : level === f.co2Level ? (+f.co2Cost || 0) : E.co2CostEstimate(state, level, E.haul(f)) || 0);
 
@@ -512,13 +514,13 @@
 
     const co2Row = (r) => {
       const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level || 'none';
-      return `<tr data-co2-id="${f.id}" class="${r.planned ? 'planned' : ''}" style="cursor:default">
+      return `<tr data-co2-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''}" style="cursor:default">
         <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
         <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
         <td>${f.co2Level && f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
         <td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
-        <td class="num" data-cell="delta">${plusPts(co2Delta(f, level))}</td>
+        <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
         <td class="num"><input type="number" min="0" step="0.01" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input"></td>
         <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>
       </tr>`;
@@ -526,11 +528,11 @@
 
     const mixRow = (r) => {
       const rail = r.kind === 'RAIL';
-      return `<tr data-mix-id="${r.id}" style="cursor:default">
+      return `<tr data-mix-id="${esc(r.id)}" style="cursor:default">
         <td class="num"><input type="number" min="0" step="1" data-mix="count" value="${r.count}" aria-label="Number of segments" class="num-input" style="width:64px"></td>
         <td><select data-mix="kind" aria-label="Type">${opts(Object.keys(MIX_KIND), r.kind, k => MIX_KIND[k])}</select></td>
         <td><select data-mix="haul" aria-label="Haul" ${rail ? 'disabled' : ''}>${opts(['continental', 'intercontinental'], rail ? 'continental' : r.haul, h => HAUL_LABEL[h])}</select></td>
-        <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? ['Economy', 'Business'] : MM.CLASSES, r.cls)}</select></td>
+        <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? Object.keys(RAIL_CLASSES) : MM.CLASSES, r.cls)}</select></td>
         <td><select data-mix="co2Level" aria-label="CO₂ booster" ${rail ? 'disabled' : ''}>${opts(MM.CO2_LEVELS, rail ? 'none' : r.co2Level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num"><input type="number" min="0" step="0.01" data-mix="cost" value="${r.cost || ''}" placeholder="0" aria-label="Cost per segment" class="num-input"></td>
         <td class="num" data-cell="sum"></td>
@@ -583,7 +585,7 @@
     const setOverride = (tr, f, level, cost) => {
       if (level === (f.co2Level || 'none') && (+cost || 0) === (+f.co2Cost || 0)) delete plan.co2[f.id];
       else plan.co2[f.id] = { level, cost: Math.max(0, +cost || 0) };
-      $('[data-cell="delta"]', tr).textContent = plusPts(co2Delta(f, level));
+      $('[data-cell="delta"]', tr).textContent = plusPts(E.co2Gain(f, level, state.settings.rules));
       $('[data-co2-apply]', tr).hidden = !plan.co2[f.id];
     };
     $$('tr[data-co2-id]', host).forEach(tr => {
@@ -619,7 +621,7 @@
         inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
           row[k] = k === 'count' ? Math.max(0, Math.round(+inp.value || 0)) : k === 'cost' ? Math.max(0, +inp.value || 0) : inp.value;
           if (k === 'kind') {   // trains: continental, Economy or Business, no booster
-            if (row.kind === 'RAIL') { row.haul = 'continental'; row.co2Level = 'none'; if (!['Economy', 'Business'].includes(row.cls)) row.cls = 'Business'; }
+            if (row.kind === 'RAIL') { row.haul = 'continental'; row.co2Level = 'none'; if (!(row.cls in RAIL_CLASSES)) row.cls = 'Business'; }
             save(); renderPlanner(); return;
           }
           planChanged();
@@ -697,7 +699,7 @@
   const renderGap = (total) => {
     const host = $('#gapCard'), rules = state.settings.rules;
     if (!host) return;
-    const st = E.statusOfTotals(total, rules);
+    const st = E.status(total, rules);
     const target = gapPrefs.target || ['FTL', 'SEN', 'HON'].find(k => E.rank(st) < E.rank(k)) || 'HON';
     const n = E.segmentsNeeded(total, target, gapPrefs.haul, gapPrefs.cls, gapPrefs.co2, rules);
     const e = E.earn({ haulOverride: gapPrefs.haul, earningGroup: 'LHG', bookedClass: gapPrefs.cls, co2Level: gapPrefs.co2 }, rules);
@@ -845,6 +847,9 @@
   /* ================= flight dialog ================= */
   const dlg = $('#flightDialog'), form = $('#flightForm');
   let draft = null, isNew = false, upgradeTouched = false, lookupSeq = 0;
+  let fareFrom = '';   // booking whose whole fare the fare field shows ('' = the segment's own fare)
+  /** True when the dialog was closed or shows another flight since `d` was current: async lookups must not touch it. */
+  const stale = (d) => !dlg.open || draft !== d;
 
   const fillSelects = () => {
     const opts = MM.CLASSES.map(c => `<option>${c}</option>`).join('');
@@ -900,19 +905,6 @@
     $('#btnSaveFlight').textContent = `Save ${T.noun}`;
   };
 
-  /** Known airport details from the API cache or the bundled table. */
-  const airportInfo = (iata) => {
-    iata = (iata || '').toUpperCase();
-    for (const c of Object.values(state.apiCache)) {
-      const fr = c.status === 'ok' && c.response && c.response.flightroute;
-      if (!fr) continue;
-      for (const a of [fr.origin, fr.destination]) if (a && a.iata_code === iata) {
-        return { iata, icao: a.icao_code, name: a.name, city: a.municipality, country: a.country_iso_name, countryName: a.country_name, lat: a.latitude, lon: a.longitude };
-      }
-    }
-    return MM.airport(iata) || { iata, country: null, lat: null, lon: null };
-  };
-
   const routeInfo = () => {
     const info = $('#routeInfo');
     const r = draft.route, lk = draft.routeLookup;
@@ -947,15 +939,14 @@
     const op = E.operating(draft);
     if (!op) return '';
     const decides = !op.airline ? ' · airline not in list, earns as marketing airline'
-      : E.isEdelweissCodeshare(draft) && op.code === 'WK' ? ' · LX8000–8499 earns like SWISS'
+      : E.isEdelweissCodeshare(draft) ? ' · LX8000–8499 earns like SWISS'
       : ` · operator decides earning: ${esc(MM.GROUP_LABEL[op.group])}`;
     const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)}${decides}`;
     const entry = state.apiCache[op.iata];
     const opRoute = A.routeFromCache(entry);
     const r = draft.route;
     let check = '';
-    if (entry && entry.status === 'loading') check = ' · checking route…';
-    else if (opRoute && r && r.origin && r.destination) {
+    if (opRoute && r && r.origin && r.destination) {
       const same = opRoute.origin.iata === r.origin.iata && opRoute.destination.iata === r.destination.iata;
       check = same ? ' · <span style="color:var(--s-hon)">✓ same route</span>'
         : ` · <b style="color:var(--danger)">⚠ ${esc(op.iata)} is listed as ${esc(opRoute.origin.iata)}→${esc(opRoute.destination.iata)}</b>`;
@@ -965,10 +956,10 @@
 
   /** Looks up the operating flight (cached like any other lookup); uses its route when the marketing number has none. */
   const lookupOperating = async () => {
-    const op = E.operating(draft);
+    const op = E.operating(draft), d = draft;
     if (!op) { updatePreview(); return; }
     const entry = await A.lookup(state, op.iata);
-    if (!dlg.open || !E.operating(draft) || E.operating(draft).iata !== op.iata) return;
+    if (stale(d) || !E.operating(draft) || E.operating(draft).iata !== op.iata) return;
     const route = A.routeFromCache(entry);
     if (route && !(draft.route && draft.route.origin && draft.route.destination)) {
       draft.route = { ...route, via: op.iata };
@@ -1075,11 +1066,11 @@
     readForm();
     const parsed = E.parseFlightNo(form.flightNo.value);
     if (!parsed) { toast('Enter a flight number like LH400'); return; }
-    const seq = ++lookupSeq;
+    const seq = ++lookupSeq, d = draft;
     draft.routeLookup = { status: 'loading' };
     routeInfo();
     const entry = await A.lookup(state, parsed.iata, { force });
-    if (seq !== lookupSeq || !dlg.open) return;
+    if (seq !== lookupSeq || stale(d)) return;
     applyLookup(entry, parsed.iata);
     if (entry.status !== 'ok' && E.operating(draft)) await lookupOperating();
     if (force && !entry.fromCache) toast(draft.route ? 'Route updated from API' : 'No route found');
@@ -1099,7 +1090,7 @@
     if (o.length === 3 && d.length === 3) {
       const cur = draft.route;
       if (!cur || cur.origin.iata !== o || cur.destination.iata !== d) {
-        draft.route = { origin: airportInfo(o), destination: airportInfo(d), source: 'manual' };
+        draft.route = { origin: A.airport(state, o), destination: A.airport(state, d), source: 'manual' };
       }
     } else if (!o && !d) {
       draft.route = null;
@@ -1132,6 +1123,7 @@
     form.upgradeType.value = draft.upgradeType || '';
     const booking = state.bookings[E.bookingKey(draft.bookingCode)];
     form.fare.value = (booking ? booking.fare : draft.flightCost) || '';
+    fareFrom = booking ? E.bookingKey(draft.bookingCode) : '';
     form.upgradeCost.value = draft.upgradeCost || '';
     form.co2Level.value = draft.co2Level || 'none';
     form.co2Cost.value = draft.co2Cost || '';
@@ -1247,9 +1239,11 @@
     }
     if (e.target.name === 'transport') autoLookup();   // back to Flight: look up the route if there is none yet
     if (e.target.name === 'bookingCode') {
-      form.bookingCode.value = E.bookingKey(form.bookingCode.value);
-      const booking = state.bookings[form.bookingCode.value];
-      if (booking) form.fare.value = booking.fare || '';   // an existing booking brings its fare along
+      const k = E.bookingKey(form.bookingCode.value), booking = state.bookings[k];
+      form.bookingCode.value = k;
+      // An existing booking brings its fare along. A field that showed another booking's fare starts empty, so that
+      // fare isn't counted twice.
+      if (booking) { form.fare.value = booking.fare || ''; fareFrom = k; } else if (fareFrom) { form.fare.value = ''; fareFrom = ''; }
       updatePreview();
     }
   });
@@ -1261,8 +1255,7 @@
   $('#btnDelete').addEventListener('click', (e) => {
     const b = e.currentTarget;
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; return; }
-    state.flights = state.flights.filter(f => f.id !== draft.id);
-    S.pruneBookings(state);
+    S.deleteFlight(state, draft.id);
     save(); dlg.close(); toast(`${nounOf(draft)} deleted`); render();
   });
   form.addEventListener('submit', async (e) => {
@@ -1272,18 +1265,14 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) { toast('Please enter the date as YYYY/MM/DD'); form.date.focus(); return; }
     if (!E.parseFlightNo(draft.flightNo)) { toast(`Please enter a valid ${T.number.toLowerCase()} number, e.g. ${T.placeholder}`); form.flightNo.focus(); return; }
     if (isFlight(draft) && !draft.route && !(draft.routeLookup && draft.routeLookup.queried && draft.routeLookup.flightNo === draft.flightNo)) {
+      const d = draft;
       const entry = await A.lookup(state, draft.flightNo);
+      if (stale(d)) return;   // cancelled while waiting
       applyLookup(entry, draft.flightNo);
     }
-    if (!draft.upgradeClass) draft.upgradeClass = draft.bookedClass;
-    // The fare belongs to the booking (shared by its segments), or to the segment when there is no booking code.
-    const fi = fareInfo();
-    if (fi.k) { state.bookings[fi.k] = { fare: fi.fare }; draft.flightCost = 0; } else draft.flightCost = fi.fare;
     const flight = JSON.parse(JSON.stringify(draft));
     if (flight.routeLookup && flight.routeLookup.status === 'loading') flight.routeLookup = null;
-    const i = state.flights.findIndex(f => f.id === flight.id);
-    i >= 0 ? (state.flights[i] = flight) : state.flights.push(flight);
-    S.pruneBookings(state);   // drops the old booking when its last segment got another code
+    S.saveFlight(state, flight, fareInfo().fare);
     year = +flight.date.slice(0, 4);
     save(); dlg.close();
     toast(`${nounOf(flight)} ${isNew ? 'added' : 'saved'}`);
@@ -1292,7 +1281,7 @@
 
   /* ================= global actions ================= */
   const lookupMissing = async () => {
-    const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && isFlight(f) && !f.route);
+    const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && needsLookup(f));
     let ok = 0;
     for (const f of todo) {
       const entry = await A.lookup(state, f.flightNo);
@@ -1341,9 +1330,7 @@
     e.target.value = '';
     if (!file) return;
     try {
-      const keepNumber = state.settings.memberNumber;
       state = await S.importFile(file);
-      if (!state.settings.memberNumber) state.settings.memberNumber = keepNumber;   // files saved before the number was set
       const ys = E.years(state);
       if (!ys.includes(year)) year = ys[ys.length - 1];
       save(); render();
@@ -1382,4 +1369,5 @@
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
   setView(['dashboard', 'flights', 'planner', 'settings'].includes(startView) ? startView : 'dashboard');
+  if (loadError) toast(`${loadError} Load a saved .json file instead.`, 10000);
 })();

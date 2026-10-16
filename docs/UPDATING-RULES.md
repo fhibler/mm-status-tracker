@@ -61,7 +61,7 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
    - Lufthansa Express Bus earns nothing → transport "bus".
    - Retro credits count in the **calendar year of the flight**. In the app: point corrections dated on the flight date.
 6. **"Earn Points in your sleep with Marriott Bonvoy"** (same page, below the examples): with linked accounts,
-   **40 Points per qualifying stay of at least two days**, at most **120 Points per calendar year** towards status,
+   **40 Points per qualifying stay of at least two days** (the app counts nights), at most **120 Points per calendar year** towards status,
    and no QP or HON Circle Points → `MM.DEFAULT_RULES.marriott`. Watch for new non-flight partners in this section.
 
 ### Partners page
@@ -101,12 +101,12 @@ and keeps **no migration code** (the old ones were removed on 2026-10-16, after 
 
 1. Tell the user which value changed. They update it in Settings, or use "Reset rules to defaults" if they never
    changed the rules on purpose.
-2. New keys (e.g. `railCaps`) need a merge line in `S.normalize` (`{ ...d.key, ...(r.key || {}) }`), so saved data
-   gets the default for the new key.
-3. If a data model change makes saved data wrong (e.g. a renamed field), add a temporary migration in `S.normalize`
-   plus a `save()` after loading in `js/app.js`, raise `version` in `S.empty()` and refuse older files in
-   `S.importFile`. Once the user has opened the deployed site once and re-saved their `.json` files, remove the
-   migration again.
+2. New keys in `MM.DEFAULT_RULES` need nothing else: `S.normalize` merges saved rules over the defaults value by
+   value, so saved data gets the default for a new key (and drops keys that no longer exist).
+3. If a data model change makes saved data wrong (e.g. a renamed field), raise `VERSION` in `js/store.js` and add a
+   temporary migration: convert the old data in `S.normalize`, let `S.parse` accept the previous version while the
+   migration exists, and `save()` after loading in `js/app.js`. Once the user has opened the deployed site and
+   re-saved their `.json` files, remove the migration again; `S.parse` then refuses data older than `VERSION`.
 
 ## 4. Verify
 

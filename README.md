@@ -128,11 +128,12 @@ site to GitHub Pages.
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
   Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland
   belongs to North America. Every other flight counts as intercontinental. You can override the haul per flight.
-- **Trains** (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail; set "Transport" to Train) earn like
+- **Trains** (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail; choose Train when adding a segment) earn like
   flights, but their QP / HON Circle Points count towards a status only up to 160 QP (Frequent Traveller),
   500 QP (Senator) and 1,000 HON (HON Circle). The limits can be changed in Settings. The **Lufthansa Express
   Bus** earns nothing, and neither do award flights and some special fares (set "Earning" to "No status credit").
-- **Edelweiss** earns only on LX8000–8499 code-shares booked with SWISS under the LX number.
+- **Edelweiss** earns only on LX8000–8499 code-shares booked with SWISS under the LX number. Enter the LX number,
+  with the WK flight under "Operated by" if you like.
 - **Retro credits** count in the calendar year of the flight, so date a point correction on the flight date.
 - Other Miles & More airline partners (Air Astana, Cathay Pacific, LATAM, Olympic Air) earn award miles
   only, so they count as "No status credit". Edelweiss isn't listed for Points either; if your statement

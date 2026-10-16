@@ -1,8 +1,7 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [main]
+  push:            # every branch is tested; only main is deployed
   pull_request:
   workflow_dispatch:
   schedule:
@@ -10,16 +9,13 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +33,7 @@ jobs:
       - name: Check JavaScript syntax
         run: for f in js/*.js; do node --check "$f"; done
 
-      - name: Run engine smoke test
+      - name: Run engine tests
         run: node tests/engine.test.js
 
       - name: Assemble site
@@ -46,18 +42,21 @@ jobs:
           cp -r index.html css js _site/
           touch _site/.nojekyll
 
-      - uses: actions/configure-pages@v5
-        if: github.event_name != 'pull_request'
-
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: _site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false   # never stop a deployment halfway
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

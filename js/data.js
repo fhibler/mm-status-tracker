@@ -121,9 +121,9 @@ MM.DEFAULT_RULES = {
   },
   honClasses: ['Business', 'First'],            // HON Circle Points only in these cabins (LHG only)
   thresholds: {
-    FTL: { label: 'Frequent Traveller', p: 650,  qp: 325 },
-    SEN: { label: 'Senator',            p: 2000, qp: 1000 },
-    HON: { label: 'HON Circle',         hon: 6000 },
+    FTL: { p: 650,  qp: 325 },
+    SEN: { p: 2000, qp: 1000 },
+    HON: { hon: 6000 },
   },
   // Rail (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail): max QP (FTL, SEN) / HON Circle Points (HON)
   // that rail segments may contribute towards each status.

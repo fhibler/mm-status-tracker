@@ -13,7 +13,7 @@
 <body>
   <h1>Engine tests</h1>
   <p>Runs <code>tests/engine.test.js</code> without Node: <code>vm</code> contexts are iframes (separate realms, like Node),
-    and <code>assert.deepStrictEqual</code> compares prototypes like Node does. Serve the project root
+    and <code>assert</code> offers the few functions the tests use. Serve the project root
     (<code>tools/serve.ps1</code>) and open <code>/tests/browser.html</code>. CI runs the same file with Node.</p>
   <p id="result">Running…</p>
   <pre id="log"></pre>
@@ -26,19 +26,14 @@
         if (x.status !== 200) throw new Error('HTTP ' + x.status + ' for ' + p);
         return x.responseText;
       };
-      const deep = (a, b, path = '') => {
-        if (Object.is(a, b)) return;
-        if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) throw new Error(`deepStrictEqual ${path}: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`);
-        if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) throw new Error(`deepStrictEqual ${path}: prototypes differ (value from another realm)`);
-        const ka = Object.keys(a), kb = Object.keys(b);
-        if (ka.length !== kb.length) throw new Error(`deepStrictEqual ${path}: different keys`);
-        for (const k of ka) deep(a[k], b[k], path + '.' + k);
-      };
       const fail = (m) => { throw new Error(m); };
       const assert = Object.assign((v, m) => v || fail('assert ' + (m || '')), {
         ok: (v, m) => v || fail('ok ' + (m || '')),
         strictEqual: (a, b) => Object.is(a, b) || fail(`strictEqual: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`),
-        deepStrictEqual: (a, b) => deep(a, b),
+        throws: (fn, re) => {
+          try { fn(); } catch (e) { if (re && !re.test(e.message)) fail(`throws: "${e.message}" does not match ${re}`); return; }
+          fail('throws: no error');
+        },
       });
       const vm = {
         createContext: (ctx) => {
@@ -48,21 +43,27 @@
           ctx.__win = f.contentWindow;
           return ctx;
         },
-        runInContext: (code, ctx) => { ctx.__win.console = console; ctx.__win.eval(code); ctx.MM = ctx.__win.MM; },
+        runInContext: (code, ctx) => {
+          for (const k of Object.keys(ctx)) if (!['window', '__win', 'MM'].includes(k)) ctx.__win[k] = ctx[k];   // console, fetch stub
+          ctx.__win.eval(code);
+          ctx.MM = ctx.__win.MM;
+        },
       };
       const require = (n) => ({ fs: { readFileSync: (p) => get(p) }, path: { join: (...a) => a.join('/') }, vm, assert }[n]);
       const log = [];
       const result = document.getElementById('result');
-      try {
-        new Function('require', '__dirname', 'console', get('tests/engine.test.js'))(require, 'tests', { log: (m) => log.push(m) });
+      const module = {};
+      new Promise((resolve) => {
+        new Function('require', '__dirname', 'console', 'module', get('tests/engine.test.js'))(require, 'tests', { log: (m) => log.push(m) }, module);
+        resolve(module.exports);   // the test file exports a promise for its async part
+      }).then(() => {
         result.textContent = 'PASS';
         result.className = 'pass';
-      } catch (e) {
+      }, (e) => {
         result.textContent = 'FAIL – ' + e.message;
         result.className = 'fail';
         log.push(e.stack || String(e));
-      }
-      document.getElementById('log').textContent = log.join('\n');
+      }).then(() => { document.getElementById('log').textContent = log.join('\n'); });
     })();
   </script>
 </body>

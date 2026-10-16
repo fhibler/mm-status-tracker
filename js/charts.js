@@ -12,7 +12,8 @@
     return n;
   };
   const fmt = (v) => Math.round(v).toLocaleString('en-US');
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  /** HTML-escapes text (also used by app.js). */
+  const esc = (C.esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
 
   /* ---------- tooltip ---------- */
   const tip = () => document.getElementById('tooltip');
@@ -142,7 +143,7 @@
       for (const r of on) {
         const label = r.adj ? `Correction: ${esc(r.adj.remark)}`
           : r.stay ? `Marriott: ${esc(r.stay.hotel || 'hotel stay')}`
-          : `${esc(r.f.flightNo)} ${r.f.route ? r.f.route.origin.iata + '→' + r.f.route.destination.iata : ''}`;
+          : `${esc(r.f.flightNo)} ${r.f.route ? esc(r.f.route.origin.iata + '→' + r.f.route.destination.iata) : ''}`;
         html += `<div class="row muted"><span>${label}</span><span>${r.e[k] < 0 ? '' : '+'}${fmt(r.e[k])}</span></div>`;
       }
       C.showTip(html, evt);
@@ -181,7 +182,7 @@
         const y0 = Y(acc), y1 = Y(acc + v);
         const top = j === segs.length - 1;
         const h = Math.max(0, y0 - y1 - (top ? 0 : 2));   // 2px surface gap between segments
-        const x = cx - bw / 2, y = y1 + (top ? 0 : 0);
+        const x = cx - bw / 2, y = y1;
         if (top && h > 4) {
           const r = Math.min(4, bw / 2);
           el('path', { d: `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${y + h}Z`, fill: s.color, opacity: opts.dim && opts.dim(i, s) ? 0.45 : 1 }, svg);
