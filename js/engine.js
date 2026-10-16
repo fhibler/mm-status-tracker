@@ -58,7 +58,9 @@
     const ra = MM.REGION_OF[a], rb = MM.REGION_OF[b];
     return ra && ra === rb ? 'continental' : 'intercontinental';
   };
-  E.haul = (f) => (f.haulOverride && f.haulOverride !== 'auto' ? f.haulOverride : E.autoHaul(f));
+  /** Rail and bus segments are domestic / within Europe: continental unless the airports say otherwise. */
+  E.haul = (f) => (f.haulOverride && f.haulOverride !== 'auto' ? f.haulOverride
+    : E.autoHaul(f) || (f.transport === 'rail' || f.transport === 'bus' ? 'continental' : null));
 
   /** Cabin that earns: manual override, else the paid upgrade class, else the booked class. */
   E.earningClass = (f) => {
@@ -66,12 +68,18 @@
     return f.upgradePaid && f.upgradeClass ? f.upgradeClass : f.bookedClass;
   };
 
-  /** Points earned for one segment, incl. CO2 booster. */
+  /**
+   * Points earned for one segment, incl. CO2 booster.
+   * transport: 'flight' (default), 'rail' (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail – earns like
+   * a flight, but QP/HON count towards a status only up to rules.railCaps), 'bus' (Lufthansa Express Bus – no credit).
+   */
   E.earn = (f, rules) => {
     const haul = E.haul(f);
-    const group = E.earningGroup(f);
+    const bus = f.transport === 'bus';
+    const group = bus ? 'NONE' : E.earningGroup(f);
     const cls = E.earningClass(f);
-    const zero = { p: 0, qp: 0, hon: 0, base: { p: 0, qp: 0, hon: 0 }, haul, group, cls, unknown: !haul };
+    const rail = f.transport === 'rail';
+    const zero = { p: 0, qp: 0, hon: 0, base: { p: 0, qp: 0, hon: 0 }, haul, group, cls, rail, unknown: !haul };
     if (!haul || group === 'NONE') return zero;
     const per = (rules.points[haul] || {})[cls] || 0;
     const base = {
@@ -84,7 +92,7 @@
       p: Math.round(base.p * (1 + b.p / 100)),
       qp: Math.round(base.qp * (1 + b.qp / 100)),
       hon: Math.round(base.hon * (1 + b.hon / 100)),
-      base, haul, group, cls, unknown: false,
+      base, haul, group, cls, rail, unknown: false,
     };
   };
 
@@ -96,13 +104,29 @@
     return { flight, upgrade, co2, total: flight + upgrade + co2 };
   };
 
-  E.statusFor = (p, qp, hon, rules) => {
-    const t = rules.thresholds;
-    if (hon >= t.HON.hon) return 'HON';
-    if (p >= t.SEN.p && qp >= t.SEN.qp) return 'SEN';
-    if (p >= t.FTL.p && qp >= t.FTL.qp) return 'FTL';
+  /**
+   * Totals that count towards status `key`: QP (FTL, SEN) or HON Circle Points (HON) from rail segments
+   * only count up to rules.railCaps[key]. t = { p, qp, hon, qpRail, honRail }.
+   */
+  E.effective = (t, key, rules) => {
+    const cap = (rules.railCaps || {})[key];
+    const qpRail = t.qpRail || 0, honRail = t.honRail || 0;
+    if (cap == null) return { p: t.p, qp: t.qp, hon: t.hon };
+    return key === 'HON'
+      ? { p: t.p, qp: t.qp, hon: t.hon - honRail + Math.min(honRail, cap) }
+      : { p: t.p, qp: t.qp - qpRail + Math.min(qpRail, cap), hon: t.hon };
+  };
+
+  /** Highest status reached with these totals; `rail` = { qp, hon } earned on rail (part of qp / hon). */
+  E.statusFor = (p, qp, hon, rules, rail = {}) => {
+    const t = { p, qp, hon, qpRail: rail.qp || 0, honRail: rail.hon || 0 };
+    const th = rules.thresholds;
+    if (E.effective(t, 'HON', rules).hon >= th.HON.hon) return 'HON';
+    if (p >= th.SEN.p && E.effective(t, 'SEN', rules).qp >= th.SEN.qp) return 'SEN';
+    if (p >= th.FTL.p && E.effective(t, 'FTL', rules).qp >= th.FTL.qp) return 'FTL';
     return 'NONE';
   };
+  const statusOf = (t, rules) => E.statusFor(t.p, t.qp, t.hon, rules, { qp: t.qpRail, hon: t.honRail });
   E.rank = (s) => MM.STATUS_ORDER.indexOf(s);
 
   /** A status reached in `year` is valid immediately until the end of February of the year after next. */
@@ -136,7 +160,7 @@
       const dx = (x.f || x.a).date, dy = (y.f || y.a).date;
       return dx.localeCompare(dy) || (x.kind === y.kind ? 0 : x.kind === 'flight' ? -1 : 1);
     });
-    const act = { p: 0, qp: 0, hon: 0 }, all = { p: 0, qp: 0, hon: 0 };
+    const act = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 }, all = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 };
     const cost = { actual: { flight: 0, upgrade: 0, co2: 0, total: 0 }, plan: { flight: 0, upgrade: 0, co2: 0, total: 0 } };
     const reached = { actual: {}, forecast: {} };
     const adjTotal = { p: 0, qp: 0, hon: 0 };
@@ -153,14 +177,16 @@
       if (!isAdj && e.unknown) unknown++;
       if (counts) {
         all.p += e.p; all.qp += e.qp; all.hon += e.hon;
+        if (e.rail) { all.qpRail += e.qp; all.honRail += e.hon; }
         const bucket = planned ? cost.plan : cost.actual;
         for (const k of ['flight', 'upgrade', 'co2', 'total']) bucket[k] += c[k];
-        const s = E.statusFor(all.p, all.qp, all.hon, rules);
+        const s = statusOf(all, rules);
         for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.forecast[k]) reached.forecast[k] = date;
       }
       if (!planned) {
         act.p += e.p; act.qp += e.qp; act.hon += e.hon;
-        const s = E.statusFor(act.p, act.qp, act.hon, rules);
+        if (e.rail) { act.qpRail += e.qp; act.honRail += e.hon; }
+        const s = statusOf(act, rules);
         for (const k of ['FTL', 'SEN', 'HON']) if (E.rank(s) >= E.rank(k) && !reached.actual[k]) reached.actual[k] = date;
       }
       const row = isAdj
@@ -172,8 +198,8 @@
     }
     return {
       year, rows, adjustments, events, adjTotal, actual: act, forecast: all, cost, reached, unknown,
-      statusActual: E.statusFor(act.p, act.qp, act.hon, rules),
-      statusForecast: E.statusFor(all.p, all.qp, all.hon, rules),
+      statusActual: statusOf(act, rules),
+      statusForecast: statusOf(all, rules),
     };
   };
 
@@ -217,9 +243,9 @@
 
   /** What's still missing to reach a status, based on totals t. */
   E.gap = (t, key, rules) => {
-    const th = rules.thresholds[key];
-    if (key === 'HON') return { hon: Math.max(0, th.hon - t.hon) };
-    return { p: Math.max(0, th.p - t.p), qp: Math.max(0, th.qp - t.qp) };
+    const th = rules.thresholds[key], eff = E.effective(t, key, rules);
+    if (key === 'HON') return { hon: Math.max(0, th.hon - eff.hon) };
+    return { p: Math.max(0, th.p - eff.p), qp: Math.max(0, th.qp - eff.qp) };
   };
 
   /** Simple planning helper: how many extra LHG segments of a type would close the gap? */

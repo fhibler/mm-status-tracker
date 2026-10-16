@@ -197,7 +197,9 @@
         <div class="ac" style="width:${Math.min(100, (cur / max) * 100)}%"></div>
       </div>`;
     const line = (key) => {
-      const a = sum.actual, f = sum.forecast, th = t[key];
+      // values that count towards this status (train QP / HON capped per status)
+      const a = E.effective(sum.actual, key, rules), f = E.effective(sum.forecast, key, rules), th = t[key];
+      const railCapped = (key === 'HON' ? sum.forecast.honRail : sum.forecast.qpRail) > (rules.railCaps || {})[key];
       const ra = sum.reached.actual[key], rf = sum.reached.forecast[key];
       let sub;
       if (ra) sub = `✓ Reached on ${C.fmtDate(ra)}`;
@@ -205,7 +207,7 @@
         const r = sum.rows.find(x => x.f.date === rf && x.planned);
         sub = `Forecast: reached on ${C.fmtDate(rf)}${r ? ` with ${esc(r.f.flightNo)}` : ''}`;
       } else {
-        const g = E.gap(f, key, rules);
+        const g = E.gap(sum.forecast, key, rules);
         sub = 'Missing after plan: ' + Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${k === 'p' ? 'Points' : k === 'qp' ? 'QP' : 'HON Points'}`).join(', ');
       }
       const bars = key === 'HON'
@@ -215,7 +217,7 @@
       return `<div class="prog-row">
         <div class="prog-top"><span class="name">${badge(key)}</span><span class="vals">${key === 'HON' ? `forecast ${num(f.hon)}` : `forecast ${num(f.p)} P · ${num(f.qp)} QP`}</span></div>
         ${bars}
-        <div class="prog-sub">${sub}</div>
+        <div class="prog-sub">${sub}${railCapped ? ` · train ${key === 'HON' ? 'HON' : 'QP'} capped at ${num(rules.railCaps[key])}` : ''}</div>
       </div>`;
     };
     $('#progList').innerHTML = ['FTL', 'SEN', 'HON'].map(line).join('');
@@ -361,7 +363,7 @@
       const co2 = f.co2Level && f.co2Level !== 'none';
       return `<tr data-id="${f.id}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
         <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
-        <td><b>${esc(f.flightNo)}</b><div class="muted"><code>${esc(f.bookingCode || '–')}</code></div></td>
+        <td><b>${esc(f.flightNo)}</b>${f.transport === 'rail' ? ' <span class="pill">Train</span>' : f.transport === 'bus' ? ' <span class="pill">Bus</span>' : ''}<div class="muted"><code>${esc(f.bookingCode || '–')}</code></div></td>
         <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
         <td><span class="route">${routeTxt(f)}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
@@ -491,11 +493,11 @@
         <div class="card">
           <div class="card-head"><h2>Status thresholds</h2><span class="sub">per calendar year</span></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Status</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON Points</th></tr></thead>
+            <thead><tr><th>Status</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON Points</th><th class="num" title="Max QP (FTL, SEN) or HON Circle Points (HON) that train segments may contribute">Max by train</th></tr></thead>
             <tbody>
-              <tr style="cursor:default"><td>${badge('FTL')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.p" value="${r.thresholds.FTL.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.qp" value="${r.thresholds.FTL.qp}"></td><td></td></tr>
-              <tr style="cursor:default"><td>${badge('SEN')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.p" value="${r.thresholds.SEN.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.qp" value="${r.thresholds.SEN.qp}"></td><td></td></tr>
-              <tr style="cursor:default"><td>${badge('HON')}</td><td></td><td></td><td class="num"><input type="number" min="0" data-rule="thresholds.HON.hon" value="${r.thresholds.HON.hon}"></td></tr>
+              <tr style="cursor:default"><td>${badge('FTL')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.p" value="${r.thresholds.FTL.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.qp" value="${r.thresholds.FTL.qp}"></td><td></td><td class="num"><input type="number" min="0" data-rule="railCaps.FTL" value="${r.railCaps.FTL}" title="QP"></td></tr>
+              <tr style="cursor:default"><td>${badge('SEN')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.p" value="${r.thresholds.SEN.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.qp" value="${r.thresholds.SEN.qp}"></td><td></td><td class="num"><input type="number" min="0" data-rule="railCaps.SEN" value="${r.railCaps.SEN}" title="QP"></td></tr>
+              <tr style="cursor:default"><td>${badge('HON')}</td><td></td><td></td><td class="num"><input type="number" min="0" data-rule="thresholds.HON.hon" value="${r.thresholds.HON.hon}"></td><td class="num"><input type="number" min="0" data-rule="railCaps.HON" value="${r.railCaps.HON}" title="HON Circle Points"></td></tr>
             </tbody>
           </table></div>
         </div>
@@ -657,6 +659,7 @@
       bookingCode: form.bookingCode.value.toUpperCase().trim(),
       haulOverride: form.haulOverride.value,
       earningGroup: form.earningGroup.value,
+      transport: form.transport.value,
       earnClassOverride: form.earnClassOverride.value,
       bookedClass: form.bookedClass.value,
       upgradeClass: form.upgradeClass.value,
@@ -690,7 +693,10 @@
       <div><div class="k">Qualifying Points</div><b>${num(e.qp)}</b></div>
       <div><div class="k">HON Circle Points</div><b>${num(e.hon)}</b></div>
       <div><div class="k">Total cost</div><b>${money(c.total)}</b></div>
-      <div><div class="k">Type</div><b>${!draft.date ? '–' : planned ? 'Planned (date after today)' : 'Flown'}</b></div>`;
+      <div><div class="k">Type</div><b>${!draft.date ? '–' : planned ? 'Planned (date after today)' : 'Flown'}</b></div>
+      ${draft.transport === 'rail' ? `<div class="muted" style="flex-basis:100%">Train: counts like a flight, but rail QP / HON count towards a status only up to
+        ${num(state.settings.rules.railCaps.FTL)} QP (Frequent Traveller), ${num(state.settings.rules.railCaps.SEN)} QP (Senator) and ${num(state.settings.rules.railCaps.HON)} HON (HON Circle).</div>` : ''}
+      ${draft.transport === 'bus' ? '<div class="muted" style="flex-basis:100%">Lufthansa Express Bus segments earn no Points, Qualifying Points or HON Circle Points.</div>' : ''}`;
     routeInfo();
   };
 
@@ -761,6 +767,7 @@
     form.destination.value = draft.route && draft.route.destination ? draft.route.destination.iata : '';
     form.haulOverride.value = draft.haulOverride || 'auto';
     form.earningGroup.value = draft.earningGroup || 'auto';
+    form.transport.value = draft.transport || 'flight';
     form.earnClassOverride.value = draft.earnClassOverride || 'auto';
     form.bookedClass.value = draft.bookedClass;
     form.upgradeClass.value = draft.upgradeClass || draft.bookedClass;

@@ -82,6 +82,13 @@
           <label>Booking code<input name="bookingCode" placeholder="ABC123" maxlength="8" autocomplete="off"></label>
           <label>Airline<input name="airlineName" readonly tabindex="-1" placeholder="from flight number"></label>
           <label>Operated by <small class="muted">(codeshare only)</small><input name="operatingFlightNo" placeholder="e.g. LH488" autocomplete="off"></label>
+          <label>Transport
+            <select name="transport">
+              <option value="flight">Flight</option>
+              <option value="rail">Train – AIRail / Express Rail / Air Rail</option>
+              <option value="bus">Lufthansa Express Bus (no Points)</option>
+            </select>
+          </label>
         </div>
 
         <fieldset class="route-box">
@@ -119,7 +126,7 @@
                 <option value="auto">Auto (airline or operator)</option>
                 <option value="LHG">Lufthansa Group – P, QP, HON</option>
                 <option value="STAR">Star Alliance – Points only</option>
-                <option value="NONE">No status credit</option>
+                <option value="NONE">No status credit (e.g. award flight, special fare)</option>
               </select>
             </label>
           </div>
@@ -156,7 +163,8 @@
       </header>
       <div class="dlg-body">
         <p class="hint" style="margin:0">Enter the difference shown on your Miles &amp; More account statement – e.g. a retro credit, a
-          missing segment or a deduction. Use negative values to reduce.</p>
+          missing segment or a deduction. Use negative values to reduce.<br>
+          <b>Retro credits count in the year of the flight</b>, so use the flight date, not the date it was credited.</p>
         <div class="grid">
           <label>Date
             <span class="date-field">

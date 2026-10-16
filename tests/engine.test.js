@@ -63,6 +63,42 @@ assert.strictEqual(E.earn(flight({ airlineCode: 'LO', route: fraZrh, bookedClass
 assert.strictEqual(E.earn(flight({ airlineCode: 'A3', route: fraZrh, bookedClass: 'Economy' }), rules).qp, 0);    // Aegean: Points only
 assert.strictEqual(E.earn(flight({ airlineCode: 'CX', route: fraJfk, bookedClass: 'Economy' }), rules).p, 0);     // Cathay: no status credit
 
+// The three official examples from the Miles & More "Points system" page
+{
+  const r = (o, d) => ({ origin: ap(o), destination: ap(d) });
+  const ex1 = E.earn(flight({ airlineCode: 'LX', route: r('CH', 'TH'), bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+  assert.deepStrictEqual([ex1.p, ex1.qp, ex1.hon], [200, 200, 200]);            // ZRH–BKK Business with SWISS
+  const ex2 = E.earn(flight({ airlineCode: 'TG', route: r('DE', 'TH'), bookedClass: 'Economy' }), rules);
+  assert.deepStrictEqual([ex2.p, ex2.qp, ex2.hon], [60, 0, 0]);                 // FRA–BKK Economy with Thai
+  const ex3a = E.earn(flight({ airlineCode: 'LX', route: r('CH', 'DE'), bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+  const ex3b = E.earn(flight({ airlineCode: 'LH', route: r('DE', 'TH'), bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+  assert.deepStrictEqual([ex3a.p + ex3b.p, ex3a.qp + ex3b.qp, ex3a.hon + ex3b.hon], [240, 240, 240]);  // ZRH–MUC–BKK Business
+}
+
+// Edelweiss: LX8000–8499 code-shares earn like SWISS; WK-numbered bookings earn nothing
+assert.strictEqual(E.earn(flight({ airlineCode: 'LX', flightNo: 'LX8123', route: fraJfk, bookedClass: 'Economy' }), rules).qp, 60);
+assert.strictEqual(E.earn(flight({ airlineCode: 'WK', flightNo: 'WK123', route: fraJfk, bookedClass: 'Economy' }), rules).p, 0);
+
+// Lufthansa Express Bus: no credit; train: earns like a flight, haul defaults to continental
+assert.strictEqual(E.earn(flight({ airlineCode: 'LH', transport: 'bus', route: fraZrh, bookedClass: 'Economy' }), rules).p, 0);
+e = E.earn(flight({ airlineCode: 'LH', transport: 'rail', route: null, bookedClass: 'Business', upgradeClass: 'Business' }), rules);
+assert.deepStrictEqual([e.p, e.qp, e.hon, e.rail, e.haul], [40, 40, 40, true, 'continental']);
+
+// train QP / HON count towards a status only up to the caps (FTL 160 QP, SEN 500 QP, HON 1,000 HON)
+assert.strictEqual(E.statusFor(700, 400, 0, rules, { qp: 300 }), 'NONE');      // 100 + min(300, 160) = 260 < 325
+assert.strictEqual(E.statusFor(700, 500, 0, rules, { qp: 300 }), 'FTL');       // 200 + 160 = 360
+assert.strictEqual(E.statusFor(2000, 1199, 0, rules, { qp: 700 }), 'FTL');     // SEN: 499 + 500 = 999 < 1,000
+assert.strictEqual(E.statusFor(2000, 1200, 0, rules, { qp: 700 }), 'SEN');     // 500 + 500 = 1,000
+assert.strictEqual(E.statusFor(0, 0, 6500, rules, { hon: 1500 }), 'HON');      // 5,000 + 1,000
+assert.strictEqual(E.statusFor(0, 0, 6500, rules, { hon: 1600 }), 'NONE');     // 4,900 + 1,000 = 5,900
+{
+  const trains = Array.from({ length: 10 }, (_, i) => flight({ date: `2020-03-${String(i + 1).padStart(2, '0')}`, airlineCode: 'LH', transport: 'rail', route: null, bookedClass: 'Economy' }));
+  const s = E.yearSummary({ flights: trains, adjustments: [], settings: { rules } }, 2020);
+  assert.deepStrictEqual([s.actual.qp, s.actual.qpRail], [200, 200]);
+  assert.strictEqual(E.effective(s.actual, 'FTL', rules).qp, 160);
+  assert.strictEqual(E.gap(s.actual, 'FTL', rules).qp, 165);
+}
+
 // saved rules from before rulesVersion 2 get First 400; a later file keeps its own value
 {
   const old = MM.store.normalize({ settings: { rules: { points: { intercontinental: { 'Economy': 60, 'Premium Economy': 80, 'Business': 200, 'First': 300 } } } } });

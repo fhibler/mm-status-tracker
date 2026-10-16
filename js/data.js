@@ -23,7 +23,8 @@ MM.AIRLINES = {
   VL: { name: 'Lufthansa City Airlines', icao: 'LHX', group: 'LHG' },
   LG: { name: 'Luxair', icao: 'LGL', group: 'LHG' },
   LX: { name: 'SWISS', icao: 'SWR', group: 'LHG' },
-  // Not listed by Miles & More for Points – set "Earning" per flight if your statement shows credit.
+  // Edelweiss earns only on LX code-shares LX8000–8499 booked with SWISS under the LX number – enter those
+  // as LX flights (or WK with "Operated by" the LX number). WK-numbered bookings earn no status credit.
   WK: { name: 'Edelweiss Air', icao: 'EDW', group: 'NONE' },
   // Star Alliance: Points only
   A3: { name: 'Aegean Airlines', icao: 'AEE', group: 'STAR' },
@@ -113,6 +114,9 @@ MM.DEFAULT_RULES = {
     SEN: { label: 'Senator',            p: 2000, qp: 1000 },
     HON: { label: 'HON Circle',         hon: 6000 },
   },
+  // Rail (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail): max QP (FTL, SEN) / HON Circle Points (HON)
+  // that rail segments may contribute towards each status.
+  railCaps: { FTL: 160, SEN: 500, HON: 1000 },
   co2: {
     small:  { p: 5,  qp: 5,  hon: 5 },
     medium: { p: 20, qp: 20, hon: 20 },
