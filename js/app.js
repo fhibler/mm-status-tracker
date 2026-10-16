@@ -66,6 +66,17 @@
       </div>
     </div>`;
 
+  /** Shrinks the font of single-line elements until their text fits the element's width (min 11px). */
+  const fitText = (els) => {
+    for (const el of els) {
+      el.style.fontSize = '';
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      while (size > 11 && range.getBoundingClientRect().width > el.clientWidth) el.style.fontSize = (size -= 1) + 'px';
+    }
+  };
+
   const renderDashboard = () => {
     const host = $('#view-dashboard');
     if (!state.flights.length) { host.innerHTML = emptyState(); return; }
@@ -97,9 +108,15 @@
         <div class="card kpi"><div class="label">Forecast incl. plan</div>
           <div class="value">${badge(sum.statusForecast)}</div>
           <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
-        <div class="card kpi"><div class="label">Points · QP · HON</div>
-          <div class="value">${num(sum.actual.p)} <span class="muted">·</span> ${num(sum.actual.qp)} <span class="muted">·</span> ${num(sum.actual.hon)}</div>
-          <div class="meta">Forecast ${num(sum.forecast.p)} · ${num(sum.forecast.qp)} · ${num(sum.forecast.hon)}</div></div>
+        <div class="card kpi"><div class="label">Points ${year} · flown</div>
+          <div class="kpi-trio">
+            ${[['p', 'Points', '--s-p'], ['qp', 'QP', '--s-qp'], ['hon', 'HON', '--s-hon']].map(([k, label, color]) => `
+              <div>
+                <span class="k"><i style="--c:var(${color})"></i>${label}</span>
+                <b>${num(sum.actual[k])}</b>
+                <span class="fc" ${sum.forecast[k] === sum.actual[k] ? 'aria-hidden="true" style="visibility:hidden"' : ''} title="Forecast incl. planned flights">→ ${num(sum.forecast[k])}</span>
+              </div>`).join('')}
+          </div></div>
         <div class="card kpi"><div class="label">Cost ${year} (flown + plan)</div>
           <div class="value">${money(totalCost, true)}</div>
           <div class="meta">${money(sum.cost.actual.total, true)} spent · ${money(sum.cost.plan.total, true)} planned${sum.forecast.qp ? ` · ${money(totalCost / sum.forecast.qp)}/QP` : ''}</div></div>
@@ -143,6 +160,7 @@
           <div class="legend"><span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span><span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span><span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span></div>` : ''}
       </div>`;
 
+    fitText($$('.kpi-trio b', host));
     renderProgress(sum, rules);
     renderPlanner(sum, rules);
     renderCumCharts(sum, rules);
