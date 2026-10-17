@@ -22,7 +22,7 @@ const ap = (country) => ({ iata: 'X', country, lat: 0, lon: 0 });
 const r = (o, d) => ({ origin: ap(o), destination: ap(d) });
 const fraJfk = r('DE', 'US'), fraZrh = r('DE', 'CH');
 const flight = (o) => ({ ...S.newFlight('2026-03-01'), ...o });
-const lhBiz = (o) => flight({ airlineCode: 'LH', flightNo: 'LH400', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', ...o });
+const lhBiz = (o) => flight({ flightNo: 'LH400', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', ...o });
 const state = (o = {}) => S.normalize(o);   // a state as the app holds it
 const pts = (e) => [e.p, e.qp, e.hon].join(',');
 const earn = (o) => E.earn(flight(o), rules);
@@ -33,6 +33,11 @@ assert.strictEqual(E.parseFlightNo('4Y123').code, '4Y');
 assert.strictEqual(E.parseFlightNo('DLH400').code, 'LH');       // ICAO form
 assert.strictEqual(E.parseFlightNo('LGL4591').code, 'LG');
 assert.strictEqual(E.parseFlightNo('12345'), null);
+assert.strictEqual(E.parseFlightNo('XYZ123'), null);            // unknown ICAO prefix
+// the airline comes from the flight number; adsbdb's name only for airlines not in the list
+assert.strictEqual(E.airlineName(flight({ flightNo: 'LH1', route: { ...fraJfk, airlineName: 'Other' } })), 'Lufthansa');
+assert.strictEqual(E.airlineName(flight({ flightNo: 'ZZ1', route: { ...fraJfk, airlineName: 'Zed Air' } })), 'Zed Air');
+assert.strictEqual(E.airlineName(flight({ flightNo: 'ZZ1', route: { ...fraJfk, airlineName: 'United', via: 'UA1' } })), 'ZZ');   // operator's name
 assert.strictEqual(MM.airport('aus').city, 'Austin');
 assert.strictEqual(MM.airport('XXX'), null);
 
@@ -52,52 +57,60 @@ assert.strictEqual(MM.airport('XXX'), null);
   assert.strictEqual(E.haul(flight({ route: fraJfk, haulOverride: 'continental' })), 'continental');
   assert.strictEqual(E.haul(flight({ route: null })), null);     // flight without route: unknown
   assert.strictEqual(E.haul(flight({ route: null, transport: 'rail' })), 'continental');
-  const e = earn({ airlineCode: 'LH', route: null });
+  const e = earn({ flightNo: 'LH1', route: null });
   assert.strictEqual(`${e.unknown}:${pts(e)}`, 'true:0,0,0');      // unknown haul earns nothing
 }
 
 /* ---------- earning per segment ---------- */
-assert.strictEqual(pts(earn({ airlineCode: 'LH', route: fraJfk, bookedClass: 'First', upgradeClass: 'First' })), '400,400,400');
+assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'First', upgradeClass: 'First' })), '400,400,400');
 // upgrades: only fixed (online / airport) and bid upgrades earn the upgraded class
 {
-  const up = (upgradeType) => earn({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType }).p;
+  const up = (upgradeType) => earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType }).p;
   assert.strictEqual(['fixed-online', 'fixed-airport', 'bid', 'miles', 'voucher', 'operational', ''].map(up).join(','), '200,200,200,60,60,60,60');
-  const e = earn({ airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid', earnClassOverride: 'Premium Economy' });
+  const e = earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid', earnClassOverride: 'Premium Economy' });
   assert.strictEqual(`${e.cls}:${pts(e)}`, 'Premium Economy:80,80,0');   // cabin override beats the upgrade
 }
 // earning groups as listed by Miles & More
-assert.strictEqual(earn({ airlineCode: 'OU', route: fraZrh }).qp, 20);    // Croatia: Lufthansa Group
-assert.strictEqual(earn({ airlineCode: 'LO', route: fraZrh }).qp, 20);    // LOT
-assert.strictEqual(pts(earn({ airlineCode: 'LG', route: fraZrh, bookedClass: 'Business', upgradeClass: 'Business' })), '40,40,40');   // Luxair
-assert.strictEqual(pts(earn({ airlineCode: 'A3', route: fraZrh })), '20,0,0');   // Aegean: Star Alliance, Points only
-assert.strictEqual(earn({ airlineCode: 'CX', route: fraJfk }).p, 0);       // Cathay: no status credit
+assert.strictEqual(earn({ flightNo: 'OU1', route: fraZrh }).qp, 20);    // Croatia: Lufthansa Group
+assert.strictEqual(earn({ flightNo: 'LO1', route: fraZrh }).qp, 20);    // LOT
+assert.strictEqual(pts(earn({ flightNo: 'LG1', route: fraZrh, bookedClass: 'Business', upgradeClass: 'Business' })), '40,40,40');   // Luxair
+assert.strictEqual(pts(earn({ flightNo: 'A31', route: fraZrh })), '20,0,0');   // Aegean: Star Alliance, Points only
+assert.strictEqual(earn({ flightNo: 'CX1', route: fraJfk }).p, 0);       // Cathay: no status credit
 // the three official examples from the "Points system" page
-assert.strictEqual(pts(earn({ airlineCode: 'LX', route: r('CH', 'TH'), bookedClass: 'Business', upgradeClass: 'Business' })), '200,200,200');   // ZRH–BKK
-assert.strictEqual(pts(earn({ airlineCode: 'TG', route: r('DE', 'TH') })), '60,0,0');                                                          // FRA–BKK Thai
+assert.strictEqual(pts(earn({ flightNo: 'LX1', route: r('CH', 'TH'), bookedClass: 'Business', upgradeClass: 'Business' })), '200,200,200');   // ZRH–BKK
+assert.strictEqual(pts(earn({ flightNo: 'TG1', route: r('DE', 'TH') })), '60,0,0');                                                          // FRA–BKK Thai
 {
-  const a = earn({ airlineCode: 'LX', route: r('CH', 'DE'), bookedClass: 'Business', upgradeClass: 'Business' });
-  const b = earn({ airlineCode: 'LH', route: r('DE', 'TH'), bookedClass: 'Business', upgradeClass: 'Business' });
+  const a = earn({ flightNo: 'LX1', route: r('CH', 'DE'), bookedClass: 'Business', upgradeClass: 'Business' });
+  const b = earn({ flightNo: 'LH1', route: r('DE', 'TH'), bookedClass: 'Business', upgradeClass: 'Business' });
   assert.strictEqual(pts({ p: a.p + b.p, qp: a.qp + b.qp, hon: a.hon + b.hon }), '240,240,240');                                              // ZRH–MUC–BKK
 }
 // codeshares: the operating airline decides
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'UA', operatingFlightNo: 'LH488' })), 'LHG');
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LH', flightNo: 'LH9246', operatingFlightNo: 'UA679' })), 'STAR');
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LH', operatingFlightNo: 'ZZ1' })), 'LHG');   // unknown operator: marketing airline
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LH', operatingFlightNo: 'UA1', earningGroup: 'NONE' })), 'NONE');   // override
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'UA1', operatingFlightNo: 'LH488' })), 'LHG');
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LH9246', operatingFlightNo: 'UA679' })), 'STAR');
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LH1', operatingFlightNo: 'ZZ1' })), 'LHG');   // unknown operator: marketing airline
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LH1', operatingFlightNo: 'UA1', earningGroup: 'NONE' })), 'NONE');   // override
 // Edelweiss: only LX8000–8499 operated by Edelweiss earns (like SWISS); WK numbers and other LX numbers on WK don't
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LX', flightNo: 'LX8123', operatingFlightNo: 'WK123' })), 'LHG');
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LX', flightNo: 'LX1000', operatingFlightNo: 'WK1000' })), 'NONE');
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'LX', flightNo: 'LX8123', operatingFlightNo: 'UA1' })), 'STAR');
-assert.strictEqual(E.earningGroup(flight({ airlineCode: 'WK', flightNo: 'WK123' })), 'NONE');
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LX8123', operatingFlightNo: 'WK123' })), 'LHG');
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LX1000', operatingFlightNo: 'WK1000' })), 'NONE');
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LX8123', operatingFlightNo: 'UA1' })), 'STAR');
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'WK123' })), 'NONE');
 // trains earn like flights (continental by default), buses earn nothing
-assert.strictEqual(earn({ airlineCode: 'LH', transport: 'bus', route: fraZrh }).p, 0);
+assert.strictEqual(E.earningGroup(flight({ flightNo: 'LH1', transport: 'bus' })), 'NONE');
 {
-  const e = earn({ airlineCode: 'LH', transport: 'rail', route: null, bookedClass: 'Business', upgradeClass: 'Business' });
+  const e = earn({ flightNo: 'LH1', transport: 'rail', route: null, bookedClass: 'Business', upgradeClass: 'Business' });
   assert.strictEqual(`${pts(e)}:${e.rail}:${e.haul}`, '40,40,40:true:continental');
 }
-// CO₂ boosters
-assert.strictEqual(pts(earn({ airlineCode: 'LX', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', co2Level: 'large' })), '300,300,240');
-assert.strictEqual(pts(earn({ airlineCode: 'LH', route: fraZrh, co2Level: 'small' })), '21,21,0');
+// CO₂ boosters, for flights only
+assert.strictEqual(pts(earn({ flightNo: 'LX1', route: fraJfk, bookedClass: 'Business', upgradeClass: 'Business', co2Level: 'large' })), '300,300,240');
+assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraZrh, co2Level: 'small' })), '21,21,0');
+{
+  const train = flight({ flightNo: 'LH1', transport: 'rail', co2Level: 'large', co2Cost: 9 });
+  assert.strictEqual(`${pts(E.earn(train, rules))}:${E.cost(train, 0).co2}`, '20,20,0:0');
+}
+
+/* ---------- date field ---------- */
+assert.strictEqual(['2026/01/15', '2026-1-15', '2026.1.5', '20260115', '2026/02/30', '2026/13/01', '15.01.2026'].map(E.parseDate).join(','),
+  '2026-01-15,2026-01-15,2026-01-05,2026-01-15,,,');
 
 /* ---------- status ---------- */
 {
@@ -114,7 +127,7 @@ assert.strictEqual(pts(earn({ airlineCode: 'LH', route: fraZrh, co2Level: 'small
   assert.strictEqual(status(0, 0, 6500, 0, 1500), 'HON');         // 5,000 + 1,000
   assert.strictEqual(status(0, 0, 6500, 0, 1600), 'NONE');        // 4,900 + 1,000 = 5,900
   // a year of trains: the totals keep the rail share, the status uses the capped value
-  const trains = Array.from({ length: 10 }, (_, i) => flight({ id: 't' + i, date: `2020-03-${String(i + 1).padStart(2, '0')}`, airlineCode: 'LH', transport: 'rail', route: null }));
+  const trains = Array.from({ length: 10 }, (_, i) => flight({ id: 't' + i, date: `2020-03-${String(i + 1).padStart(2, '0')}`, flightNo: 'LH1', transport: 'rail', route: null }));
   const s = E.yearSummary(state({ flights: trains }), 2020, TODAY);
   assert.strictEqual(`${s.actual.qp}:${s.actual.qpRail}`, '200:200');
   assert.strictEqual(E.effective(s.actual, 'FTL', rules).qp, 160);
@@ -131,7 +144,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
       lhBiz({ id: 'f1', date: '2026-03-01', bookingCode: 'B1' }),                                          // flown, 200
       lhBiz({ id: 'f2', date: '2026-09-01', bookingCode: 'B1', flightNo: 'LH401' }),                       // planned, 200
       lhBiz({ id: 'f3', date: '2026-10-01', flightNo: 'LH402', includeInPlan: false, flightCost: 999 }),  // planned, left out
-      flight({ id: 'f4', date: '2026-07-01', flightNo: 'LH403', airlineCode: 'LH', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business',
+      flight({ id: 'f4', date: '2026-07-01', flightNo: 'LH403', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business',
         upgradeType: 'fixed-online', upgradeCost: 300, flightCost: 100, co2Level: 'none', co2Cost: 50 }),  // planned, 200; CO₂ cost without booster
     ],
     bookings: { B1: { fare: 1000 } },
@@ -157,8 +170,8 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(`${t.reached.actual.FTL}:${t.reached.forecastBy.FTL}`, `${TODAY}:Correction`);   // 400 P after g1, 650 with the correction
   // unknown haul: counted only for flights in the forecast that would earn
   const unknown = state({ flights: [
-    flight({ id: 'u1', airlineCode: 'LH' }), flight({ id: 'u2', airlineCode: 'CX' }),
-    flight({ id: 'u3', date: '2026-09-01', airlineCode: 'LH', includeInPlan: false }),
+    flight({ id: 'u1', flightNo: 'LH1' }), flight({ id: 'u2', flightNo: 'CX1' }),
+    flight({ id: 'u3', date: '2026-09-01', flightNo: 'LH1', includeInPlan: false }),
   ] });
   assert.strictEqual(E.yearSummary(unknown, 2026, TODAY).unknown, 1);
   // a booking with segments in two years: each year counts its share
@@ -175,6 +188,9 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const s = E.yearSummary(st, 2020, TODAY);
   assert.strictEqual(`${s.actual.p}:${s.actual.qp}:${s.adjTotal.p}:${s.events.length}`, '1590:600:1390:3');
   assert.strictEqual(s.statusActual, 'FTL');
+  // a deduction below the threshold takes the status away again, and with it the date it was reached
+  const down = E.yearSummary(state({ ...st, adjustments: [...st.adjustments, { id: 'a3', date: '2020-08-01', p: -1000, qp: 0, hon: 0, remark: 'r' }] }), 2020, TODAY);
+  assert.strictEqual(`${down.statusActual}:${down.reached.actual.FTL}:${down.reached.forecast.FTL}:${down.reached.forecastBy.FTL}`, 'NONE:undefined:undefined:undefined');
 }
 {
   // 40 Points per stay of 2+ nights, no QP / HON; here capped at 100 per year, so the third stay earns 20
@@ -244,6 +260,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   st.plans['2026'] = { co2: { a: { level: 'small', cost: 5 } }, mix: [] };
   S.deleteFlight(st, 'a');
   assert.strictEqual(`${'ABC123' in st.bookings}:${'a' in st.plans['2026'].co2}`, 'false:false');
+  // a flight that becomes a train loses its what-ifs too: the planner neither shows nor resets them
+  st.plans['2026'].co2.b = { level: 'large', cost: 40 };
+  S.saveFlight(st, { ...st.flights[0], flightNo: 'LH1' }, 0);
+  const kept = 'b' in st.plans['2026'].co2;
+  S.saveFlight(st, { ...st.flights[0], transport: 'rail' }, 0);
+  assert.strictEqual(`${kept}:${'b' in st.plans['2026'].co2}`, 'true:false');
 }
 
 /* ---------- planner ---------- */
@@ -291,15 +313,21 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const ru = state({ settings: { rules: { co2: { small: { p: 7 } }, points: { intercontinental: { First: '300', Business: 'x' } }, honClasses: ['First', 'Bogus'], extra: 1 } } }).settings.rules;
   assert.strictEqual(`${ru.co2.small.p},${ru.co2.small.qp},${ru.points.intercontinental.First},${ru.points.intercontinental.Business}`, '7,5,300,200');
   assert.strictEqual(`${ru.honClasses.join('+')}:${'extra' in ru}`, 'First:false');
-  // IDs end up in HTML and selectors: unsafe ones are replaced; invalid entries are dropped
+  // IDs end up in HTML and selectors: unsafe and repeated ones are replaced; invalid entries are dropped
   const st = state({
     settings: { currency: 'XYZ', memberNumber: '992 000-123 456 789' },
-    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01' }, { date: 'yesterday' }],
-    plans: { 2025: { co2: { 'ok-1': { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }] } },   // what-if for a 2026 flight in 2025
+    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01' }, { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }],
+    adjustments: [{ date: '2026-13' }, { date: '2026-04-01', p: 5 }], stays: [{ nights: 2 }],
+    apiCache: { LH1: null, LH2: { status: 'notfound' } },
+    plans: { 2025: { co2: { 'ok-1': { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }, { id: 'm', kind: 'RAIL', cls: 'First', co2Level: 'large' }, { id: 'm' }] } },   // what-if for a 2026 flight in 2025
   });
   assert.ok(/^[\w-]+$/.test(st.flights[0].id) && st.flights[0].id !== 'x"><b>');
-  assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.settings.currency}`, '2:ok-1:EUR');
-  assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${st.plans['2025'].mix[0].count}:${st.plans['2025'].mix[0].kind}`, '0:2:LHG');
+  assert.ok(st.flights[2].id !== 'ok-1' && st.plans['2025'].mix[2].id !== 'm');
+  assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.adjustments.length}:${st.stays.length}:${Object.keys(st.apiCache)}:${st.settings.currency}`, '3:ok-1:1:0:LH2:EUR');
+  const mix = st.plans['2025'].mix;
+  assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${mix[0].count}:${mix[0].kind}`, '0:2:LHG');
+  assert.strictEqual(`${mix[1].cls}:${mix[1].co2Level}`, 'Business:none');   // trains: 1st class at most, no booster
+  assert.strictEqual(state({ flights: [{ date: '2026-01-01', transport: 'rail', bookedClass: 'First' }] }).flights[0].bookedClass, 'Economy');
   // flight choices outside the allowed values get a new flight's defaults (the upgrade class: the booked class)
   const choices = ['transport', 'bookedClass', 'upgradeClass', 'co2Level', 'haulOverride', 'earningGroup', 'earnClassOverride', 'upgradeType'];
   const bad = state({ flights: [{ date: '2026-01-01', ...Object.fromEntries(choices.map(k => [k, 'x'])), bookedClass: 'Business' }] }).flights[0];
@@ -310,12 +338,16 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // the Miles & More number (digits only) names the .json file
   assert.strictEqual(S.fileName(st), 'miles-and-more-992000123456789.json');
   assert.ok(/^miles-and-more-status-\d{4}-\d{2}-\d{2}\.json$/.test(S.fileName(state())));
-  // parse: other files and the old format (version 1) are refused; saved demo data round-trips
+  // parse: other files and the old format (version 1) are refused
   assert.throws(() => S.parse(JSON.stringify({ format: 'mm-status-tracker', version: 1, flights: [] })), /older version/);
   assert.throws(() => S.parse(JSON.stringify({ format: 'other', version: 2 })), /Not a Miles/);
-  const demo = S.demo();
-  const again = S.parse(JSON.stringify(demo));
-  assert.strictEqual(`${again.flights.length}:${again.bookings.K7XQ2P.fare}:${Object.keys(again.apiCache).length > 0}`, `${demo.flights.length}:780:true`);
+  assert.throws(() => S.parse(JSON.stringify({ version: 2 })), /Not a Miles/);
+  // a saved file loads back unchanged: demo data plus stays, a scenario, starting status and number
+  const rich = S.demo(), f0 = rich.flights[0];
+  Object.assign(rich.settings, { startStatus: { status: 'SEN', year: 2025 }, memberNumber: '992000123456789' });
+  rich.stays.push(S.newStay(f0.date));
+  rich.plans[f0.date.slice(0, 4)] = { co2: { [f0.id]: { level: 'small', cost: 5 } }, mix: [S.newMixRow()] };
+  assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(rich))), JSON.stringify(rich));
 }
 
 /* ---------- route lookup (adsbdb) with a stubbed fetch ---------- */
@@ -326,7 +358,7 @@ async function apiTests() {
   const calls = [];
   respond = (url) => { calls.push(url.split('/').pop()); return url.endsWith('/UA9414') ? reply(404, { response: 'unknown callsign' }) : reply(200, { response: route }); };
   let res = await A.lookup(st, 'UA9414');
-  assert.strictEqual(`${res.status}:${res.queriedAs}:${calls.join(',')}`, 'ok:UAL9414:UA9414,UAL9414');   // ICAO fallback
+  assert.strictEqual(`${res.status}:${calls.join(',')}`, 'ok:UA9414,UAL9414');   // ICAO fallback
   res = await A.lookup(st, 'UA9414');
   assert.strictEqual(`${res.fromCache}:${calls.length}`, 'true:2');               // cached: no new request
   assert.strictEqual(A.airport(st, 'JFK').country, 'US');                         // airports from cached routes ...
@@ -338,6 +370,17 @@ async function apiTests() {
   respond = () => reply(200, { response: route });
   assert.strictEqual((await A.lookup(st, 'LH400')).fromCache, true);              // "not found" is final ...
   assert.strictEqual((await A.lookup(st, 'LH400', { force: true })).status, 'ok');   // ... until forced
+  respond = () => { throw new Error('offline'); };
+  res = await A.lookup(st, 'LH400', { force: true });
+  assert.strictEqual(`${res.status}:${st.apiCache.LH400.status}`, 'error:ok');    // a failed forced lookup keeps the answer
+
+  // codeshares: without a route of their own, the operating flight's route (an error there is not final)
+  respond = (url) => (url.endsWith('/LH488') ? reply(200, { response: route }) : reply(404, { response: 'unknown callsign' }));
+  const op = await A.resolveRoute(st, 'UA1', 'LH488');
+  assert.strictEqual(`${op.entry.status}:${op.via}:${op.route.via}:${op.route.origin.iata}`, 'ok:LH488:LH488:FRA');
+  respond = (url) => { if (url.endsWith('/LH499')) throw new Error('offline'); return reply(404, { response: 'unknown callsign' }); };
+  const failed = await A.resolveRoute(st, 'UA2', 'LH499');
+  assert.strictEqual(`${failed.entry.status}:${failed.route}:${(await A.resolveRoute(st, 'UA2')).entry.status}`, 'error:null:notfound');
 }
 
 module.exports = apiTests().then(() => console.log('engine tests passed'));

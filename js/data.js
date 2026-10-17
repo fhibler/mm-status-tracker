@@ -2,7 +2,9 @@
 window.MM = window.MM || {};
 
 MM.CLASSES = ['Economy', 'Premium Economy', 'Business', 'First'];
-MM.CLASS_SHORT = { 'Economy': 'Y', 'Premium Economy': 'W', 'Business': 'C', 'First': 'F' };
+/* Trains offer Economy (2nd class) and Business (1st class) only. */
+MM.RAIL_CLASSES = { 'Economy': 'Economy (2nd class)', 'Business': 'Business (1st class)' };
+MM.CLASS_SHORT ={ 'Economy': 'Y', 'Premium Economy': 'W', 'Business': 'C', 'First': 'F' };
 
 /* Earning groups (as listed on miles-and-more.com, "Points system" and "Partners", checked 2026-10-16):
  *  LHG   – Lufthansa Group airlines and co-issuing Miles & More partners: Points + Qualifying Points + HON Circle Points

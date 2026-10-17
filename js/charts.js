@@ -58,7 +58,8 @@
     const W = Math.max(280, Math.round(host.clientWidth || 560)), H = 220, m = { l: 44, r: 12, t: 14, b: 26 };
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
     const year = opts.year, days = dayOfYear(`${year}-12-31`, year) + 1;
-    const todayD = opts.today.slice(0, 4) == year ? dayOfYear(opts.today, year) : (+opts.today.slice(0, 4) > year ? days : -1);
+    const todayY = +opts.today.slice(0, 4);
+    const todayD = todayY === year ? dayOfYear(opts.today, year) : todayY > year ? days : -1;
 
     // Build actual and forecast step series as [{d, v, rows:[...]}]
     const k = opts.key;
@@ -143,7 +144,7 @@
       for (const r of on) {
         const label = r.adj ? `Correction: ${esc(r.adj.remark)}`
           : r.stay ? `Marriott: ${esc(r.stay.hotel || 'hotel stay')}`
-          : `${esc(r.f.flightNo)} ${r.f.route ? esc(r.f.route.origin.iata + '→' + r.f.route.destination.iata) : ''}`;
+          : `${esc(r.f.flightNo)} ${r.f.route && r.f.route.origin && r.f.route.destination ? esc(r.f.route.origin.iata + '→' + r.f.route.destination.iata) : ''}`;
         html += `<div class="row muted"><span>${label}</span><span>${r.e[k] < 0 ? '' : '+'}${fmt(r.e[k])}</span></div>`;
       }
       C.showTip(html, evt);

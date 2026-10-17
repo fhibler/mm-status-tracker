@@ -23,7 +23,7 @@
 
   S.newFlight = (date) => ({
     id: S.uid(), bookingCode: '', date: date || E.todayISO(), transport: 'flight',   // 'flight' | 'rail' | 'bus'
-    flightNo: '', airlineCode: '', airlineName: '', operatingFlightNo: '',
+    flightNo: '', operatingFlightNo: '',
     earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradeType: '',   // see MM.UPGRADE_TYPES
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
     earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, includeInPlan: true, notes: '',
@@ -34,6 +34,14 @@
 
   /** One row of a planned mix of extra segments (see MM.engine.planScenario); cost = estimated cost per segment. */
   S.newMixRow = (o) => ({ id: S.uid(), count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 0, ...o });
+  /** Makes a train row of the mix valid (continental, a train class, no booster); changes the row and returns it. */
+  S.fitMixRow = (row) => {
+    if (row.kind === 'RAIL') {
+      row.haul = 'continental'; row.co2Level = 'none';
+      if (!(row.cls in MM.RAIL_CLASSES)) row.cls = 'Business';
+    }
+    return row;
+  };
 
   /** Marriott Bonvoy stay; date = check-out date (the stay is credited when it is completed). */
   S.newStay = (date) => ({ id: S.uid(), date: date || E.todayISO(), hotel: '', nights: 2, remark: '' });
@@ -65,21 +73,34 @@
     prune(state);
   };
 
-  /** Drops bookings without segments and CO₂ what-ifs for flights that no longer exist or moved to another year. */
+  /**
+   * Drops bookings without segments and CO₂ what-ifs for flights that no longer exist, moved to another year or no
+   * longer take a booster (see E.canBoost), since the planner neither shows nor resets those.
+   */
   const prune = (state) => {
     const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
     for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
-    const yearOf = new Map(state.flights.map(f => [f.id, f.date.slice(0, 4)]));
+    const yearOf = new Map(state.flights.filter(E.canBoost).map(f => [f.id, f.date.slice(0, 4)]));
     for (const [y, p] of Object.entries(state.plans)) for (const id of Object.keys(p.co2)) if (yearOf.get(id) !== y) delete p.co2[id];
     return state;
   };
 
   /* ---------- normalize: fills missing fields with defaults and drops invalid entries ---------- */
   const isObj = (x) => !!x && typeof x === 'object';
-  /** IDs end up in HTML attributes and CSS selectors, so only simple ones are kept. */
-  const safeId = (id) => (typeof id === 'string' && /^[\w-]{1,40}$/.test(id) ? id : S.uid());
-  const list = (xs, make) => (Array.isArray(xs) ? xs : []).filter(x => isObj(x) && DATE.test(x.date))
-    .map(x => ({ ...make(x.date), ...x, id: safeId(x.id) }));
+  /** IDs end up in HTML attributes and CSS selectors, so only simple ones are kept; a repeated one gets a new ID. */
+  const safeIds = () => {
+    const seen = new Set();
+    return (id) => {
+      const ok = typeof id === 'string' && /^[\w-]{1,40}$/.test(id) && !seen.has(id) ? id : S.uid();
+      seen.add(ok);
+      return ok;
+    };
+  };
+  const list = (xs, make) => {
+    const safeId = safeIds();
+    return (Array.isArray(xs) ? xs : []).filter(x => isObj(x) && DATE.test(x.date))
+      .map(x => ({ ...make(x.date), ...x, id: safeId(x.id) }));
+  };
 
   /** Allowed values of a flight's choice fields; others get a new flight's default (upgradeClass: the booked class). */
   const FLIGHT_CHOICES = {
@@ -95,6 +116,7 @@
   const normalizeFlight = (f) => {
     const d = S.newFlight(f.date);
     for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
+    if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = f.upgradeClass = 'Economy';   // as the dialog shows it
     return f;
   };
 
@@ -117,14 +139,15 @@
       for (const [id, o] of Object.entries(isObj(p.co2) ? p.co2 : {})) {
         if (isObj(o) && MM.CO2_LEVELS.includes(o.level)) co2[id] = { level: o.level, cost: Math.max(0, +o.cost || 0) };
       }
-      const mix = (Array.isArray(p.mix) ? p.mix : []).filter(isObj).map(r => S.newMixRow({
+      const safeId = safeIds();
+      const mix = (Array.isArray(p.mix) ? p.mix : []).filter(isObj).map(r => S.fitMixRow(S.newMixRow({
         id: safeId(r.id), count: Math.max(0, Math.round(+r.count || 0)),
         kind: Object.keys(MM.MIX_KIND).includes(r.kind) ? r.kind : 'LHG',
         haul: r.haul === 'intercontinental' ? 'intercontinental' : 'continental',
         cls: MM.CLASSES.includes(r.cls) ? r.cls : 'Economy',
         co2Level: MM.CO2_LEVELS.includes(r.co2Level) ? r.co2Level : 'none',
         cost: Math.max(0, +r.cost || 0),
-      }));
+      })));
       out[y] = { co2, mix };
     }
     return out;
@@ -141,7 +164,7 @@
       const y = +set.startStatus.year;
       s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };
     }
-    s.apiCache = isObj(raw.apiCache) ? raw.apiCache : {};
+    s.apiCache = Object.fromEntries(Object.entries(isObj(raw.apiCache) ? raw.apiCache : {}).filter(([, c]) => isObj(c)));
     s.flights = list(raw.flights, S.newFlight).map(normalizeFlight);
     s.adjustments = list(raw.adjustments, S.newAdjustment);
     s.stays = list(raw.stays, S.newStay);
@@ -155,7 +178,7 @@
   /** Parses saved data (a .json file or localStorage). Throws for other files and for the old format (version 1). */
   S.parse = (text) => {
     const raw = JSON.parse(text);
-    if (!isObj(raw) || (raw.format && raw.format !== FORMAT)) throw new Error('Not a Miles & More Status Tracker file.');
+    if (!isObj(raw) || raw.format !== FORMAT) throw new Error('Not a Miles & More Status Tracker file.');
     if (!(+raw.version >= VERSION)) throw new Error('This data was saved by an older version of the tracker and can no longer be loaded.');
     return S.normalize(raw);
   };
@@ -223,14 +246,15 @@
       [2, 'LH400', 'FRA', 'JFK', 'Business', 'Business', false, 2450, 0, 'xlarge', 60, 'PLAN02'],
       [2, 'LX38', 'ZRH', 'SFO', 'Business', 'Business', false, 2200, 0, 'medium', 30, 'PLAN03'],
     ];
-    const base = new Date(today + 'T12:00:00');
+    // Dates in UTC, so the month offset and the ISO date don't depend on the time zone.
+    const isoUTC = (y, m, d) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
+    const [ty, tm] = today.split('-').map(Number);
     plan.forEach(([mo, no, from, to, bc, uc, bid, fc, uco, co2, co2c, pnr], i) => {
-      const d = new Date(base); d.setMonth(d.getMonth() + mo); d.setDate(Math.min(27, 3 + (i * 5) % 25));
-      const date = d.toISOString().slice(0, 10);
+      const date = isoUTC(ty, tm - 1 + mo, Math.min(27, 3 + (i * 5) % 25));
       const p = E.parseFlightNo(no);
       const resp = { flightroute: { callsign: no, callsign_iata: no, airline: { name: p.airline.name, iata: p.code, icao: p.airline.icao }, origin: apResp(from), destination: apResp(to) } };
-      s.apiCache[no] = { queried: true, source: 'adsbdb.com (demo)', fetchedAt: new Date().toISOString(), status: 'ok', response: resp };
-      const f = { ...S.newFlight(date), flightNo: no, airlineCode: p.code, airlineName: p.airline.name, bookingCode: pnr,
+      s.apiCache[no] = { fetchedAt: new Date().toISOString(), status: 'ok', response: resp };
+      const f = { ...S.newFlight(date), flightNo: no, bookingCode: pnr,
         bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : bid ? 'bid' : 'voucher',
         upgradeCost: uco, co2Level: co2, co2Cost: co2c };
       s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
@@ -240,8 +264,8 @@
     });
     // One statement correction, 10 days after the LX318 segment.
     const lx = s.flights.find(f => f.flightNo === 'LX318');
-    const cd = new Date(lx.date + 'T12:00:00'); cd.setDate(cd.getDate() + 10);
-    s.adjustments.push({ ...S.newAdjustment(cd.toISOString().slice(0, 10)), p: 20, qp: 20, hon: 0, remark: 'Statement: retro credit for missing LX segment' });
+    const [ly, lm, ld] = lx.date.split('-').map(Number);
+    s.adjustments.push({ ...S.newAdjustment(isoUTC(ly, lm - 1, ld + 10)), p: 20, qp: 20, hon: 0, remark: 'Statement: retro credit for missing LX segment' });
     return s;
   };
 })();

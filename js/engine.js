@@ -20,7 +20,20 @@
     return { code: m[1], number: m[2], iata: m[1] + m[2], airline: MM.AIRLINES[m[1]] || null };
   };
 
-  E.airlineName = (f) => f.airlineName || (MM.AIRLINES[f.airlineCode] || {}).name || f.airlineCode || '–';
+  /** Airline of the flight number: from MM.AIRLINES, else the name adsbdb gave for this number, else its code. */
+  E.airlineName = (f) => {
+    const p = E.parseFlightNo(f.flightNo);
+    return (p && p.airline && p.airline.name) || (f.route && !f.route.via && f.route.airlineName) || (p && p.code) || '–';
+  };
+
+  /** Date field text (YYYY/MM/DD, also with - or . or without separators) -> ISO date, or '' if it is no real date. */
+  E.parseDate = (txt) => {
+    const m = String(txt || '').trim().match(/^(\d{4})[/.\-]?(\d{1,2})[/.\-]?(\d{1,2})$/);
+    if (!m) return '';
+    const iso = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    const d = new Date(iso + 'T00:00:00Z');
+    return !isNaN(d) && d.toISOString().slice(0, 10) === iso ? iso : '';
+  };
 
   /** Operating carrier of a codeshare (from f.operatingFlightNo), or null. */
   E.operating = (f) => {
@@ -39,12 +52,13 @@
    * Earning group: explicit override, else the operating airline ("Points are credited for flights operated
    * by …"), so LH9246 operated by United earns Points only and UA9414 operated by Lufthansa earns like Lufthansa.
    * Without an operator, or with one that isn't in MM.AIRLINES, the marketing airline decides.
-   * Exception: LX8000–8499 operated by Edelweiss earns like SWISS.
+   * Exception: LX8000–8499 operated by Edelweiss earns like SWISS. Buses (Lufthansa Express Bus) never earn.
    */
   E.earningGroup = (f) => {
+    if (f.transport === 'bus') return 'NONE';
     if (f.earningGroup && f.earningGroup !== 'auto') return f.earningGroup;
-    const a = MM.AIRLINES[f.airlineCode];
-    const mkt = a ? a.group : 'NONE';
+    const p = E.parseFlightNo(f.flightNo);
+    const mkt = p && p.airline ? p.airline.group : 'NONE';
     const op = E.operating(f);
     if (!op || !op.airline || E.isEdelweissCodeshare(f)) return mkt;
     return op.airline.group;
@@ -80,15 +94,20 @@
   /** Fixed (online / airport) and bid upgrades earn in the upgraded class; miles, voucher and operational ones don't. */
   E.upgradeEarns = (f) => !!(MM.UPGRADE_TYPES[f.upgradeType] || {}).earnsUpgrade;
 
+  /** CO₂ compensation boosters (and their cost) exist for flights only, not for trains or buses. */
+  E.hasBooster = (f) => f.transport === 'flight' && f.co2Level !== 'none';
+  /** Flights for which the planner offers CO₂ what-ifs: a booster changes their Points. */
+  E.canBoost = (f) => f.transport === 'flight' && E.earningGroup(f) !== 'NONE';
+
   /**
    * Points earned for one segment, incl. CO2 booster.
    * transport: 'flight' (default), 'rail' (Austrian AIRail, Lufthansa Express Rail, SWISS Air Rail – earns like
-   * a flight, but QP/HON count towards a status only up to rules.railCaps), 'bus' (Lufthansa Express Bus – no credit).
+   * a flight, but QP/HON count towards a status only up to rules.railCaps; no CO₂ booster), 'bus' (Lufthansa Express
+   * Bus – no credit).
    */
   E.earn = (f, rules) => {
     const haul = E.haul(f);
-    const bus = f.transport === 'bus';
-    const group = bus ? 'NONE' : E.earningGroup(f);
+    const group = E.earningGroup(f);
     const cls = E.earningClass(f);
     const rail = f.transport === 'rail';
     const zero = { p: 0, qp: 0, hon: 0, haul, group, cls, rail, unknown: !haul };
@@ -99,7 +118,7 @@
       qp: group === 'LHG' ? per : 0,
       hon: group === 'LHG' && rules.honClasses.includes(cls) ? per : 0,
     };
-    const b = rules.co2[f.co2Level] || { p: 0, qp: 0, hon: 0 };
+    const b = (E.hasBooster(f) && rules.co2[f.co2Level]) || { p: 0, qp: 0, hon: 0 };
     return {
       p: Math.round(base.p * (1 + b.p / 100)),
       qp: Math.round(base.qp * (1 + b.qp / 100)),
@@ -131,7 +150,7 @@
   /** Costs of one segment; `fare` is its share of the fare (see E.fareShare). */
   E.cost = (f, fare) => {
     const upgrade = f.upgradeClass !== f.bookedClass ? (+f.upgradeCost || 0) : 0;
-    const co2 = f.co2Level !== 'none' ? (+f.co2Cost || 0) : 0;
+    const co2 = E.hasBooster(f) ? (+f.co2Cost || 0) : 0;
     return { flight: fare, upgrade, co2, total: fare + upgrade + co2 };
   };
 
@@ -193,8 +212,8 @@
   /**
    * Walks one calendar year in date order (flights, manual corrections and Marriott stays; on the same day in
    * that order). rows: flights; adjustments: corrections; stays: hotel stays; events: all of them in date order.
-   * Also returns totals (actual vs. incl. plan), costs (actual, plan, all), the dates on which each status was
-   * (or will be) reached and, for the forecast, the item that reached it (reached.forecastBy). Items after `today`
+   * Also returns totals (actual vs. incl. plan), costs (actual, plan, all), the dates on which each status held at the
+   * end of the walk was (or will be) reached and, for the forecast, the item that reached it (reached.forecastBy). Items after `today`
    * are planned. A starting status from the statement earned in this year raises statusActual / statusForecast
    * (fromStatement: it is higher than the status earned with the tracked items); it has no date in `reached`.
    * unknown: flights in the forecast that would earn but have no haul.
@@ -218,10 +237,16 @@
     let unknown = 0;
     const segs = E.bookingSegments(state);
     const add = (t, e) => { t.p += e.p; t.qp += e.qp; t.hon += e.hon; if (e.rail) { t.qpRail += e.qp; t.honRail += e.hon; } };
-    /** Notes the first date on which totals t reach each status and, for the forecast, the item that did it. */
+    /**
+     * Notes the date on which totals t reach each status and, for the forecast, the item that did it. A negative
+     * correction can take a status away again; then the date is cleared, so it always matches the status at year end.
+     */
     const markReached = (t, dates, date, by) => {
       const s = E.status(t, rules);
-      for (const k of MM.STATUSES) if (E.rank(s) >= E.rank(k) && !dates[k]) { dates[k] = date; if (by) reached.forecastBy[k] = by; }
+      for (const k of MM.STATUSES) {
+        if (E.rank(s) < E.rank(k)) { delete dates[k]; if (by) delete reached.forecastBy[k]; }
+        else if (!dates[k]) { dates[k] = date; if (by) reached.forecastBy[k] = by; }
+      }
     };
     for (const it of items) {
       const isAdj = it.kind === 'adj', isStay = it.kind === 'stay';
@@ -304,7 +329,7 @@
     const rail = row.kind === 'RAIL';
     return E.earn({
       transport: rail ? 'rail' : 'flight', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
-      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, co2Level: rail ? 'none' : row.co2Level,
+      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, co2Level: row.co2Level,
     }, rules);
   };
 
