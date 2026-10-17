@@ -91,6 +91,16 @@
     return E.upgradeEarns(f) && f.upgradeClass ? f.upgradeClass : f.bookedClass;
   };
 
+  /** Cabin actually flown: the upgrade class, whatever the upgrade type or earnClassOverride (prices CO₂ boosters). */
+  E.flownClass = (f) => f.upgradeClass || f.bookedClass;
+
+  /**
+   * True when the flight's saved CO₂ cost is just the price model's estimate for its booster in any cabin (flown,
+   * booked or earning), i.e. not typed in: it may then be refreshed, e.g. after the upgrade was entered.
+   */
+  E.co2CostIsEstimate = (f) => +f.co2Cost > 0 && [E.flownClass(f), f.bookedClass, E.earningClass(f)]
+    .some(c => { const e = E.co2PriceEstimate(f, f.co2Level, c); return !!e && e.cost === +f.co2Cost; });
+
   /** Fixed (online / airport) and bid upgrades earn in the upgraded class; miles, voucher and operational ones don't. */
   E.upgradeEarns = (f) => !!(MM.UPGRADE_TYPES[f.upgradeType] || {}).earnsUpgrade;
 
@@ -373,13 +383,12 @@
 
   /**
    * Estimated price (EUR) of CO₂ booster `level` for flight f, from MM.CO2_PRICE: by great-circle distance, haul and
-   * the cabin flown (an upgrade is priced in the upgraded cabin, whatever it earns). Returns
+   * the cabin flown (an upgrade is priced in the upgraded cabin, whatever it earns; `cabin` overrides it). Returns
    * { cost, quality: 'good' | 'rough', km, cabin }, or null without a route, model data or booster.
    */
-  E.co2PriceEstimate = (f, level) => {
+  E.co2PriceEstimate = (f, level, cabin = E.flownClass(f)) => {
     const k = MM.CO2_PRICE.factor[level], haul = E.haul(f), r = f.route;
     if (!k || f.transport !== 'flight' || !haul || !r) return null;
-    const cabin = f.upgradeClass || f.bookedClass;
     const m = (MM.CO2_PRICE.medium[haul] || {})[cabin];
     const km = E.distanceKm(r.origin, r.destination);
     const inside = (range) => !!range && km >= range[0] && km <= range[1];

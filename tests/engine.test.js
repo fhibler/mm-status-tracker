@@ -307,7 +307,20 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   }
   assert.strictEqual(est('MUC', 'LIS', 'Business', 'medium').quality, 'rough');           // longer than the samples
   assert.strictEqual(est('MUC', 'SFO', 'Business', 'medium', { upgradeClass: 'First', upgradeType: 'voucher' }).cabin, 'First');   // priced as flown
-  assert.strictEqual(est('MUC', 'SFO', 'Economy', 'medium'), null);                        // no long-haul Economy data
+  {  // booked Business, voucher upgrade to First: Points as Business, CO₂ priced as First (also with earnClassOverride)
+    const up = { flightNo: 'LH458', route: ap2('MUC', 'SFO'), bookedClass: 'Business', upgradeClass: 'First', upgradeType: 'voucher', co2Level: 'medium' };
+    assert.strictEqual(pts(E.earn(flight(up), rules)), pts(E.earn(flight({ ...up, upgradeClass: 'Business', upgradeType: '' }), rules)));
+    assert.strictEqual(E.earn(flight(up), rules).cls, 'Business');
+    assert.strictEqual(E.co2PriceEstimate(flight(up), 'medium').cabin, 'First');
+    assert.strictEqual(E.co2PriceEstimate(flight({ ...up, earnClassOverride: 'Business' }), 'medium').cabin, 'First');
+    // a saved cost that is the Business estimate (saved before the upgrade) counts as an estimate, so it is refreshed
+    const bizCost = E.co2PriceEstimate(flight(up), 'medium', 'Business').cost;
+    assert.ok(E.co2CostIsEstimate(flight({ ...up, co2Cost: bizCost })));
+    assert.ok(E.co2CostIsEstimate(flight({ ...up, co2Cost: E.co2PriceEstimate(flight(up), 'medium').cost })));
+    assert.ok(!E.co2CostIsEstimate(flight({ ...up, co2Cost: 123.45 })));   // typed in
+    assert.ok(!E.co2CostIsEstimate(flight({ ...up, co2Cost: 0 })));
+  }
+  assert.strictEqual(est('MUC', 'SFO', 'Economy', 'medium'), null);                       // no long-haul Economy data
   assert.strictEqual(est('MUC', 'ZRH', 'Economy', 'none'), null);
   assert.strictEqual(E.co2PriceEstimate(flight({ flightNo: 'LH1', bookedClass: 'Economy' }), 'medium'), null);   // no route
 

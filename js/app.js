@@ -550,7 +550,7 @@
       return `<tr data-co2-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''}" style="cursor:default">
         <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
-        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
+        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.flownClass(f))}</div>` : ''}</td>
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
         <td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
@@ -1128,9 +1128,8 @@
     isNew = !flight;
     draft = flight ? structuredClone(flight) : S.newFlight(newItemDate());
     upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
-    // a saved cost that is the estimate still follows it (other booster, route or cabin); one typed in stays
-    const est0 = flight && co2Est(flight, flight.co2Level);
-    co2Touched = !!flight && +flight.co2Cost > 0 && !(est0 && est0.cost === +flight.co2Cost);
+    // a saved cost that is an estimate (also one for the booked or earning cabin) follows the flown cabin's; one typed in stays
+    co2Touched = !!flight && +flight.co2Cost > 0 && !(state.settings.currency === 'EUR' && E.co2CostIsEstimate(flight));
     form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
     form.operatingFlightNo.value = draft.operatingFlightNo || '';
