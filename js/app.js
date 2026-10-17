@@ -131,7 +131,7 @@
     const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
       : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${sum.fromStatement ? 'as per your statement' : C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
-      : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}${prevYear && prevYear.fromStatement ? ' (statement)' : ''}`
+      : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}${sum.carriedByPlan ? ' with your planned flights' : prevYear && prevYear.fromStatement ? ' (statement)' : ''}`
       : sum.fromStatement ? `${esc(MM.STATUS_LABEL[sum.statusActual])} earned ${year} as per your statement`
       : !sum.hasPrev ? `No data for ${year - 1} – <a href="#" data-act="goto-settings">set your starting status</a>`
       : `No status carried in from ${year - 1}`;
@@ -315,7 +315,7 @@
         <td class="num">${num(h.actual.hon)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.hon)}</span>` : ''}</td>
         <td>${badge(h.statusActual)}${h.fromStatement ? ' <span class="muted">(statement)</span>' : ''}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
         <td>${h.statusActual !== 'NONE' || h.statusForecast !== 'NONE' ? C.fmtDate(E.validUntil(h.year)) : '–'}</td>
-        <td>${badge(h.held)}${h.downgraded ? `<div class="muted">${downgradeTxt(h)}</div>` : ''}</td>
+        <td>${badge(h.held)}${h.downgraded ? `<div class="muted">${downgradeTxt(h)}</div>` : h.carriedByPlan && h.held === h.carriedIn ? '<div class="muted">with planned flights</div>' : ''}</td>
         <td class="num">${money(total, true)}${hasPlan ? ` <span class="muted">(${money(h.cost.plan.total, true)} plan)</span>` : ''}</td>
         <td class="num">${h.forecast.qp ? money(total / h.forecast.qp) : '–'}</td>
       </tr>`;

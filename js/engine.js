@@ -286,8 +286,9 @@
 
   /**
    * Status timeline per calendar year (gap years filled in, so soft landings cascade).
-   * carriedIn: status valid from March of `year` = status earned in year-1 or, if year-1 did not
-   *   requalify the status held then, the soft landing one level below it.
+   * carriedIn: status valid from March of `year` = status earned in year-1 (incl. its planned flights, see
+   *   statusForecast) or, if year-1 does not requalify the status held then, the soft landing one level below it.
+   * carriedByPlan: carriedIn is only that high thanks to planned flights in year-1.
    * held: best of carriedIn and the status earned so far in `year`.
    * downgraded: held is below the status held in year-1 (prevHeld).
    * A starting status from the account statement (settings.startStatus = { status, year }) counts as
@@ -300,14 +301,16 @@
     const start = state.settings.startStatus;
     const first = start.status !== 'NONE' && start.year ? Math.min(ys[0], start.year) : ys[0];
     const out = [];
-    let prevHeld = 'NONE', prevEarned = 'NONE';
+    let prevHeld = 'NONE', prev = null;
     for (let y = first; y <= ys[ys.length - 1]; y++) {
       const s = E.yearSummary(state, y, today);
-      const carriedIn = best(prevEarned, E.softLanding(prevHeld));
+      const landing = E.softLanding(prevHeld);
+      const carriedIn = best(prev ? prev.statusForecast : 'NONE', landing);
+      const carriedByPlan = !!prev && E.rank(carriedIn) > E.rank(best(prev.statusActual, landing));
       const held = best(carriedIn, s.statusActual);
-      out.push({ ...s, carriedIn, held, prevHeld, hasPrev: y > first, downgraded: E.rank(held) < E.rank(prevHeld) });
+      out.push({ ...s, carriedIn, carriedByPlan, held, prevHeld, hasPrev: y > first, downgraded: E.rank(held) < E.rank(prevHeld) });
       prevHeld = held;
-      prevEarned = s.statusActual;
+      prev = s;
     }
     return out;
   };

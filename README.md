@@ -20,6 +20,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   - Other airlines: nothing
 - **Planning mode**: any flight dated in the future counts as planned. The forecast shows the date you
   reach each status. Each planned flight can be left out of the forecast to try what-if scenarios.
+  Planned flights also count when the history decides which status you carry into the next year.
 - **Planner tab**: build a what-if scenario per calendar year on top of your forecast, saved in the `.json`:
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
     Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment.

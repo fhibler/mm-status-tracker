@@ -231,7 +231,11 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const hist = E.history(st, 2027, TODAY);
   assert.strictEqual(`${y(hist, 2025).statusActual}:${y(hist, 2025).fromStatement}`, 'SEN:true');
   assert.strictEqual(`${y(hist, 2026).carriedIn}:${y(hist, 2026).held}:${y(hist, 2026).hasPrev}`, 'SEN:SEN:true');
-  assert.strictEqual(y(hist, 2027).held, 'FTL');   // not requalified in 2026: soft landing
+  assert.strictEqual(`${y(hist, 2027).held}:${y(hist, 2027).carriedByPlan}`, 'FTL:false');   // not requalified in 2026: soft landing
+  // planned flights that requalify in 2026 carry Senator into 2027
+  const planned = Array.from({ length: 10 }, (_, i) => lhBiz({ id: 'p' + i, date: `2026-09-${String(i + 1).padStart(2, '0')}` }));
+  const fc = y(E.history(state({ ...st, flights: [...st.flights, ...planned] }), 2027, TODAY), 2027);
+  assert.strictEqual(`${fc.carriedIn}:${fc.held}:${fc.carriedByPlan}:${fc.downgraded}`, 'SEN:SEN:true:false');
   // a statement status below the one earned with tracked flights changes nothing
   const lower = y(E.history(state({ flights: segs(2025, 10), settings: { startStatus: { status: 'FTL', year: 2025 } } }), undefined, TODAY), 2025);
   assert.strictEqual(`${lower.statusActual}:${lower.fromStatement}`, 'SEN:false');
