@@ -520,11 +520,11 @@
   const plusPts = (e) => [e.p, e.qp, e.hon].map(signed).join(' · ');   // +60 · −40 · 0
   const opts = (list, cur, lab = (x) => x) => list.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(lab(v))}</option>`).join('');
 
-  /** Cost to suggest for a booster level: the flight's own cost for its own level, else the price model's estimate,
-      else the average you paid. */
+  /** Cost to suggest for a booster level: the flight's own cost for its own level (so going back to it is no what-if,
+      like the bulk buttons), else the price model's estimate, else the average you paid. */
   const co2CostFor = (f, level) => {
     if (level === 'none') return 0;
-    if (level === f.co2Level && +f.co2Cost > 0) return +f.co2Cost;
+    if (level === f.co2Level) return +f.co2Cost || 0;
     const est = co2Est(f, level);
     return est ? est.cost : E.co2CostEstimate(state, level, E.haul(f)) || 0;
   };
@@ -605,7 +605,7 @@
           <tbody>${co2Rows.map(co2Row).join('')}</tbody>
           <tfoot><tr><td colspan="5">Total of the what-ifs</td><td class="num" data-cell="co2-sum"></td><td class="num" data-cell="co2-cost"></td><td></td></tr></tfoot>
         </table></div>
-        <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and cabin flown (Economy and Business; long-haul First roughly), '
+        <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and cabin flown (continental Economy and Business, long-haul Business and First), '
           + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
           Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`
         : `<p class="muted" style="margin:0">No flights with Points in ${year}. Add flights in Activity first.</p>`}
@@ -635,8 +635,10 @@
     });
     const onlyHon = $('#co2OnlyHon', host);
     if (onlyHon) onlyHon.addEventListener('change', () => { co2OnlyHon = onlyHon.checked; });
+    const bulk = $('#co2Bulk', host);
+    if (bulk) bulk.addEventListener('change', () => { co2BulkLevel = bulk.value; });
     $$('[data-co2-bulk]', host).forEach(b => b.addEventListener('click', () => {
-      const mode = b.dataset.co2Bulk, level = co2BulkLevel = $('#co2Bulk').value;
+      const mode = b.dataset.co2Bulk, level = co2BulkLevel;
       if (mode === 'reset') plan.co2 = {};
       for (const r of co2Rows) {
         if (mode !== 'all' && !(mode === 'planned' && r.planned) && !(mode === 'flown' && !r.planned)) continue;
@@ -1115,7 +1117,9 @@
     isNew = !flight;
     draft = flight ? structuredClone(flight) : S.newFlight(newItemDate());
     upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
-    co2Touched = !!flight && +flight.co2Cost > 0;
+    // a saved cost that is the estimate still follows it (other booster, route or cabin); one typed in stays
+    const est0 = flight && co2Est(flight, flight.co2Level);
+    co2Touched = !!flight && +flight.co2Cost > 0 && !(est0 && est0.cost === +flight.co2Cost);
     form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
     form.operatingFlightNo.value = draft.operatingFlightNo || '';
@@ -1220,12 +1224,13 @@
     if (e.target === datePicker) return;
     if (e.target.name === 'transport') applyTransport();
     if (e.target.name === 'upgradeClass') upgradeTouched = form.upgradeClass.value !== form.bookedClass.value;
-    if (e.target.name === 'co2Cost') co2Touched = form.co2Cost.value !== '';
+    if (e.target.name === 'co2Cost') co2Touched = true;   // emptied: back to the estimate on change, not while typing
     if (e.target.name === 'origin' || e.target.name === 'destination') { manualAirport(); return; }
     updatePreview();
   });
   form.addEventListener('change', (e) => {
     if (e.target.name === 'bookedClass' && !upgradeTouched) { form.upgradeClass.value = form.bookedClass.value; updatePreview(); }
+    if (e.target.name === 'co2Cost' && form.co2Cost.value === '') { co2Touched = false; updatePreview(); }
     if (e.target.name === 'flightNo') {
       const parsed = E.parseFlightNo(form.flightNo.value);
       if (parsed) form.flightNo.value = parsed.iata;
