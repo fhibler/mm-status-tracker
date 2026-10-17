@@ -114,20 +114,19 @@ MM.UPGRADE_TYPES = {
 MM.CO2_LEVELS = ['none', 'small', 'medium', 'large', 'xlarge'];
 MM.CO2_LABEL = { none: 'None', small: 'Small', medium: 'Medium', large: 'Large', xlarge: 'X-Large' };
 
-/* Price of a CO₂ compensation package on lufthansa.com in EUR, fitted to 10 one-way prices seen in Oct 2026.
-   Medium = base + perKm × distance, by haul and flown cabin; the other packages are fixed multiples of Medium.
-   `good`: distances the samples cover; `rough`: extrapolated; outside both, or for a cabin without data, no estimate. */
+/* Price of a CO₂ compensation package on lufthansa.com in EUR, fitted to 16 one-way flights (all four packages) seen in
+   Oct 2026; see docs/CO2-PRICE-MODEL.md. Packages are 5 / 20 / 50 / 80 % SAF, priced as Medium × (0.302 + 3.49 × SAF share).
+   Medium for Business: `sqrt` = base + rate × √km, `km` = base + rate × km; other cabins as a factor on Business
+   (`rough`: based on one flight). `good`: distances the samples cover; `rough`: extrapolated; outside, no estimate. */
 MM.CO2_PRICE = {
   factor: { small: 0.476, medium: 1, large: 2.047, xlarge: 3.094 },
-  medium: {
-    continental: {
-      'Economy':  { base: 3.04, perKm: 0.0068,  good: [200, 850],    rough: [0, 4000] },      // ZRH, BER, VIE–HAM
-      'Business': { base: 5.32, perKm: 0.00825, good: [400, 1000],   rough: [0, 4000] },      // BER, DUS, HAM, LHR
-    },
-    intercontinental: {
-      'Business': { base: 0,    perKm: 0.0174,  good: [8000, 10000], rough: [3000, 13000] },   // SEA, SFO
-      'First':    { base: 0,    perKm: 0.0228,  good: null,          rough: [3000, 13000] },   // SFO only
-    },
+  business: {
+    continental:      { form: 'sqrt', base: -0.108, rate: 0.4283,  good: [250, 1000],   rough: [0, 4000] },       // 8 routes, ≤ 0.7 %
+    intercontinental: { form: 'km',   base: 0,      rate: 0.01743, good: [8000, 10000], rough: [3000, 13000] },   // 4 routes, ≤ 1.1 %
+  },
+  cabin: {
+    continental:      { 'Economy': { f: 0.695 }, 'Business': { f: 1 } },
+    intercontinental: { 'Business': { f: 1 }, 'First': { f: 1.307, rough: true } },
   },
 };
 

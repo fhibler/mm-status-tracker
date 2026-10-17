@@ -34,10 +34,11 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     more segments of one type would close the gap.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
-  to 10 prices seen in Oct 2026: Medium by distance, haul and cabin flown (an upgrade is priced in the upgraded
-  cabin), the other packages as fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×). Within the
-  distances the samples cover (continental Economy and Business, long-haul Business at 8,000–10,000 km) it is close
-  (within a few %); long-haul First (one sample) and other distances are rough; long-haul Economy and Premium
+  to 16 flights seen in Oct 2026 (all four packages each). The packages are 5 / 20 / 50 / 80 % SAF and priced as
+  fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×). Medium for Business grows with
+  √distance on continental flights and per km on long-haul; other cabins are a factor on Business by the cabin flown
+  (an upgrade is priced in the upgraded cabin): continental Economy 0.695×, long-haul First 1.307× (one sample, rough).
+  It is within about 1 % on all samples; distances outside the samples are rough; long-haul Economy and Premium
   Economy have no estimate yet. Only used when the currency is EUR. Details and the samples:
   [docs/CO2-PRICE-MODEL.md](docs/CO2-PRICE-MODEL.md).
 - **Starting status** (Settings): the status you already hold and the year it was earned (from your

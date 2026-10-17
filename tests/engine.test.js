@@ -298,9 +298,11 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const ap2 = (o, d) => ({ origin: MM.airport(o), destination: MM.airport(d) });
   const est = (o, d, cls, level, x = {}) => E.co2PriceEstimate(flight({ flightNo: 'LH1', route: ap2(o, d), bookedClass: cls, upgradeClass: cls, ...x }), level);
   for (const [o, d, cls, level, price, quality] of [
+    ['ZRH', 'MUC', 'Business', 'medium', 6.85, 'good'], ['FRA', 'MUC', 'Business', 'xlarge', 22.60, 'good'],
+    ['MUC', 'AMS', 'Business', 'large', 22.35, 'good'], ['MUC', 'LHR', 'Business', 'large', 26.82, 'good'],
     ['MUC', 'ZRH', 'Economy', 'medium', 4.74, 'good'], ['VIE', 'HAM', 'Economy', 'xlarge', 25.40, 'good'],
-    ['MUC', 'HAM', 'Business', 'small', 4.91, 'good'], ['MUC', 'LHR', 'Business', 'large', 26.82, 'good'],
-    ['MUC', 'SEA', 'Business', 'medium', 146.60, 'good'], ['MUC', 'SFO', 'First', 'xlarge', 670.54, 'rough'],
+    ['MUC', 'SEA', 'Business', 'medium', 146.60, 'good'], ['FRA', 'SFO', 'Business', 'small', 76.19, 'good'],
+    ['MUC', 'SFO', 'First', 'xlarge', 670.54, 'rough'],
   ]) {
     const e = est(o, d, cls, level);
     assert.ok(e && Math.abs(e.cost / price - 1) < 0.03 && e.quality === quality, `${o}-${d} ${cls} ${level}: ${JSON.stringify(e)}`);

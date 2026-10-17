@@ -382,19 +382,21 @@
   };
 
   /**
-   * Estimated price (EUR) of CO₂ booster `level` for flight f, from MM.CO2_PRICE: by great-circle distance, haul and
-   * the cabin flown (an upgrade is priced in the upgraded cabin, whatever it earns; `cabin` overrides it). Returns
+   * Estimated price (EUR) of CO₂ booster `level` for flight f, from MM.CO2_PRICE: the Medium price for Business by
+   * great-circle distance and haul, times the factor of the cabin flown (an upgrade is priced in the upgraded cabin,
+   * whatever it earns; `cabin` overrides it), times the package factor. Returns
    * { cost, quality: 'good' | 'rough', km, cabin }, or null without a route, model data or booster.
    */
   E.co2PriceEstimate = (f, level, cabin = E.flownClass(f)) => {
     const k = MM.CO2_PRICE.factor[level], haul = E.haul(f), r = f.route;
     if (!k || f.transport !== 'flight' || !haul || !r) return null;
-    const m = (MM.CO2_PRICE.medium[haul] || {})[cabin];
+    const m = MM.CO2_PRICE.business[haul], c = (MM.CO2_PRICE.cabin[haul] || {})[cabin];
     const km = E.distanceKm(r.origin, r.destination);
     const inside = (range) => !!range && km >= range[0] && km <= range[1];
-    if (!m || !km || !inside(m.rough)) return null;
-    const cost = Math.round((m.base + m.perKm * km) * k * 100) / 100;
-    return { cost, quality: inside(m.good) ? 'good' : 'rough', km, cabin };
+    if (!m || !c || !km || !inside(m.rough)) return null;
+    const medium = (m.form === 'sqrt' ? m.base + m.rate * Math.sqrt(km) : m.base + m.rate * km) * c.f;
+    const cost = Math.round(medium * k * 100) / 100;
+    return { cost, quality: inside(m.good) && !c.rough ? 'good' : 'rough', km, cabin };
   };
 
   /** Average CO₂ compensation cost the user paid for this booster level and haul, or null without data. */
