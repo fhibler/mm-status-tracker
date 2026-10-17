@@ -25,7 +25,14 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
     Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment.
   - **CO₂ compensation**: try a booster on any existing or planned flight and see the extra Points; the cost is
-    prefilled with the average you paid. "Apply" saves the booster to the flight.
+    prefilled with an estimate of the lufthansa.com price (see below), else with the average you paid. "Apply" saves
+    the booster to the flight.
+- **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
+  planner, an empty cost is prefilled with the estimated lufthansa.com price, which you can overwrite. It is fitted
+  to 10 prices seen in Oct 2026: Medium by distance, haul and cabin flown (an upgrade is priced in the upgraded
+  cabin), the other packages as fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×). Continental
+  Economy and Business are close (within a few %), long-haul Business and First rough; long-haul Economy and Premium
+  Economy have no estimate yet. Only used when the currency is EUR.
   - The result shows Points, QP, HON, status and cost after each step, what is still missing per status, and how many
     more segments of one type would close the gap.
 - **Starting status** (Settings): the status you already hold and the year it was earned (from your

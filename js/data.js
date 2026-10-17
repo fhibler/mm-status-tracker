@@ -114,6 +114,23 @@ MM.UPGRADE_TYPES = {
 MM.CO2_LEVELS = ['none', 'small', 'medium', 'large', 'xlarge'];
 MM.CO2_LABEL = { none: 'None', small: 'Small', medium: 'Medium', large: 'Large', xlarge: 'X-Large' };
 
+/* Price of a CO₂ compensation package on lufthansa.com in EUR, fitted to 10 one-way prices seen in Oct 2026.
+   Medium = base + perKm × distance, by haul and flown cabin; the other packages are fixed multiples of Medium.
+   `good`: distances the samples cover; `rough`: extrapolated; outside both, or for a cabin without data, no estimate. */
+MM.CO2_PRICE = {
+  factor: { small: 0.476, medium: 1, large: 2.047, xlarge: 3.094 },
+  medium: {
+    continental: {
+      'Economy':  { base: 3.04, perKm: 0.0068,  good: [200, 850],    rough: [0, 4000] },      // ZRH, BER, VIE–HAM
+      'Business': { base: 5.32, perKm: 0.00825, good: [400, 1000],   rough: [0, 4000] },      // BER, DUS, HAM, LHR
+    },
+    intercontinental: {
+      'Business': { base: 0,    perKm: 0.0174,  good: [8000, 10000], rough: [3000, 13000] },   // SEA, SFO
+      'First':    { base: 0,    perKm: 0.0228,  good: null,          rough: [3000, 13000] },   // SFO only
+    },
+  },
+};
+
 /* Default rules (Miles & More status programme since 2024). Editable in Settings. */
 MM.DEFAULT_RULES = {
   points: {

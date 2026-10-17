@@ -282,6 +282,23 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(E.co2CostEstimate(st, 'large', 'intercontinental'), 50);   // average paid
   assert.strictEqual(E.co2CostEstimate(st, 'small', 'intercontinental'), null);
 
+  // price model: estimates within 3 % of prices seen on lufthansa.com (by distance and the cabin flown)
+  const ap2 = (o, d) => ({ origin: MM.airport(o), destination: MM.airport(d) });
+  const est = (o, d, cls, level, x = {}) => E.co2PriceEstimate(flight({ flightNo: 'LH1', route: ap2(o, d), bookedClass: cls, upgradeClass: cls, ...x }), level);
+  for (const [o, d, cls, level, price, quality] of [
+    ['MUC', 'ZRH', 'Economy', 'medium', 4.74, 'good'], ['VIE', 'HAM', 'Economy', 'xlarge', 25.40, 'good'],
+    ['MUC', 'HAM', 'Business', 'small', 4.91, 'good'], ['MUC', 'LHR', 'Business', 'large', 26.82, 'good'],
+    ['MUC', 'SEA', 'Business', 'medium', 146.60, 'good'], ['MUC', 'SFO', 'First', 'xlarge', 670.54, 'rough'],
+  ]) {
+    const e = est(o, d, cls, level);
+    assert.ok(e && Math.abs(e.cost / price - 1) < 0.03 && e.quality === quality, `${o}-${d} ${cls} ${level}: ${JSON.stringify(e)}`);
+  }
+  assert.strictEqual(est('MUC', 'LIS', 'Business', 'medium').quality, 'rough');           // longer than the samples
+  assert.strictEqual(est('MUC', 'SFO', 'Business', 'medium', { upgradeClass: 'First', upgradeType: 'voucher' }).cabin, 'First');   // priced as flown
+  assert.strictEqual(est('MUC', 'SFO', 'Economy', 'medium'), null);                        // no long-haul Economy data
+  assert.strictEqual(est('MUC', 'ZRH', 'Economy', 'none'), null);
+  assert.strictEqual(E.co2PriceEstimate(flight({ flightNo: 'LH1', bookedClass: 'Economy' }), 'medium'), null);   // no route
+
   const plan = {
     co2: { a: { level: 'none', cost: 0 } },   // what if flight a had no booster
     mix: [

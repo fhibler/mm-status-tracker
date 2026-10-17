@@ -15,6 +15,9 @@
   const money = (v, compact) => new Intl.NumberFormat('en-US', {
     style: 'currency', currency: state.settings.currency, maximumFractionDigits: compact ? 0 : 2, minimumFractionDigits: compact ? 0 : 2,
   }).format(v || 0);
+  /** Price model estimate of booster `level` for flight f (E.co2PriceEstimate); only when amounts are in EUR, its currency. */
+  const co2Est = (f, level) => (state.settings.currency === 'EUR' ? E.co2PriceEstimate(f, level) : null);
+  const co2EstTxt = (est) => `${est.quality === 'rough' ? 'rough estimate' : 'estimate'} ${money(est.cost)} · ${num(est.km)} km ${esc(est.cabin)}`;
   const toast = (msg, ms = 2600) => {
     const t = $('#toast');
     t.textContent = msg; t.hidden = false;
@@ -517,8 +520,16 @@
   const plusPts = (e) => [e.p, e.qp, e.hon].map(signed).join(' · ');   // +60 · −40 · 0
   const opts = (list, cur, lab = (x) => x) => list.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(lab(v))}</option>`).join('');
 
-  /** Cost to suggest for a booster level: the flight's own cost for its own level, else the average you paid. */
-  const co2CostFor = (f, level) => (level === 'none' ? 0 : level === f.co2Level ? (+f.co2Cost || 0) : E.co2CostEstimate(state, level, E.haul(f)) || 0);
+  /** Cost to suggest for a booster level: the flight's own cost for its own level, else the price model's estimate,
+      else the average you paid. */
+  const co2CostFor = (f, level) => {
+    if (level === 'none') return 0;
+    if (level === f.co2Level && +f.co2Cost > 0) return +f.co2Cost;
+    const est = co2Est(f, level);
+    return est ? est.cost : E.co2CostEstimate(state, level, E.haul(f)) || 0;
+  };
+  let co2OnlyHon = false, co2BulkLevel = 'medium';   // bulk booster controls: only flights that earn HON Circle Points; level
+  const co2EstCell = (f, level) => { const est = level !== 'none' && co2Est(f, level); return est ? co2EstTxt(est) : ''; };
 
   const renderPlanner = () => {
     const host = $('#view-planner');
@@ -526,6 +537,7 @@
     const sum = E.yearSummary(state, year);
     const co2Rows = sum.rows.filter(r => E.canBoost(r.f));
     const hasAvg = MM.CO2_LEVELS.some(l => l !== 'none' && (E.co2CostEstimate(state, l, 'continental') || E.co2CostEstimate(state, l, 'intercontinental')));
+    const eur = state.settings.currency === 'EUR';
 
     const co2Row = (r) => {
       const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level;
@@ -536,7 +548,8 @@
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
         <td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
-        <td class="num"><input type="number" min="0" step="0.01" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input"></td>
+        <td class="num"><input type="number" min="0" step="0.01" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input">
+          <div class="muted" data-cell="co2-est">${co2EstCell(f, level)}</div></td>
         <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>
       </tr>`;
     };
@@ -578,9 +591,11 @@
           <h2>CO₂ compensation · existing and planned flights · CY ${year}</h2>
           <span class="sub">try a booster per flight and see what it adds · Apply saves it to the flight</span>
           ${co2Rows.length ? `<div class="right">
-            <select id="co2Bulk" aria-label="Booster to set">${opts(MM.CO2_LEVELS.filter(l => l !== 'none'), 'medium', l => MM.CO2_LABEL[l])}</select>
+            <select id="co2Bulk" aria-label="Booster to set">${opts(MM.CO2_LEVELS.filter(l => l !== 'none'), co2BulkLevel, l => MM.CO2_LABEL[l])}</select>
+            <button class="btn small" data-co2-bulk="flown">Set for flown</button>
             <button class="btn small" data-co2-bulk="planned">Set for planned</button>
             <button class="btn small" data-co2-bulk="all">Set for all</button>
+            <label class="check" title="Set the booster only on flights that earn HON Circle Points"><input type="checkbox" id="co2OnlyHon" ${co2OnlyHon ? 'checked' : ''}> Only HON</label>
             <button class="btn small" data-co2-bulk="reset">Reset</button>
           </div>` : ''}
         </div>
@@ -590,7 +605,8 @@
           <tbody>${co2Rows.map(co2Row).join('')}</tbody>
           <tfoot><tr><td colspan="5">Total of the what-ifs</td><td class="num" data-cell="co2-sum"></td><td class="num" data-cell="co2-cost"></td><td></td></tr></tfoot>
         </table></div>
-        <p class="hint">${hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
+        <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and cabin flown (Economy and Business; long-haul First roughly), '
+          + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
           Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`
         : `<p class="muted" style="margin:0">No flights with Points in ${year}. Add flights in Activity first.</p>`}
       </div>
@@ -602,6 +618,7 @@
       else plan.co2[f.id] = { level, cost: Math.max(0, +cost || 0) };
       $('[data-cell="delta"]', tr).textContent = plusPts(E.co2Gain(f, level, state.settings.rules));
       $('[data-co2-apply]', tr).hidden = !plan.co2[f.id];
+      $('[data-cell="co2-est"]', tr).textContent = co2EstCell(f, level);
     };
     $$('tr[data-co2-id]', host).forEach(tr => {
       const f = state.flights.find(x => x.id === tr.dataset.co2Id);
@@ -616,11 +633,14 @@
         save(); renderPlanner(); toast(`${f.flightNo}: booster ${MM.CO2_LABEL[f.co2Level]} saved to the flight`);
       });
     });
+    const onlyHon = $('#co2OnlyHon', host);
+    if (onlyHon) onlyHon.addEventListener('change', () => { co2OnlyHon = onlyHon.checked; });
     $$('[data-co2-bulk]', host).forEach(b => b.addEventListener('click', () => {
-      const mode = b.dataset.co2Bulk, level = $('#co2Bulk').value;
+      const mode = b.dataset.co2Bulk, level = co2BulkLevel = $('#co2Bulk').value;
       if (mode === 'reset') plan.co2 = {};
       for (const r of co2Rows) {
-        if (mode !== 'all' && !(mode === 'planned' && r.planned)) continue;
+        if (mode !== 'all' && !(mode === 'planned' && r.planned) && !(mode === 'flown' && !r.planned)) continue;
+        if (co2OnlyHon && !E.earn({ ...r.f, co2Level: 'none' }, state.settings.rules).hon) continue;
         if (level === r.f.co2Level) delete plan.co2[r.f.id];
         else plan.co2[r.f.id] = { level, cost: co2CostFor(r.f, level) };
       }
@@ -857,7 +877,7 @@
 
   /* ================= flight dialog ================= */
   const dlg = $('#flightDialog'), form = $('#flightForm');
-  let draft = null, isNew = false, upgradeTouched = false, lookupSeq = 0;
+  let draft = null, isNew = false, upgradeTouched = false, co2Touched = false, lookupSeq = 0;
   let fareFrom = '';   // booking whose whole fare the fare field shows ('' = the segment's own fare)
   /** True when the dialog was closed or shows another flight since `d` was current: async lookups must not touch it. */
   const stale = (d) => !dlg.open || draft !== d;
@@ -1031,6 +1051,13 @@
     const fi = fareInfo();
     $('#fareLabel').textContent = fi.k ? 'Fare (whole booking)' : 'Fare';
     $('#fareHint').innerHTML = fareHint(fi);
+    // CO₂ cost: until typed in, it follows the price model's estimate for the chosen booster, route and cabin
+    const est = fl && draft.co2Level !== 'none' ? co2Est(draft, draft.co2Level) : null;
+    if (!co2Touched && fl && draft.co2Level !== 'none') {
+      form.co2Cost.value = est ? est.cost : '';
+      draft.co2Cost = est ? est.cost : 0;
+    }
+    $('#co2Hint').innerHTML = est ? co2EstTxt(est) : draft.co2Level === 'none' ? '' : 'no estimate for this route or cabin';
     const e = E.earn(draft, state.settings.rules);
     const c = E.cost(draft, fi.share);
     $('#earnPreview').innerHTML = `
@@ -1088,6 +1115,7 @@
     isNew = !flight;
     draft = flight ? structuredClone(flight) : S.newFlight(newItemDate());
     upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
+    co2Touched = !!flight && +flight.co2Cost > 0;
     form.date.value = dateToField(draft.date);
     form.flightNo.value = draft.flightNo;
     form.operatingFlightNo.value = draft.operatingFlightNo || '';
@@ -1192,6 +1220,7 @@
     if (e.target === datePicker) return;
     if (e.target.name === 'transport') applyTransport();
     if (e.target.name === 'upgradeClass') upgradeTouched = form.upgradeClass.value !== form.bookedClass.value;
+    if (e.target.name === 'co2Cost') co2Touched = form.co2Cost.value !== '';
     if (e.target.name === 'origin' || e.target.name === 'destination') { manualAirport(); return; }
     updatePreview();
   });

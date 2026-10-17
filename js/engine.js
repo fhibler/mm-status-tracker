@@ -352,6 +352,23 @@
     return { p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon };
   };
 
+  /**
+   * Estimated price (EUR) of CO₂ booster `level` for flight f, from MM.CO2_PRICE: by great-circle distance, haul and
+   * the cabin flown (an upgrade is priced in the upgraded cabin, whatever it earns). Returns
+   * { cost, quality: 'good' | 'rough', km, cabin }, or null without a route, model data or booster.
+   */
+  E.co2PriceEstimate = (f, level) => {
+    const k = MM.CO2_PRICE.factor[level], haul = E.haul(f), r = f.route;
+    if (!k || f.transport !== 'flight' || !haul || !r) return null;
+    const cabin = f.upgradeClass || f.bookedClass;
+    const m = (MM.CO2_PRICE.medium[haul] || {})[cabin];
+    const km = E.distanceKm(r.origin, r.destination);
+    const inside = (range) => !!range && km >= range[0] && km <= range[1];
+    if (!m || !km || !inside(m.rough)) return null;
+    const cost = Math.round((m.base + m.perKm * km) * k * 100) / 100;
+    return { cost, quality: inside(m.good) ? 'good' : 'rough', km, cabin };
+  };
+
   /** Average CO₂ compensation cost the user paid for this booster level and haul, or null without data. */
   E.co2CostEstimate = (state, level, haul) => {
     const xs = state.flights.filter(f => f.co2Level === level && +f.co2Cost > 0 && E.haul(f) === haul).map(f => +f.co2Cost);
