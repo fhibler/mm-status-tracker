@@ -32,7 +32,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   to 10 prices seen in Oct 2026: Medium by distance, haul and cabin flown (an upgrade is priced in the upgraded
   cabin), the other packages as fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×). Continental
   Economy and Business are close (within a few %), long-haul Business and First rough; long-haul Economy and Premium
-  Economy have no estimate yet. Only used when the currency is EUR.
+  Economy have no estimate yet. Only used when the currency is EUR. Details and the samples:
+  [docs/CO2-PRICE-MODEL.md](docs/CO2-PRICE-MODEL.md).
   - The result shows Points, QP, HON, status and cost after each step, what is still missing per status, and how many
     more segments of one type would close the gap.
 - **Starting status** (Settings): the status you already hold and the year it was earned (from your
