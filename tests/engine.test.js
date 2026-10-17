@@ -348,7 +348,10 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const mix = st.plans['2025'].mix;
   assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${mix[0].count}:${mix[0].kind}`, '0:2:LHG');
   assert.strictEqual(`${mix[1].cls}:${mix[1].co2Level}`, 'Business:none');   // trains: 1st class at most, no booster
-  assert.strictEqual(state({ flights: [{ date: '2026-01-01', transport: 'rail', bookedClass: 'First' }] }).flights[0].bookedClass, 'Economy');
+  // as the dialog saves them: trains in 2nd or 1st class, and a CO₂ cost only with a booster on a flight
+  const fx = state({ flights: [{ date: '2026-01-01', transport: 'rail', bookedClass: 'First', co2Level: 'large', co2Cost: 9 },
+    { date: '2026-01-01', co2Level: 'none', co2Cost: 9 }, { date: '2026-01-01', co2Level: 'small', co2Cost: 9 }] }).flights;
+  assert.strictEqual(`${fx[0].bookedClass}:${fx.map(f => f.co2Cost).join(',')}`, 'Economy:0,0,9');
   // flight choices outside the allowed values get a new flight's defaults (the upgrade class: the booked class)
   const choices = ['transport', 'bookedClass', 'upgradeClass', 'co2Level', 'haulOverride', 'earningGroup', 'earnClassOverride', 'upgradeType'];
   const bad = state({ flights: [{ date: '2026-01-01', ...Object.fromEntries(choices.map(k => [k, 'x'])), bookedClass: 'Business' }] }).flights[0];

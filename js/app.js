@@ -618,7 +618,7 @@
       else plan.co2[f.id] = { level, cost: Math.max(0, +cost || 0) };
       $('[data-cell="delta"]', tr).textContent = plusPts(E.co2Gain(f, level, state.settings.rules));
       $('[data-co2-apply]', tr).hidden = !plan.co2[f.id];
-      $('[data-cell="co2-est"]', tr).textContent = co2EstCell(f, level);
+      $('[data-cell="co2-est"]', tr).innerHTML = co2EstCell(f, level);
     };
     $$('tr[data-co2-id]', host).forEach(tr => {
       const f = state.flights.find(x => x.id === tr.dataset.co2Id);
@@ -1017,7 +1017,7 @@
       upgradeType: fl ? form.upgradeType.value : '',
       upgradeCost: fl ? +form.upgradeCost.value || 0 : 0,
       co2Level: fl ? form.co2Level.value : 'none',
-      co2Cost: fl ? +form.co2Cost.value || 0 : 0,
+      co2Cost: fl && form.co2Level.value !== 'none' ? +form.co2Cost.value || 0 : 0,
       includeInPlan: form.includeInPlan.checked,
       notes: form.notes.value.trim(),
     });
@@ -1059,7 +1059,7 @@
       form.co2Cost.value = est ? est.cost : '';
       draft.co2Cost = est ? est.cost : 0;
     }
-    $('#co2Hint').innerHTML = est ? co2EstTxt(est) : draft.co2Level === 'none' ? '' : 'no estimate for this route or cabin';
+    $('#co2Hint').innerHTML = est ? co2EstTxt(est) : draft.co2Level === 'none' || state.settings.currency !== 'EUR' ? '' : 'no estimate for this route or cabin';
     const e = E.earn(draft, state.settings.rules);
     const c = E.cost(draft, fi.share);
     $('#earnPreview').innerHTML = `

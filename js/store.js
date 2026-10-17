@@ -117,6 +117,7 @@
     const d = S.newFlight(f.date);
     for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
     if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = f.upgradeClass = 'Economy';   // as the dialog shows it
+    if (!E.hasBooster(f)) f.co2Cost = 0;   // as the dialog saves it: a CO₂ cost only with a booster
     return f;
   };
 
@@ -229,22 +230,22 @@
     const s = S.empty();
     const today = E.todayISO();
     const plan = [
-      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, bid (else voucher), fare (added to the booking), upgradeCost, co2, co2Cost, pnr]
-      [-14, 'LH400', 'FRA', 'JFK', 'Economy', 'Business', true, 780, 650, 'medium', 18, 'K7XQ2P'],
+      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, bid (else voucher), fare (added to the booking), upgradeCost, co2, co2Cost (≈ lufthansa.com price), pnr]
+      [-14, 'LH400', 'FRA', 'JFK', 'Economy', 'Business', true, 780, 650, 'medium', 108, 'K7XQ2P'],
       [-14, 'LH401', 'JFK', 'FRA', 'Economy', 'Economy', false, 0, 0, 'none', 0, 'K7XQ2P'],
       [-9, 'LX318', 'ZRH', 'LHR', 'Economy', 'Economy', false, 189, 0, 'none', 0, 'R2MM8D'],
       [-9, 'LX325', 'LHR', 'ZRH', 'Economy', 'Business', false, 0, 0, 'none', 0, 'R2MM8D'],
-      [-7, 'LH2032', 'MUC', 'FRA', 'Economy', 'Economy', false, 99, 0, 'small', 3, 'P9TT4A'],
-      [-6, 'OS101', 'VIE', 'FRA', 'Business', 'Business', false, 420, 0, 'large', 9, 'B44XKL'],
+      [-7, 'LH2032', 'MUC', 'FRA', 'Economy', 'Economy', false, 99, 0, 'small', 2.4, 'P9TT4A'],
+      [-6, 'OS101', 'VIE', 'FRA', 'Business', 'Business', false, 420, 0, 'large', 21.4, 'B44XKL'],
       [-5, 'SN2903', 'BRU', 'FRA', 'Economy', 'Economy', false, 130, 0, 'none', 0, 'HM2K1Q'],
-      [-4, 'LH772', 'FRA', 'BKK', 'Premium Economy', 'Premium Economy', false, 1350, 0, 'xlarge', 42, 'ZZ81PL'],
+      [-4, 'LH772', 'FRA', 'BKK', 'Premium Economy', 'Premium Economy', false, 1350, 0, 'xlarge', 290, 'ZZ81PL'],
       [-3, 'TG920', 'BKK', 'FRA', 'Economy', 'Economy', false, 0, 0, 'none', 0, 'ZZ81PL'],
-      [-1, 'LH454', 'FRA', 'SFO', 'Business', 'Business', false, 2890, 0, 'medium', 35, 'Q1W2E3'],
-      [-1, 'LH455', 'SFO', 'FRA', 'Business', 'First', true, 0, 1200, 'medium', 35, 'Q1W2E3'],
-      [1, 'LH778', 'FRA', 'SIN', 'Business', 'Business', false, 3100, 0, 'large', 40, 'PLAN01'],
-      [1, 'LH779', 'SIN', 'FRA', 'Business', 'Business', false, 0, 0, 'large', 40, 'PLAN01'],
-      [2, 'LH400', 'FRA', 'JFK', 'Business', 'Business', false, 2450, 0, 'xlarge', 60, 'PLAN02'],
-      [2, 'LX38', 'ZRH', 'SFO', 'Business', 'Business', false, 2200, 0, 'medium', 30, 'PLAN03'],
+      [-1, 'LH454', 'FRA', 'SFO', 'Business', 'Business', false, 2890, 0, 'medium', 159, 'Q1W2E3'],
+      [-1, 'LH455', 'SFO', 'FRA', 'Business', 'First', true, 0, 1200, 'medium', 209, 'Q1W2E3'],
+      [1, 'LH778', 'FRA', 'SIN', 'Business', 'Business', false, 3100, 0, 'large', 366, 'PLAN01'],
+      [1, 'LH779', 'SIN', 'FRA', 'Business', 'Business', false, 0, 0, 'large', 366, 'PLAN01'],
+      [2, 'LH400', 'FRA', 'JFK', 'Business', 'Business', false, 2450, 0, 'xlarge', 333, 'PLAN02'],
+      [2, 'LX38', 'ZRH', 'SFO', 'Business', 'Business', false, 2200, 0, 'medium', 163, 'PLAN03'],
     ];
     // Dates in UTC, so the month offset and the ISO date don't depend on the time zone.
     const isoUTC = (y, m, d) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);

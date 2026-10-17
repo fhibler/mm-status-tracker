@@ -73,8 +73,10 @@ Best value: the shortest continental flights, X-Large for Points/QP, Medium for 
   from lufthansa.com's) and `rough` (extrapolated). Outside `rough`, or for a cabin without an entry, there is no estimate.
 - Distance is the great-circle distance of the flight's route (`E.distanceKm`); the cabin is the one flown
   (`upgradeClass`), since the price follows the flown cabin even when an upgrade earns as booked.
-- Only used when the currency setting is EUR. The flight dialog and the planner prefill an empty booster cost with
-  the estimate; a typed cost always wins. Without an estimate the planner falls back to the average you paid.
+- Only used when the currency setting is EUR. In the flight dialog the booster cost follows the estimate (booster,
+  route and cabin) until you type a cost; a saved cost that equals the estimate keeps following it. The planner
+  suggests it when you try a booster other than the flight's own (for its own booster, the cost you saved), and
+  falls back to the average you paid without an estimate.
 - Long-haul Economy and Premium Economy have no entry yet.
 
 ## Updating the model

@@ -89,6 +89,7 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 | Validity rule | `js/engine.js` → `E.validUntil` |
 | Downgrade rule | `js/engine.js` → `E.softLanding`, `E.history` |
 | Special earning cases (rail, bus, codeshare operator) | `js/engine.js` → `E.earn`, `E.earningGroup`, `E.effective` |
+| CO₂ compensation prices (lufthansa.com) | `js/data.js` → `MM.CO2_PRICE`; how to refit it: [CO2-PRICE-MODEL.md](CO2-PRICE-MODEL.md) |
 | Tests | `tests/engine.test.js` (add a case for every rule you change) |
 | User-facing description | `README.md` ("Default rules" tables, "Notes") |
 | This guide | snapshot below + "Last full check" date |
