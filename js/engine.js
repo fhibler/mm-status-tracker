@@ -138,16 +138,35 @@
     return n;
   };
   /**
-   * Fare of one segment: the fare of its booking (state.bookings[code].fare) split evenly over the booking's
-   * segments, or the segment's own fare (flightCost) when it has no booking code or no booking entry.
+   * Segment that carries the whole fare of each booking: booking code -> flight id. It is the booking's earliest
+   * segment that counts (flown, or planned and in the forecast), else its earliest segment, so the fare is counted
+   * once, in that segment's month and year, and isn't lost when a later segment is left out of the forecast.
    */
-  E.fareShare = (state, f, segs = E.bookingSegments(state)) => {
+  E.fareHolders = (state, today = E.todayISO()) => {
+    const counts = (f) => !E.isPlanned(f, today) || f.includeInPlan !== false;
+    const best = {};
+    for (const f of state.flights) {
+      const k = E.bookingKey(f.bookingCode);
+      if (!k) continue;
+      const b = best[k];
+      if (!b || counts(f) > counts(b) || (counts(f) === counts(b) && (f.date.localeCompare(b.date) || f.id.localeCompare(b.id)) < 0)) best[k] = f;
+    }
+    const ids = {};
+    for (const k of Object.keys(best)) ids[k] = best[k].id;
+    return ids;
+  };
+  /**
+   * Fare of one segment: the whole fare of its booking (state.bookings[code].fare) on the segment that carries it
+   * (see E.fareHolders) and 0 on the booking's other segments, or the segment's own fare (flightCost) when it has
+   * no booking code or no booking entry.
+   */
+  E.segmentFare = (state, f, holders = E.fareHolders(state)) => {
     const k = E.bookingKey(f.bookingCode);
     const b = k && state.bookings[k];
-    return b ? (+b.fare || 0) / (segs[k] || 1) : (+f.flightCost || 0);
+    return b ? (holders[k] === f.id ? +b.fare || 0 : 0) : (+f.flightCost || 0);
   };
 
-  /** Costs of one segment; `fare` is its share of the fare (see E.fareShare). */
+  /** Costs of one segment; `fare` is the fare it carries (see E.segmentFare). */
   E.cost = (f, fare) => {
     const upgrade = f.upgradeClass !== f.bookedClass ? (+f.upgradeCost || 0) : 0;
     const co2 = E.hasBooster(f) ? (+f.co2Cost || 0) : 0;
@@ -235,7 +254,7 @@
     const adjTotal = { p: 0, qp: 0, hon: 0 }, stayTotal = { p: 0 };
     const rows = [], adjustments = [], stays = [], events = [];
     let unknown = 0;
-    const segs = E.bookingSegments(state);
+    const holders = E.fareHolders(state, today);
     const add = (t, e) => { t.p += e.p; t.qp += e.qp; t.hon += e.hon; if (e.rail) { t.qpRail += e.qp; t.honRail += e.hon; } };
     /**
      * Notes the date on which totals t reach each status and, for the forecast, the item that did it. A negative
@@ -254,7 +273,7 @@
       const planned = E.isPlanned(it, today);
       const counts = isAdj || isStay || !planned || it.f.includeInPlan !== false;
       const e = isAdj ? E.adjustmentEarn(it.a) : isStay ? E.stayEarn(it.s, rules, stayTotal.p) : E.earn(it.f, rules);
-      const c = isAdj || isStay ? noCost() : E.cost(it.f, E.fareShare(state, it.f, segs));
+      const c = isAdj || isStay ? noCost() : E.cost(it.f, E.segmentFare(state, it.f, holders));
       if (it.kind === 'flight' && counts && e.unknown && e.group !== 'NONE') unknown++;
       if (counts) {
         add(all, e);

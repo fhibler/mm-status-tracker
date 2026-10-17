@@ -346,11 +346,17 @@
     const missing = sum.rows.filter(r => needsLookup(r.f)).length;
     // Flown / planned is shown by the section rows, so there is no status column.
     const cols = 12 + (showCO2 ? 1 : 0);
-    const segs = E.bookingSegments(state);
-    /** Fare cell: the segment's share; for a booking with several segments also the booking's fare. */
-    const fareCell = (f, share) => {
+    const segs = E.bookingSegments(state), holders = E.fareHolders(state);
+    /**
+     * Fare cell. A booking with several segments shows its whole fare once, on the segment that carries it
+     * (E.fareHolders); its other segments point to that one.
+     */
+    const fareCell = (f, fare) => {
       const k = E.bookingKey(f.bookingCode), b = k && state.bookings[k];
-      return `${money(share)}${b && segs[k] > 1 ? `<div class="muted" title="Booking ${esc(k)}: ${money(b.fare)} split over ${segs[k]} segments">1/${segs[k]} of ${money(b.fare, true)}</div>` : ''}`;
+      if (!b || segs[k] < 2) return money(fare);
+      if (holders[k] === f.id) return `${money(fare)}<div class="muted" title="Whole fare of booking ${esc(k)}, counted once for its ${segs[k]} segments">booking · ${segs[k]} seg.</div>`;
+      const h = state.flights.find(x => x.id === holders[k]);
+      return `<span class="muted">–</span><div class="muted" title="Booking ${esc(k)}: the whole fare (${money(b.fare)}) is counted on ${esc(h.flightNo)}, ${esc(C.fmtDate(h.date))}">in ${esc(h.flightNo)}</div>`;
     };
 
     const row = (r) => {
@@ -1027,13 +1033,18 @@
   const fareInfo = () => {
     const k = E.bookingKey(form.bookingCode.value), fare = Math.max(0, +form.fare.value || 0);
     const others = k ? state.flights.filter(f => f.id !== draft.id && E.bookingKey(f.bookingCode) === k) : [];
-    return { k, fare, others, n: others.length + 1, share: fare / (others.length + 1) };
+    // The booking as it will be once saved, to find the segment that carries its fare (E.fareHolders)
+    const self = { ...draft, bookingCode: k, flightCost: k ? 0 : fare };
+    const st = { flights: [...others, self], bookings: k ? { [k]: { fare } } : {} };
+    const holder = k ? st.flights.find(f => f.id === E.fareHolders(st)[k]) : self;
+    return { k, fare, others, n: others.length + 1, holder, segFare: E.segmentFare(st, self) };
   };
   const fareHint = (fi) => {
     if (!fi.k) return 'This segment only. With a booking code, you enter one fare for all segments of the booking.';
     if (!fi.others.length) return `Whole booking ${esc(fi.k)}. Other segments with this code share it.`;
     const list = fi.others.slice(0, 3).map(f => esc(f.flightNo)).join(', ') + (fi.others.length > 3 ? ` +${fi.others.length - 3}` : '');
-    return `Whole booking ${esc(fi.k)}, split over ${fi.n} segments (${money(fi.share)} each) · with ${list}`;
+    const on = fi.holder.id === draft.id ? 'this segment' : `${esc(fi.holder.flightNo)}, ${esc(C.fmtDate(fi.holder.date))}`;
+    return `Whole booking ${esc(fi.k)}, ${fi.n} segments · with ${list} · counted once, on ${on}`;
   };
 
   const updatePreview = () => {
@@ -1061,7 +1072,7 @@
     }
     $('#co2Hint').innerHTML = est ? co2EstTxt(est) : draft.co2Level === 'none' || state.settings.currency !== 'EUR' ? '' : 'no estimate for this route or cabin';
     const e = E.earn(draft, state.settings.rules);
-    const c = E.cost(draft, fi.share);
+    const c = E.cost(draft, fi.segFare);
     $('#earnPreview').innerHTML = `
       <div><div class="k">Earning basis${[draft.earnClassOverride, draft.haulOverride, draft.earningGroup].some(v => v && v !== 'auto') ? ' (override)' : ''}</div><b>${esc(e.cls)} · ${e.haul ? HAUL_LABEL[e.haul] : 'haul unknown'} · ${esc(MM.GROUP_LABEL[e.group])}</b></div>
       <div><div class="k">Points</div><b>${num(e.p)}</b></div>

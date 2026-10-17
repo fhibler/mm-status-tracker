@@ -14,7 +14,7 @@
     format: FORMAT, version: VERSION,
     settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '' },
     flights: [],
-    bookings: {},      // booking code -> { fare }: one fare per booking, split evenly over its segments
+    bookings: {},      // booking code -> { fare }: one fare per booking, counted once on one of its segments (E.fareHolders)
     adjustments: [],   // manual point corrections from the account statement
     stays: [],         // Marriott Bonvoy hotel stays (Points only, capped per year)
     plans: {},         // planner scenarios per calendar year: { "2026": { co2: { flightId: { level, cost } }, mix: [row] } }

@@ -8,8 +8,10 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 - **Activity log per CY** (flights, trains and buses): booking code, date, flight number, airline (taken from the flight number),
   booked class, upgrade class (defaults to the booked class), upgrade type (Fixed online / Fixed airport / Bid / Miles / Voucher / Operational), upgrade cost.
   Choose Flight, Train or Bus first; trains and buses only ask for what applies to them (no upgrades, codeshares or CO₂ compensation).
-- **Fares per booking**: with a booking code, you enter the fare once for the whole booking. It is split evenly over the
-  booking's segments for the cost charts and cost per QP. Upgrade and CO₂ costs stay per segment.
+- **Fares per booking**: with a booking code, you enter the fare once for the whole booking. It is shown and counted once,
+  as a single total on the booking's first segment (the first one that counts towards the forecast, if a planned
+  segment is left out), so the cost charts, cost per QP and yearly totals put it in that segment's month and year.
+  The booking's other segments show where the fare is. Upgrade and CO₂ costs stay per segment.
 - **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key).
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.

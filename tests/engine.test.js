@@ -156,9 +156,9 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(pts(s.forecast), '1000,700,600');             // + f4 + f2 (f3 left out)
   assert.strictEqual(`${s.statusActual}:${s.statusForecast}`, 'NONE:FTL');
   assert.strictEqual(`${s.reached.actual.FTL}:${s.reached.forecast.FTL}:${s.reached.forecastBy.FTL}`, 'undefined:2026-07-01:LH403');
-  // costs: half of booking B1 each; upgrade cost only when upgraded, CO₂ cost only with a booster; f3 not counted
-  assert.strictEqual(Object.values(s.cost.actual).join(','), '500,0,0,500');
-  assert.strictEqual(Object.values(s.cost.plan).join(','), '600,300,0,900');
+  // costs: booking B1 once, on its first segment f1; upgrade cost only when upgraded, CO₂ cost only with a booster; f3 not counted
+  assert.strictEqual(Object.values(s.cost.actual).join(','), '1000,0,0,1000');
+  assert.strictEqual(Object.values(s.cost.plan).join(','), '100,300,0,400');
   assert.strictEqual(Object.values(s.cost.all).join(','), '1100,300,0,1400');
   // an item dated today is flown; on the same day flights come before corrections, which decides the reached date
   const sameDay = state({
@@ -174,9 +174,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     flight({ id: 'u3', date: '2026-09-01', flightNo: 'LH1', includeInPlan: false }),
   ] });
   assert.strictEqual(E.yearSummary(unknown, 2026, TODAY).unknown, 1);
-  // a booking with segments in two years: each year counts its share
-  const two = state({ flights: [lhBiz({ id: 'x', date: '2026-12-20', bookingCode: 'X' }), lhBiz({ id: 'y', date: '2027-01-10', bookingCode: 'X' })], bookings: { X: { fare: 900 } } });
-  assert.strictEqual(`${E.yearSummary(two, 2026, TODAY).cost.plan.flight}:${E.yearSummary(two, 2027, TODAY).cost.plan.flight}`, '450:450');
+  // a booking with segments in two years: the whole fare counts once, in the year of its first segment
+  const two = state({ flights: [lhBiz({ id: 'y', date: '2027-01-10', bookingCode: 'X' }), lhBiz({ id: 'x', date: '2026-12-20', bookingCode: 'X' })], bookings: { X: { fare: 900 } } });
+  assert.strictEqual(`${E.yearSummary(two, 2026, TODAY).cost.plan.flight}:${E.yearSummary(two, 2027, TODAY).cost.plan.flight}`, '900:0');
+  // the first segment left out of the forecast: the fare moves to the next segment that counts
+  two.flights.find(f => f.id === 'x').includeInPlan = false;
+  assert.strictEqual(`${E.yearSummary(two, 2026, TODAY).cost.plan.flight}:${E.yearSummary(two, 2027, TODAY).cost.plan.flight}`, '0:900');
 }
 
 /* ---------- point corrections and Marriott Bonvoy stays ---------- */
@@ -251,15 +254,24 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const st = state();
   const a = S.saveFlight(st, flight({ id: 'a', bookingCode: 'abc 123' }), 800);
   S.saveFlight(st, flight({ id: 'b', bookingCode: 'ABC123', date: '2026-03-05' }), 800);
-  assert.strictEqual(`${a.bookingCode}:${a.flightCost}:${st.bookings.ABC123.fare}:${E.fareShare(st, st.flights[1])}`, 'ABC123:0:800:400');
+  // the whole fare sits on the booking's first segment (a, 1 Mar), not split; b (5 Mar) carries none
+  assert.strictEqual(`${a.bookingCode}:${a.flightCost}:${st.bookings.ABC123.fare}:${E.segmentFare(st, st.flights[0])}:${E.segmentFare(st, st.flights[1])}`, 'ABC123:0:800:800:0');
+  assert.strictEqual(`${E.yearSummary(st, 2026, TODAY).cost.all.flight}`, '800');
+  // same date: the lower id carries it
+  const same = state({ flights: [flight({ id: 'q', bookingCode: 'S' }), flight({ id: 'p', bookingCode: 'S' })], bookings: { S: { fare: 50 } } });
+  assert.strictEqual(E.fareHolders(same, TODAY).S, 'p');
   // moving b to another booking keeps ABC123's fare for a, and b gets the new booking's fare
   S.saveFlight(st, { ...st.flights[1], bookingCode: 'XYZ999' }, 300);
-  assert.strictEqual(`${st.bookings.ABC123.fare}:${st.bookings.XYZ999.fare}:${E.fareShare(st, st.flights[0])}`, '800:300:800');
+  assert.strictEqual(`${st.bookings.ABC123.fare}:${st.bookings.XYZ999.fare}:${E.segmentFare(st, st.flights[0])}:${E.segmentFare(st, st.flights[1])}`, '800:300:800:300');
   // without a booking code the fare belongs to the flight; the booking left without segments is dropped
   S.saveFlight(st, { ...st.flights[1], bookingCode: '' }, 120);
-  assert.strictEqual(`${st.flights[1].flightCost}:${E.fareShare(st, st.flights[1])}:${'XYZ999' in st.bookings}`, '120:120:false');
+  assert.strictEqual(`${st.flights[1].flightCost}:${E.segmentFare(st, st.flights[1])}:${'XYZ999' in st.bookings}`, '120:120:false');
   // a booking code without a booking entry (e.g. edited in the .json) falls back to the segment's own fare
-  assert.strictEqual(E.fareShare(state(), flight({ bookingCode: 'NOPE', flightCost: 75 })), 75);
+  assert.strictEqual(E.segmentFare(state(), flight({ bookingCode: 'NOPE', flightCost: 75 })), 75);
+  // upgrade and CO₂ costs stay per segment
+  const up = state({ flights: [lhBiz({ id: 'u1', bookingCode: 'U', bookedClass: 'Economy', upgradeCost: 100 }), lhBiz({ id: 'u2', date: '2026-03-02', bookingCode: 'U', bookedClass: 'Economy', upgradeCost: 150 })], bookings: { U: { fare: 400 } } });
+  const uc = E.yearSummary(up, 2026, TODAY).rows.map(r => `${r.c.flight}+${r.c.upgrade}`).join(',');
+  assert.strictEqual(uc, '400+100,0+150');
   // deleting a flight drops its booking and its planner what-ifs
   st.plans['2026'] = { co2: { a: { level: 'small', cost: 5 } }, mix: [] };
   S.deleteFlight(st, 'a');
