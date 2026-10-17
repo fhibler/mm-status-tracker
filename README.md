@@ -5,7 +5,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 
 ## Features
 
-- **Activity log per CY** (flights and trains): booking code, date, flight number, airline (taken from the flight number),
+- **Activity log per CY** (flights, trains and buses): booking code, date, flight number, airline (taken from the flight number),
   booked class, upgrade class (defaults to the booked class), upgrade type (Fixed online / Fixed airport / Bid / Miles / Voucher / Operational), upgrade cost.
   Choose Flight, Train or Bus first; trains and buses only ask for what applies to them (no upgrades, codeshares or CO₂ compensation).
 - **Fares per booking**: with a booking code, you enter the fare once for the whole booking. It is split evenly over the
@@ -39,9 +39,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 - **Dashboard**: KPI tiles, status progress (flown and forecast), cumulative P/QP/HON charts with status
   thresholds, costs per month, a segment breakdown, and a history table by year with each status and
   its validity.
-- **Save / Load `.json`**: the file holds your flights, your settings and every route lookup the app
-  made so far (`apiCache` with `queried: true` / `status`). When you load a saved file, the app reuses
-  those answers and does not call the API again. Files in the old format (version 1, saved
+- **Save / Load `.json`**: the file holds your flights and fares, point corrections, hotel stays, planner
+  scenarios, your settings and every route lookup the app made so far (`apiCache`, with a `status` per flight
+  number). When you load a saved file, the app reuses those answers and does not call the API again. Files in the old format (version 1, saved
   before the fares-per-booking update of 16 Oct 2026) can no longer be loaded.
   With your Miles & More number set in Settings, the file is named `miles-and-more-<number>.json`.
 - **Light / dark mode** switch in the header (Light · System · Dark). System follows the OS setting.
