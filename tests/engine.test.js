@@ -117,9 +117,9 @@ assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraZrh, co2Level: 'small' 
 assert.strictEqual(['2026/01/15', '2026-1-15', '2026.1.5', '20260115', '2026/02/30', '2026/13/01', '15.01.2026'].map(E.parseDate).join(','),
   '2026-01-15,2026-01-15,2026-01-05,2026-01-15,,,');
 
-/* ---------- money fields: a comma is a decimal separator too ---------- */
-assert.strictEqual(['9,11', '9.11', '146,60', ' 146.6 ', '9,', ',5', '1.234,56', '1,234.56', '1.000.000', '12 345,6', '€ 7,30', "1'200.50"]
-  .map(E.parseAmount).join(' '), '9.11 9.11 146.6 146.6 9 0.5 1234.56 1234.56 1000000 12345.6 7.3 1200.5');
+/* ---------- money fields: a comma is a decimal separator too; three digits after it group thousands ---------- */
+assert.strictEqual(['9,11', '9.11', '146,60', ' 146.6 ', '9,', ',5', '1.234,56', '1,234.56', '1.000.000', '12 345,6', '€ 7,30', "1'200.50", '1,200', '€1.000']
+  .map(E.parseAmount).join(' '), '9.11 9.11 146.6 146.6 9 0.5 1234.56 1234.56 1000000 12345.6 7.3 1200.5 1200 1000');
 assert.strictEqual(['', null, undefined, 'abc', '-5', '5-3', '.', 0, 12.5].map(E.parseAmount).join(' '), '0 0 0 0 0 0 0 0 12.5');
 
 /* ---------- status ---------- */
@@ -151,7 +151,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
 {
   const st = state({
     flights: [
-      lhBiz({ id: 'f1', date: '2026-03-01', bookingCode: 'B1' }),                                          // flown, 200
+      lhBiz({ id: 'f1', date: '2026-03-01', bookingCode: 'B1', upgradeCost: 50 }),                         // flown, 200; upgrade cost without upgrade
       lhBiz({ id: 'f2', date: '2026-09-01', bookingCode: 'B1', flightNo: 'LH401' }),                       // planned, 200
       lhBiz({ id: 'f3', date: '2026-10-01', flightNo: 'LH402', includeInPlan: false, flightCost: 999 }),  // planned, left out
       flight({ id: 'f4', date: '2026-07-01', flightNo: 'LH403', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business',
@@ -318,7 +318,6 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     assert.ok(e && Math.abs(e.cost / price - 1) < 0.03 && e.quality === quality, `${o}-${d} ${cls} ${level}: ${JSON.stringify(e)}`);
   }
   assert.strictEqual(est('MUC', 'LIS', 'Business', 'medium').quality, 'rough');           // longer than the samples
-  assert.strictEqual(est('MUC', 'SFO', 'Business', 'medium', { upgradeClass: 'First', upgradeType: 'voucher' }).cabin, 'First');   // priced as flown
   {  // booked Business, voucher upgrade to First: Points as Business, CO₂ priced as First (also with earnClassOverride)
     const up = { flightNo: 'LH458', route: ap2('MUC', 'SFO'), bookedClass: 'Business', upgradeClass: 'First', upgradeType: 'voucher', co2Level: 'medium' };
     assert.strictEqual(pts(E.earn(flight(up), rules)), pts(E.earn(flight({ ...up, upgradeClass: 'Business', upgradeType: '' }), rules)));
@@ -374,7 +373,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // IDs end up in HTML and selectors: unsafe and repeated ones are replaced; invalid entries are dropped
   const st = state({
     settings: { currency: 'XYZ', memberNumber: '992 000-123 456 789' },
-    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01' }, { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }],
+    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01' }, { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }, { date: '2026-02-30' }],
     adjustments: [{ date: '2026-13' }, { date: '2026-04-01', p: 5 }], stays: [{ nights: 2 }],
     apiCache: { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { status: 'notfound' }, LH3: { status: 'ok' } },   // LH3: saved before lookups had a date
     plans: { 2025: { co2: { 'ok-1': { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }, { id: 'm', kind: 'RAIL', cls: 'First', co2Level: 'large' }, { id: 'm' }] } },   // what-if for a 2026 flight in 2025
@@ -385,10 +384,10 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const mix = st.plans['2025'].mix;
   assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${mix[0].count}:${mix[0].kind}`, '0:2:LHG');
   assert.strictEqual(`${mix[1].cls}:${mix[1].co2Level}`, 'Business:none');   // trains: 1st class at most, no booster
-  // as the dialog saves them: trains in 2nd or 1st class, and a CO₂ cost only with a booster on a flight
-  const fx = state({ flights: [{ date: '2026-01-01', transport: 'rail', bookedClass: 'First', co2Level: 'large', co2Cost: 9 },
-    { date: '2026-01-01', co2Level: 'none', co2Cost: 9 }, { date: '2026-01-01', co2Level: 'small', co2Cost: 9 }] }).flights;
-  assert.strictEqual(`${fx[0].bookedClass}:${fx.map(f => f.co2Cost).join(',')}`, 'Economy:0,0,9');
+  // as the dialog saves them: trains in 2nd or 1st class without upgrades or overrides, and a CO₂ cost only with a booster on a flight
+  const fx = state({ flights: [{ date: '2026-01-01', transport: 'rail', bookedClass: 'First', upgradeClass: 'First', upgradeType: 'bid', upgradeCost: 50,
+    earnClassOverride: 'First', co2Level: 'large', co2Cost: 9 }, { date: '2026-01-01', co2Level: 'none', co2Cost: 9 }, { date: '2026-01-01', co2Level: 'small', co2Cost: 9 }] }).flights;
+  assert.strictEqual(`${fx[0].bookedClass}:${fx[0].upgradeClass}:${fx[0].earnClassOverride}:${E.cost(fx[0], 0).total}:${fx.map(f => f.co2Cost).join(',')}`, 'Economy:Economy:auto:0:0,0,9');
   // flight choices outside the allowed values get a new flight's defaults (the upgrade class: the booked class)
   const choices = ['transport', 'bookedClass', 'upgradeClass', 'co2Level', 'haulOverride', 'earningGroup', 'earnClassOverride', 'upgradeType'];
   const bad = state({ flights: [{ date: '2026-01-01', ...Object.fromEntries(choices.map(k => [k, 'x'])), bookedClass: 'Business' }] }).flights[0];
@@ -416,32 +415,32 @@ async function apiTests() {
   const st = state();
   const reply = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
   const route = { flightroute: { origin: { iata_code: 'FRA', country_iso_name: 'DE' }, destination: { iata_code: 'JFK', country_iso_name: 'US' } } };
-  const calls = [];
+  const calls = [], D = TODAY, at = { now: new Date(`${TODAY}T10:00:00Z`) };   // a flight today, without a key: adsbdb
   respond = (url) => { calls.push(url.split('/').pop()); return url.endsWith('/UA9414') ? reply(404, { response: 'unknown callsign' }) : reply(200, { response: route }); };
-  let res = await A.lookup(st, 'UA9414');
+  let res = await A.lookup(st, 'UA9414', D, at);
   assert.strictEqual(`${res.status}:${calls.join(',')}`, 'ok:UA9414,UAL9414');   // ICAO fallback
-  res = await A.lookup(st, 'UA9414');
+  res = await A.lookup(st, 'UA9414', D, at);
   assert.strictEqual(`${res.fromCache}:${calls.length}`, 'true:2');               // cached: no new request
   assert.strictEqual(A.airport(st, 'JFK').country, 'US');                         // airports from cached routes ...
   assert.strictEqual(A.airport(st, 'AUS').city, 'Austin');                        // ... or from the airport table
   respond = () => reply(429, null);
-  assert.strictEqual((await A.lookup(st, 'LH400')).status, 'error');              // rate limit: not cached as "not found"
+  assert.strictEqual((await A.lookup(st, 'LH400', D, at)).status, 'error');       // rate limit: not cached as "not found"
   respond = () => reply(404, { response: 'unknown callsign' });
-  assert.strictEqual((await A.lookup(st, 'LH400')).status, 'notfound');           // an error is asked again
+  assert.strictEqual((await A.lookup(st, 'LH400', D, at)).status, 'notfound');    // an error is asked again
   respond = () => reply(200, { response: route });
-  assert.strictEqual((await A.lookup(st, 'LH400')).fromCache, true);              // "not found" is final ...
-  assert.strictEqual((await A.lookup(st, 'LH400', null, { force: true })).status, 'ok');   // ... until forced
+  assert.strictEqual((await A.lookup(st, 'LH400', D, at)).fromCache, true);       // "not found" is final ...
+  assert.strictEqual((await A.lookup(st, 'LH400', D, { ...at, force: true })).status, 'ok');   // ... until forced
   respond = () => { throw new Error('offline'); };
-  res = await A.lookup(st, 'LH400', null, { force: true });
-  assert.strictEqual(`${res.status}:${A.cached(st, 'LH400').status}`, 'error:ok');    // a failed forced lookup keeps the answer
+  res = await A.lookup(st, 'LH400', D, { ...at, force: true });
+  assert.strictEqual(`${res.status}:${A.cached(st, 'LH400', D).status}`, 'error:ok');   // a failed forced lookup keeps the answer
 
   // codeshares: without a route of their own, the operating flight's route (an error there is not final)
   respond = (url) => (url.endsWith('/LH488') ? reply(200, { response: route }) : reply(404, { response: 'unknown callsign' }));
-  const op = await A.resolveRoute(st, 'UA1', 'LH488');
+  const op = await A.resolveRoute(st, 'UA1', 'LH488', D, at);
   assert.strictEqual(`${op.entry.status}:${op.via}:${op.route.via}:${op.route.origin.iata}`, 'ok:LH488:LH488:FRA');
   respond = (url) => { if (url.endsWith('/LH499')) throw new Error('offline'); return reply(404, { response: 'unknown callsign' }); };
-  const failed = await A.resolveRoute(st, 'UA2', 'LH499');
-  assert.strictEqual(`${failed.entry.status}:${failed.route}:${(await A.resolveRoute(st, 'UA2')).entry.status}`, 'error:null:notfound');
+  const failed = await A.resolveRoute(st, 'UA2', 'LH499', D, at);
+  assert.strictEqual(`${failed.entry.status}:${failed.route}:${(await A.resolveRoute(st, 'UA2', null, D, at)).entry.status}`, 'error:null:notfound');
 
   // lookups are cached per flight date. adsbdb ignores the date, so an answer from another schedule season is
   // provisional and asked again once the flight's season has started (LH1966: MUC–OLB in summer, MUC–BER in winter).
@@ -482,6 +481,8 @@ async function apiTests() {
   assert.strictEqual(`${byDate.route.destination.iata}:${byDate.route.destination.city}:${byDate.route.provider}:${heads}`, 'BER:Berlin:aerodatabox:secret');
   assert.strictEqual(`${calls}:${A.otherSeason(byDate.entry, '2026-11-17')}`, 'aerodatabox.p.rapidapi.com 2026-11-17?dateLocalRole=Departure:false');   // date-exact, no adsbdb
   assert.strictEqual(A.airport(s3, 'BER').city, 'Berlin');                                       // airports from its answers too
+  // its route is for the date it was asked for: a flight moved to the summer is flagged and asked again
+  assert.strictEqual(`${A.lookupSeason(byDate.entry)}:${A.isProvisional(A.lookupInfo(byDate.entry, 'LH1966'), '2026-07-10', '2026-10-18', 'secret')}`, 'W26:true');
   adb = () => reply(204, null);
   const none = await A.lookup(s3, 'LH1967', '2026-11-17', k);                                       // no such flight: adsbdb
   assert.strictEqual(`${none.provider}:${none.adbTried}:${none.adbNote}:${none.response.flightroute.destination.iata_code}`, 'undefined:true:no such flight on that date:OLB');
@@ -497,7 +498,8 @@ async function apiTests() {
   // an adsbdb answer from another season is asked again as soon as a key is set
   adb = () => reply(200, [adbFlight]);
   s2.apiCache['LH1966 2026-11-17'] = nov;                                                            // the summer answer again
-  const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', { ...k, key: 'secret' });
+  s2.settings.aerodataboxKey = 'secret';
+  const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', k);
   assert.strictEqual(`${withKey.fromCache}:${withKey.provider}`, 'false:aerodatabox');
 }
 

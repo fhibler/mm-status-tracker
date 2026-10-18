@@ -1,7 +1,7 @@
 /* Route lookup: AeroDataBox (by date, with the user's own RapidAPI key) and adsbdb.com (free, no key).
  * Every answer is cached in state.apiCache keyed by IATA flight number and flight date ("LH1966 2026-11-17"), and
- * the cache is part of the exported .json – so an imported file never re-queries. The AeroDataBox key is a setting
- * (state.settings.aerodataboxKey), saved in the browser and in the .json like the others.
+ * the cache is part of the exported .json – so an imported file re-queries only errors and provisional answers
+ * (below). The AeroDataBox key is a setting (state.settings.aerodataboxKey), saved in the browser and in the .json.
  * AeroDataBox knows the route on the flight date. adsbdb ignores the date: it knows one route per number, the one
  * flown at the moment. So an adsbdb answer for a flight in another IATA schedule season (E.iataSeason) is
  * provisional, and is asked again once that season has started, or when AeroDataBox can be asked. */
@@ -11,11 +11,8 @@
   const ADB_HOST = 'aerodatabox.p.rapidapi.com';
   const E = MM.engine;
 
-  /** The user's AeroDataBox key (RapidAPI), or ''. */
-  A.aerodataboxKey = (state) => (state && state.settings && state.settings.aerodataboxKey) || '';
-
-  /** Cache key of a flight number on a date (ISO; today when empty). */
-  A.cacheKey = (flightNo, date) => `${flightNo.toUpperCase()} ${date || E.todayISO()}`;
+  /** Cache key of a flight number on an ISO date. */
+  A.cacheKey = (flightNo, date) => `${flightNo.toUpperCase()} ${date}`;
   /** A valid cache key, for S.normalize: entries saved before lookups had a date are dropped. */
   A.isCacheKey = (k) => /^[A-Z0-9]{2,3}\d{1,4}[A-Z]? \d{4}-\d{2}-\d{2}$/.test(k);
   /** The cached lookup of a flight number on a date, or undefined. */
@@ -33,11 +30,12 @@
   };
 
   /**
-   * Whether an adsbdb lookup (cache entry or f.routeLookup, with fetchedAt and date) was made in another IATA season
-   * than the flight's: its route is the one flown at lookup time and may not be the one on the flight date.
-   * AeroDataBox answers are for the date itself.
+   * IATA season whose route a lookup (cache entry or f.routeLookup) gave: an AeroDataBox answer is for the date it
+   * was asked for, an adsbdb answer is the route flown at lookup time (fetchedAt).
    */
-  A.otherSeason = (lk, date) => !!(lk && lk.provider !== 'aerodatabox' && lk.fetchedAt && date && E.iataSeason(lk.fetchedAt) !== E.iataSeason(date));
+  A.lookupSeason = (lk) => E.iataSeason(lk.provider === 'aerodatabox' ? lk.date : lk.fetchedAt);
+  /** Whether a lookup gave the route of another IATA season than the flight's: it may differ on the flight date. */
+  A.otherSeason = (lk, date) => !!(lk && lk.fetchedAt && date && A.lookupSeason(lk) !== E.iataSeason(date));
   /**
    * A provisional answer worth asking again: looked up in another season, and either the flight's season has started
    * or AeroDataBox can be asked (a key is set, and AeroDataBox has not answered "no such flight" for this date yet).
@@ -104,21 +102,21 @@
   };
 
   /**
-   * Returns the cache entry for a flight number on a date (ISO; today when empty). Queries only when no cached answer
-   * exists, the cached one is provisional (A.isProvisional), or `force` is set. With an AeroDataBox key, asks
+   * Returns the cache entry for a flight number on an ISO date. Queries only when no cached answer exists, the
+   * cached one is provisional (A.isProvisional), or `force` is set. With an AeroDataBox key (settings), asks
    * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried, adbNote says why) or fails
    * (adbError), asks adsbdb. Network and server errors of adsbdb (anything but 200 / 404, e.g. 429 rate limit) are cached as 'error',
    * which is not final: the next lookup asks again. A forced lookup that fails keeps the earlier answer in the cache.
-   * `now` (the clock) and `key` (default: the one in the settings) are for tests.
+   * `now` (the clock) is for tests.
    */
-  A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date(), key = A.aerodataboxKey(state) } = {}) => {
-    const no = iataFlightNo.toUpperCase(), today = E.todayISO(now), day = date || today, ck = A.cacheKey(no, day);
+  A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date() } = {}) => {
+    const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
     const cached = state.apiCache[ck];
-    if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, day, today, key)) return { ...cached, fromCache: true };
-    const entry = { date: day, fetchedAt: now.toISOString() };
+    if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) return { ...cached, fromCache: true };
+    const entry = { date, fetchedAt: now.toISOString() };
     if (key) {
       try {
-        const { response, note } = await askAeroDataBox(no, day, key);
+        const { response, note } = await askAeroDataBox(no, date, key);
         if (response) Object.assign(entry, { provider: 'aerodatabox', status: 'ok', response });
         else Object.assign(entry, { adbTried: true, adbNote: note });
       } catch (err) {

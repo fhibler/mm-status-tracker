@@ -6,11 +6,13 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 ## Features
 
 - **Activity log per CY** (flights, trains and buses): booking code, date, flight number, airline (taken from the flight number),
-  booked class, upgrade class (defaults to the booked class), upgrade type (Fixed online / Fixed airport / Bid / Miles / Voucher / Operational), upgrade cost.
+  booked class, upgrade class (defaults to the booked class), upgrade type (Fixed online / Fixed airport / Bid / Miles / Voucher / Operational;
+  required when the flight is upgraded), upgrade cost.
   Choose Flight, Train or Bus first; trains and buses only ask for what applies to them (no upgrades, codeshares or CO₂ compensation).
 - **Fares per booking**: with a booking code, you enter the fare once for the whole booking. It is shown and counted once,
   as a single total on the booking's first segment (the first one that counts towards the forecast, if a planned
-  segment is left out), so the cost charts, cost per QP and yearly totals put it in that segment's month and year.
+  segment is left out), so the cost charts, the cost per Point, QP and HON Point and the yearly totals put it in that
+  segment's month and year.
   The booking's other segments show where the fare is. Upgrade and CO₂ costs stay per segment.
 - **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key), or by date
   via [AeroDataBox](https://rapid.aerodatabox.com/pricing) with your own free key.
@@ -51,9 +53,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   allowed. Corrections count in all totals, status dates, charts and forecasts, and are saved in the `.json`.
 - **CO₂ compensation boosters** per flight (Small / Medium / Large / X-Large), with a CO₂ cost column
   that appears as soon as one flight uses a booster.
-- **Dashboard**: KPI tiles, status progress (flown and forecast), cumulative P/QP/HON charts with status
-  thresholds, costs per month, a segment breakdown, and a history table by year with each status and
-  its validity.
+- **Dashboard**: KPI tiles (incl. the year's cost and the cost per Point, QP and HON Point), status progress
+  (flown and forecast), cumulative P/QP/HON charts with status thresholds, costs per month, a segment breakdown,
+  and a history table by year with each status, its validity and the cost per Point, QP and HON Point.
 - **Save / Load `.json`**: the file holds your flights and fares, point corrections, hotel stays, planner
   scenarios, your settings (including an AeroDataBox key) and every route lookup the app made so far (`apiCache`, with a `status` per flight
   number and date). When you load a saved file, the app reuses those answers and does not call the API again
@@ -151,7 +153,8 @@ site to GitHub Pages.
   (Settings → Route lookup), the app asks AeroDataBox for the route on the flight date first and falls back to
   adsbdb when it doesn't know the flight or fails (e.g. quota used up). The free Basic plan has 400 units a month,
   and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
-  set, "Look up route" in the dialog replaces a route from another season. The key is saved with your settings, in the
+  set, "Look up route" in the dialog replaces a route from another season. Changing a flight's date looks its route
+  up again for the new date (a route typed by hand stays). The key is saved with your settings, in the
   browser and in the `.json`, so loading the file on another device brings it along: keep the file to yourself.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
@@ -175,7 +178,8 @@ Miles & More GmbH, Deutsche Lufthansa AG, Star Alliance or any airline. "Miles &
 are used here only to describe what the tool is compatible with.
 
 Points, status dates and costs are estimates. The official Miles & More terms and your account
-statement always apply. Route data comes from [adsbdb.com](https://www.adsbdb.com) and may be
+statement always apply. Route data comes from [adsbdb.com](https://www.adsbdb.com) and, with your own key,
+[AeroDataBox](https://rapid.aerodatabox.com/pricing), and may be
 incomplete or out of date. Airport data for routes you type by hand (5,400+ airports with an IATA
 code) comes from [OurAirports](https://ourairports.com/data/), which is public domain.
 

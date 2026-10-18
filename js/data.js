@@ -100,8 +100,9 @@ MM.airport = (iata) => {
   return a ? { ...a } : null;
 };
 
-/* How an upgrade was obtained. Only fixed-price and bid upgrades earn in the upgraded class;
- * all others earn in the booked class. '' = not specified (also earns in the booked class). */
+/* How an upgrade was obtained (required for an upgraded flight). Only fixed-price and bid upgrades earn in the
+ * upgraded class; all others earn in the booked class. '' = no upgrade (or an upgrade saved without a type by an
+ * older version, which also earns in the booked class). */
 MM.UPGRADE_TYPES = {
   'fixed-online':  { label: 'Fixed (Online)',  earnsUpgrade: true },
   'fixed-airport': { label: 'Fixed (Airport)', earnsUpgrade: true },

@@ -52,14 +52,16 @@
 
   /**
    * Money field text -> amount ≥ 0; 0 if empty or no number. A comma or a point is the decimal separator ("9,11"
-   * and "9.11" are 9.11); with both, the last one is (1.234,56 and 1,234.56), and one that occurs more than once
-   * groups thousands (1.000.000). Spaces, apostrophes and currency signs are ignored.
+   * and "9.11" are 9.11); with both, the last one is (1.234,56 and 1,234.56). Alone, it groups thousands when it
+   * occurs more than once (1.000.000) or has exactly three digits after it (1,200 and 1.200 are 1200, as the app shows
+   * amounts), since amounts have at most two decimals. Spaces, apostrophes and currency signs are ignored.
    */
   E.parseAmount = (txt) => {
     const s = String(txt ?? '').replace(/[^\d.,-]/g, '');
     if (!/^-?[\d.,]*\d[\d.,]*$/.test(s)) return 0;
     let dec = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
-    if (dec >= 0 && !(s.includes(',') && s.includes('.')) && s.indexOf(s[dec]) !== dec) dec = -1;   // 1.000.000
+    const alone = !(s.includes(',') && s.includes('.'));
+    if (dec >= 0 && alone && (s.indexOf(s[dec]) !== dec || s.length - dec === 4)) dec = -1;   // 1.000.000, 1,200
     const int = (dec < 0 ? s : s.slice(0, dec)).replace(/[.,]/g, ''), frac = dec < 0 ? '' : s.slice(dec + 1);
     const n = Number(`${int || 0}.${frac || 0}`);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -120,6 +122,9 @@
     if (f.earnClassOverride && f.earnClassOverride !== 'auto') return f.earnClassOverride;
     return E.upgradeEarns(f) && f.upgradeClass ? f.upgradeClass : f.bookedClass;
   };
+
+  /** The flight was upgraded: its upgrade class differs from the booked one (the dialog only allows a higher one). */
+  E.isUpgraded = (f) => f.upgradeClass !== f.bookedClass;
 
   /** Cabin actually flown: the upgrade class, whatever the upgrade type or earnClassOverride (prices CO₂ boosters). */
   E.flownClass = (f) => f.upgradeClass || f.bookedClass;
@@ -208,7 +213,7 @@
 
   /** Costs of one segment; `fare` is the fare it carries (see E.segmentFare). */
   E.cost = (f, fare) => {
-    const upgrade = f.upgradeClass !== f.bookedClass ? (+f.upgradeCost || 0) : 0;
+    const upgrade = E.isUpgraded(f) ? (+f.upgradeCost || 0) : 0;
     const co2 = E.hasBooster(f) ? (+f.co2Cost || 0) : 0;
     return { flight: fare, upgrade, co2, total: fare + upgrade + co2 };
   };

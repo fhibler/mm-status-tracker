@@ -360,7 +360,7 @@
     };
 
     const row = (r) => {
-      const f = r.f, up = f.upgradeClass && f.upgradeClass !== f.bookedClass;
+      const f = r.f, up = E.isUpgraded(f);
       const co2 = E.hasBooster(f);
       return `<tr data-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
         <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
@@ -369,7 +369,7 @@
         <td><span class="route">${isFlight(f) || f.route ? routeTxt(f) : '<span class="muted">–</span>'}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
         <td class="cls">${clsBadge(f.bookedClass)}</td>
-        <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradeType ? esc((MM.UPGRADE_TYPES[f.upgradeType] || {}).label || f.upgradeType) : 'type not specified'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
+        <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradeType ? esc(MM.UPGRADE_TYPES[f.upgradeType].label) : 'type not specified'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
         <td class="num">${fareCell(f, r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
         ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
@@ -727,7 +727,7 @@
           <td class="num">${num(t.p)}</td><td class="num">${num(t.qp)}</td><td class="num">${num(t.hon)}</td>
           <td>${badge(s)}</td><td class="num">${signedMoney(cost, i)}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td>Scenario total</td><td class="num">${num(sc.total.p)}</td><td class="num">${num(sc.total.qp)}</td><td class="num">${num(sc.total.hon)}</td>
-          <td>${badge(sc.status.total)}</td><td class="num">${money(sc.cost.total, true)}${sc.total.qp ? `<div class="muted">${money(sc.cost.total / sc.total.qp)} / QP</div>` : ''}</td></tr></tfoot>
+          <td>${badge(sc.status.total)}</td><td class="num">${money(sc.cost.total, true)}<div class="cpu">${perUnit(sc.cost.total, sc.total.qp, 'qp')}</div></td></tr></tfoot>
       </table></div>`);
 
     renderGap(sc.total, sc.status.total);
@@ -834,13 +834,14 @@
         <div class="card">
           <div class="card-head"><h2>Route lookup</h2><span class="sub">your own key, saved with your data</span></div>
           <div class="grid">
-            <label>AeroDataBox key (RapidAPI)<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(A.aerodataboxKey(state))}">
-              <small class="field-hint">${A.aerodataboxKey(state) ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
+            <label>AeroDataBox key (RapidAPI)<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(state.settings.aerodataboxKey)}">
+              <small class="field-hint">${state.settings.aerodataboxKey ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
           </div>
           <p class="hint">Without a key, routes come from adsbdb.com, which knows one route per flight number (the one flown
             at the moment) and ignores the date. With your own <a href="https://rapid.aerodatabox.com/pricing" target="_blank" rel="noopener">AeroDataBox</a>
             key, the app asks for the route on the flight date first and falls back to adsbdb. The free Basic plan has
-            400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached, so each flight is asked once.
+            400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached per flight number and date, so a
+            flight is asked again only when its date changes or its route came from another schedule season.
             The key is saved in this browser and in your <code>.json</code>, so loading the file on another device brings it
             along. Keep the file to yourself.</p>
         </div>
@@ -853,7 +854,8 @@
           </div>
           <p class="hint">Data is kept in this browser (localStorage) and can be saved / loaded as <code>.json</code>.
             The file contains your flights and fares, point corrections, hotel stays, planner scenarios, these settings and the cached route lookups
-            (${cacheN} flight number${cacheN === 1 ? '' : 's'}, ${cacheOk} with route) – so loading it never re-queries the API.</p>
+            (${cacheN} lookup${cacheN === 1 ? '' : 's'} by flight number and date, ${cacheOk} with route) – so after loading it, only failed lookups
+            and routes from another schedule season are asked again.</p>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
             <button class="btn" data-act="reset-rules">Reset rules to defaults</button>
             <button class="btn" data-act="demo">Load demo data</button>
@@ -901,7 +903,7 @@
 
   /* ================= flight dialog ================= */
   const dlg = $('#flightDialog'), form = $('#flightForm');
-  let draft = null, isNew = false, upgradeTouched = false, co2Touched = false, lookupSeq = 0;
+  let draft = null, isNew = false, upgradeTouched = false, co2Touched = false, lookupSeq = 0, pendingLookup = null;
   let fareFrom = '';   // booking whose whole fare the fare field shows ('' = the segment's own fare)
   /** True when the dialog was closed or shows another flight since `d` was current: async lookups must not touch it. */
   const stale = (d) => !dlg.open || draft !== d;
@@ -973,13 +975,16 @@
       const prov = r.provider === 'aerodatabox' ? `AeroDataBox for ${esc(dateToField(lk && lk.date || draft.date))}` : 'adsbdb.com';
       const src = r.source === 'manual' ? 'entered manually' : `from ${prov}${r.via ? ` via ${esc(r.via)}` : ''}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
       const unknown = !r.origin.country || !r.destination.country;
-      const again = A.isProvisional(lk, draft.date, undefined, A.aerodataboxKey(state)) ? 'Click "Look up route" for the route on your date.'
-        : !A.aerodataboxKey(state) ? 'Add an AeroDataBox key in Settings to look up routes by date.'
-        : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up route" asks again.' : '';
+      const key = state.settings.aerodataboxKey;
+      /** What asks for the route of the flight's season (only for a route of another season, so lk is set). */
+      const again = () => (A.isProvisional(lk, draft.date, undefined, key) ? 'Click "Look up route" for the route on your date.'
+        : !key ? 'Add an AeroDataBox key in Settings to look up routes by date.'
+        : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up route" asks again.' : '');
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
         (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
-        (r.source === 'manual' || !isFlight(draft) || r.provider === 'aerodatabox' ? ''
-          : otherSeason(draft) ? `<br><b style="color:var(--danger)">Looked up in schedule season ${esc(E.iataSeason(lk.fetchedAt))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${again}`
+        (r.source === 'manual' || !isFlight(draft) ? ''
+          : otherSeason(draft) ? `<br><b style="color:var(--danger)">This is the route of schedule season ${esc(A.lookupSeason(lk))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${again()}`
+          : r.provider === 'aerodatabox' ? ''
           : '<br><span class="muted">This is the route listed for the flight number at lookup time (adsbdb ignores the date). Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>') +
         (r.source === 'manual' || !lk ? ''
           : lk.adbError ? `<br><span class="muted">AeroDataBox failed (${esc(lk.adbError)}), so adsbdb was asked.</span>`
@@ -991,7 +996,7 @@
     } else if (lk && lk.status === 'error') {
       info.innerHTML = `<b style="color:var(--danger)">Lookup failed</b> (${esc(lk.error || 'network error')}). Try again or enter the airports manually.`;
     } else {
-      info.textContent = A.aerodataboxKey(state) ? 'Route is looked up automatically for the flight number and date (AeroDataBox, else adsbdb.com). Results are cached in your .json.' : 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
+      info.textContent = state.settings.aerodataboxKey ? 'Route is looked up automatically for the flight number and date (AeroDataBox, else adsbdb.com). Results are cached in your .json.' : 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
     }
     info.insertAdjacentHTML('beforeend', operatingInfo());
   };
@@ -1020,7 +1025,7 @@
   const lookupOperating = async () => {
     const op = E.operating(draft), d = draft;
     if (op && !hasRoute(draft.route) && E.parseFlightNo(draft.flightNo)) { await doLookup(false); return; }
-    if (op) await A.lookup(state, op.iata, draft.date);
+    if (op && draft.date) await A.lookup(state, op.iata, draft.date);
     if (stale(d)) return;
     save();
     updatePreview();
@@ -1034,6 +1039,8 @@
     const t = TRANSPORT[form.transport.value] ? form.transport.value : 'flight', fl = t === 'flight';
     const parsed = E.parseFlightNo(form.flightNo.value);
     const opParsed = fl ? E.parseFlightNo(form.operatingFlightNo.value) : null;
+    const upgradeClass = fl ? form.upgradeClass.value : form.bookedClass.value;
+    const up = upgradeClass !== form.bookedClass.value;   // the upgrade type and cost only count with an upgrade
     Object.assign(draft, {
       transport: t,
       operatingFlightNo: !fl ? '' : opParsed ? opParsed.iata : form.operatingFlightNo.value.toUpperCase().replace(/\s/g, ''),
@@ -1044,9 +1051,9 @@
       earningGroup: t === 'bus' ? 'auto' : form.earningGroup.value,
       earnClassOverride: fl ? form.earnClassOverride.value : 'auto',
       bookedClass: form.bookedClass.value,
-      upgradeClass: fl ? form.upgradeClass.value : form.bookedClass.value,
-      upgradeType: fl ? form.upgradeType.value : '',
-      upgradeCost: fl ? E.parseAmount(form.upgradeCost.value) : 0,
+      upgradeClass,
+      upgradeType: up ? form.upgradeType.value : '',
+      upgradeCost: up ? E.parseAmount(form.upgradeCost.value) : 0,
       co2Level: fl ? form.co2Level.value : 'none',
       co2Cost: fl && form.co2Level.value !== 'none' ? E.parseAmount(form.co2Cost.value) : 0,
       includeInPlan: form.includeInPlan.checked,
@@ -1083,9 +1090,7 @@
     const st = $('#dateStatus');
     st.className = 'pill' + (draft.date ? (planned ? ' planned' : '') : ' warn');
     st.textContent = draft.date ? (planned ? 'Planned' : fl ? 'Flown' : 'Travelled') : (form.date.value.trim() ? 'Invalid date' : 'Date required');
-    const upgraded = draft.upgradeClass !== draft.bookedClass;
-    form.upgradeCost.disabled = !upgraded;
-    form.upgradeType.disabled = !upgraded;
+    form.upgradeCost.disabled = form.upgradeType.disabled = !E.isUpgraded(draft);
     const fi = fareInfo();
     $('#fareLabel').textContent = fi.k ? 'Fare (whole booking)' : 'Fare';
     $('#fareHint').innerHTML = fareHint(fi);
@@ -1108,11 +1113,16 @@
     routeInfo();
   };
 
-  /** Looks up the route of the flight number, or of the operating flight (see A.resolveRoute), and shows it. */
-  const doLookup = async (force) => {
+  /**
+   * Looks up the route of the flight number on the flight date, or of the operating flight (see A.resolveRoute), and
+   * shows it. Returns the lookup, which saving waits for (pendingLookup).
+   */
+  const doLookup = (force) => (pendingLookup = lookupRoute(force));
+  const lookupRoute = async (force) => {
     readForm();
     const parsed = E.parseFlightNo(draft.flightNo), op = E.operating(draft);
     if (!parsed) { toast('Enter a flight number like LH400'); return; }
+    if (!draft.date) { if (force) toast('Enter the date first: the route is looked up for it'); return; }
     const seq = ++lookupSeq, d = draft;
     draft.routeLookup = { status: 'loading' };
     routeInfo();
@@ -1133,11 +1143,12 @@
     }
   };
 
+  /** Looks up the route unless it was typed in or is known for this flight number and date. */
   const autoLookup = () => {
     if (form.transport.value !== 'flight') return;   // adsbdb only knows flights
-    const parsed = E.parseFlightNo(form.flightNo.value);
+    const parsed = E.parseFlightNo(form.flightNo.value), lk = draft.routeLookup;
     if (!parsed) return;
-    const known = draft.routeLookup && draft.routeLookup.flightNo === parsed.iata && draft.route;
+    const known = lk && lk.flightNo === parsed.iata && lk.date === draft.date && draft.route;
     if (known || (draft.route && draft.route.source === 'manual')) return;
     doLookup(false);
   };
@@ -1156,7 +1167,7 @@
     fillSelects();
     isNew = !flight;
     draft = flight ? structuredClone(flight) : S.newFlight(newItemDate());
-    upgradeTouched = !!flight && flight.upgradeClass !== flight.bookedClass;
+    upgradeTouched = !!flight && E.isUpgraded(flight);
     // a saved cost that is an estimate (also one for the booked or earning cabin) follows the flown cabin's; one typed in stays
     co2Touched = !!flight && +flight.co2Cost > 0 && !(state.settings.currency === 'EUR' && E.co2CostIsEstimate(flight));
     form.date.value = dateToField(draft.date);
@@ -1213,7 +1224,7 @@
     });
   };
   const datePicker = $('#datePicker');
-  wireDateField(form.date, $('#btnDatePick'), datePicker, () => updatePreview());
+  wireDateField(form.date, $('#btnDatePick'), datePicker, () => { updatePreview(); autoLookup(); });
 
   wireDateField(stayForm.date, $('#btnStayDatePick'), $('#stayDatePicker'));
   $$('[data-close]', stayDlg).forEach(b => b.addEventListener('click', () => stayDlg.close()));
@@ -1289,6 +1300,7 @@
       lookupOperating();
     }
     if (e.target.name === 'transport') autoLookup();   // back to Flight: look up the route if there is none yet
+    if (e.target.name === 'date') autoLookup();        // routes are looked up per date
     if (e.target.name === 'bookingCode') {
       const k = E.bookingKey(form.bookingCode.value), booking = state.bookings[k];
       form.bookingCode.value = k;
@@ -1310,13 +1322,19 @@
     const T = TRANSPORT[draft.transport];
     if (!draft.date) { toast('Please enter the date as YYYY/MM/DD'); form.date.focus(); return; }
     if (!E.parseFlightNo(draft.flightNo)) { toast(`Please enter a valid ${T.number.toLowerCase()} number, e.g. ${T.placeholder}`); form.flightNo.focus(); return; }
-    if (isFlight(draft) && draft.upgradeClass !== draft.bookedClass && !MM.UPGRADE_TYPES[draft.upgradeType]) {
-      toast('Please choose how the upgrade was obtained'); form.upgradeType.focus(); return;
+    if (E.isUpgraded(draft)) {   // flights only: readForm gives trains and buses none
+      if (MM.CLASSES.indexOf(draft.upgradeClass) < MM.CLASSES.indexOf(draft.bookedClass)) {
+        toast('The upgrade class must be above the booked class'); form.upgradeClass.focus(); return;
+      }
+      if (!MM.UPGRADE_TYPES[draft.upgradeType]) { toast('Please choose how the upgrade was obtained'); form.upgradeType.focus(); return; }
     }
-    if (isFlight(draft) && !draft.route && !(draft.routeLookup && draft.routeLookup.flightNo === draft.flightNo)) {
-      const d = draft;
+    const d = draft;
+    await pendingLookup;   // e.g. started by leaving the flight number field: its answer saves a second request
+    if (stale(d)) return;   // cancelled while waiting
+    const lk = draft.routeLookup;
+    if (isFlight(draft) && !draft.route && !(lk && lk.flightNo === draft.flightNo && lk.date === draft.date)) {
       await doLookup(false);
-      if (stale(d)) return;   // cancelled while waiting
+      if (stale(d)) return;
     }
     const flight = structuredClone(draft);
     if (flight.routeLookup && flight.routeLookup.status === 'loading') flight.routeLookup = null;

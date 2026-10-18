@@ -5,7 +5,6 @@
   const LS_KEY = 'mm-status-tracker:v1';   // not the file format version: renaming it would lose the data saved in browsers
   const FORMAT = 'mm-status-tracker';
   const VERSION = 2;   // file format; older data (version 1) is refused by S.parse
-  const DATE = /^\d{4}-\d{2}-\d{2}$/;
   const clone = (o) => JSON.parse(JSON.stringify(o));
 
   S.uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -100,7 +99,7 @@
   };
   const list = (xs, make) => {
     const safeId = safeIds();
-    return (Array.isArray(xs) ? xs : []).filter(x => isObj(x) && DATE.test(x.date))
+    return (Array.isArray(xs) ? xs : []).filter(x => isObj(x) && E.parseDate(x.date) === x.date)   // a real ISO date
       .map(x => ({ ...make(x.date), ...x, id: safeId(x.id) }));
   };
 
@@ -118,8 +117,13 @@
   const normalizeFlight = (f) => {
     const d = S.newFlight(f.date);
     for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
-    if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = f.upgradeClass = 'Economy';   // as the dialog shows it
-    if (!E.hasBooster(f)) f.co2Cost = 0;   // as the dialog saves it: a CO₂ cost only with a booster
+    // as the dialog saves them: trains in 2nd or 1st class; trains and buses without the flight-only fields
+    if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = 'Economy';
+    if (f.transport !== 'flight') {
+      Object.assign(f, { operatingFlightNo: '', upgradeClass: f.bookedClass, upgradeType: '', upgradeCost: 0,
+        earnClassOverride: 'auto', haulOverride: 'auto', co2Level: 'none' });
+    }
+    if (!E.hasBooster(f)) f.co2Cost = 0;   // a CO₂ cost only with a booster
     return f;
   };
 
