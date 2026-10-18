@@ -117,6 +117,11 @@ assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraZrh, co2Level: 'small' 
 assert.strictEqual(['2026/01/15', '2026-1-15', '2026.1.5', '20260115', '2026/02/30', '2026/13/01', '15.01.2026'].map(E.parseDate).join(','),
   '2026-01-15,2026-01-15,2026-01-05,2026-01-15,,,');
 
+/* ---------- money fields: a comma is a decimal separator too ---------- */
+assert.strictEqual(['9,11', '9.11', '146,60', ' 146.6 ', '9,', ',5', '1.234,56', '1,234.56', '1.000.000', '12 345,6', '€ 7,30', "1'200.50"]
+  .map(E.parseAmount).join(' '), '9.11 9.11 146.6 146.6 9 0.5 1234.56 1234.56 1000000 12345.6 7.3 1200.5');
+assert.strictEqual(['', null, undefined, 'abc', '-5', '5-3', '.', 0, 12.5].map(E.parseAmount).join(' '), '0 0 0 0 0 0 0 0 12.5');
+
 /* ---------- status ---------- */
 {
   const status = (p, qp, hon, qpRail = 0, honRail = 0) => E.status({ p, qp, hon, qpRail, honRail }, rules);

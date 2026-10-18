@@ -553,7 +553,7 @@
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
         <td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
-        <td class="num"><input type="number" min="0" step="0.01" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input">
+        <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input">
           <div class="muted" data-cell="co2-est">${co2EstCell(f, level)}</div></td>
         <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>
       </tr>`;
@@ -567,7 +567,7 @@
         <td><select data-mix="haul" aria-label="Haul" ${rail ? 'disabled' : ''}>${opts(['continental', 'intercontinental'], r.haul, h => HAUL_LABEL[h])}</select></td>
         <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? Object.keys(MM.RAIL_CLASSES) : MM.CLASSES, r.cls)}</select></td>
         <td><select data-mix="co2Level" aria-label="CO₂ booster" ${rail ? 'disabled' : ''}>${opts(MM.CO2_LEVELS, r.co2Level, l => MM.CO2_LABEL[l])}</select></td>
-        <td class="num"><input type="number" min="0" step="0.01" data-mix="cost" value="${r.cost || ''}" placeholder="0" aria-label="Cost per segment" class="num-input"></td>
+        <td class="num"><input inputmode="decimal" autocomplete="off" data-mix="cost" value="${r.cost || ''}" placeholder="0" aria-label="Cost per segment" class="num-input"></td>
         <td class="num" data-cell="sum"></td>
         <td><button class="icon-btn" data-mix-remove aria-label="Remove row" title="Remove row">✕</button></td>
       </tr>`;
@@ -619,8 +619,8 @@
 
     /* --- CO₂ what-ifs --- */
     const setOverride = (tr, f, level, cost) => {
-      if (level === f.co2Level && (+cost || 0) === (+f.co2Cost || 0)) delete plan.co2[f.id];
-      else plan.co2[f.id] = { level, cost: Math.max(0, +cost || 0) };
+      if (level === f.co2Level && E.parseAmount(cost) === (+f.co2Cost || 0)) delete plan.co2[f.id];
+      else plan.co2[f.id] = { level, cost: E.parseAmount(cost) };
       $('[data-cell="delta"]', tr).textContent = plusPts(E.co2Gain(f, level, state.settings.rules));
       $('[data-co2-apply]', tr).hidden = !plan.co2[f.id];
       $('[data-cell="co2-est"]', tr).innerHTML = co2EstCell(f, level);
@@ -660,7 +660,7 @@
       $$('[data-mix]', tr).forEach(inp => {
         const k = inp.dataset.mix;
         inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
-          row[k] = k === 'count' ? Math.max(0, Math.round(+inp.value || 0)) : k === 'cost' ? Math.max(0, +inp.value || 0) : inp.value;
+          row[k] = k === 'count' ? Math.max(0, Math.round(+inp.value || 0)) : k === 'cost' ? E.parseAmount(inp.value) : inp.value;
           if (k === 'kind') {   // trains: continental, Economy or Business, no booster
             S.fitMixRow(row);
             save(); renderPlanner(); return;
@@ -1046,9 +1046,9 @@
       bookedClass: form.bookedClass.value,
       upgradeClass: fl ? form.upgradeClass.value : form.bookedClass.value,
       upgradeType: fl ? form.upgradeType.value : '',
-      upgradeCost: fl ? +form.upgradeCost.value || 0 : 0,
+      upgradeCost: fl ? E.parseAmount(form.upgradeCost.value) : 0,
       co2Level: fl ? form.co2Level.value : 'none',
-      co2Cost: fl && form.co2Level.value !== 'none' ? +form.co2Cost.value || 0 : 0,
+      co2Cost: fl && form.co2Level.value !== 'none' ? E.parseAmount(form.co2Cost.value) : 0,
       includeInPlan: form.includeInPlan.checked,
       notes: form.notes.value.trim(),
     });
@@ -1056,7 +1056,7 @@
 
   /** The fare field holds the whole booking's fare when there is a booking code, else this segment's fare. */
   const fareInfo = () => {
-    const k = E.bookingKey(form.bookingCode.value), fare = Math.max(0, +form.fare.value || 0);
+    const k = E.bookingKey(form.bookingCode.value), fare = E.parseAmount(form.fare.value);
     const others = k ? state.flights.filter(f => f.id !== draft.id && E.bookingKey(f.bookingCode) === k) : [];
     // The booking as it will be once saved, to find the segment that carries its fare (E.fareHolders)
     const self = { ...draft, bookingCode: k, flightCost: k ? 0 : fare };
