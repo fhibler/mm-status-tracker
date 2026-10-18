@@ -479,8 +479,13 @@ async function apiTests() {
   assert.strictEqual(A.airport(s3, 'BER').city, 'Berlin');                                       // airports from its answers too
   adb = () => reply(204, null);
   const none = await A.lookup(s3, 'LH1967', '2026-11-17', k);                                       // no such flight: adsbdb
-  assert.strictEqual(`${none.provider}:${none.adbTried}:${none.response.flightroute.destination.iata_code}`, 'undefined:true:OLB');
+  assert.strictEqual(`${none.provider}:${none.adbTried}:${none.adbNote}:${none.response.flightroute.destination.iata_code}`, 'undefined:true:no such flight on that date:OLB');
   assert.strictEqual(A.isProvisional(none, '2026-11-17', '2026-10-18', 'secret'), false);          // asked once, not again
+  assert.strictEqual(A.lookupInfo(none, 'LH1967').adbNote, 'no such flight on that date');           // the dialog says why
+  adb = () => reply(400, { message: 'date out of range' });
+  assert.strictEqual((await A.lookup(s3, 'LH1969', '2028-01-01', k)).adbNote, 'date not available: date out of range');
+  adb = () => reply(200, [{ ...adbFlight, arrival: { airport: { name: 'Somewhere' } } }]);
+  assert.strictEqual((await A.lookup(s3, 'LH1970', '2026-11-17', k)).adbNote, 'no route in its answer');
   adb = () => reply(429, null);
   const quota = await A.lookup(s3, 'LH1968', '2026-11-17', k);                                     // quota: adsbdb, ask again later
   assert.strictEqual(`${quota.status}:${quota.adbError}:${A.isProvisional(quota, '2026-11-17', '2026-10-18', 'secret')}`, 'ok:HTTP 429 – quota or rate limit:true');

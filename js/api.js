@@ -47,7 +47,7 @@
 
   /** What a flight remembers about the lookup of `flightNo` (f.routeLookup); via: the operating flight that gave the route. */
   A.lookupInfo = (entry, flightNo, via) => ({ status: entry.status, source: entry.fromCache ? 'cache' : 'api', flightNo, via, error: entry.error,
-    date: entry.date, fetchedAt: entry.fetchedAt, provider: entry.provider, adbTried: entry.adbTried, adbError: entry.adbError });
+    date: entry.date, fetchedAt: entry.fetchedAt, provider: entry.provider, adbTried: entry.adbTried, adbNote: entry.adbNote, adbError: entry.adbError });
 
   /** Airport by IATA code: from a cached route lookup, else from the bundled airport table (MM.airport). */
   A.airport = (state, iata) => {
@@ -76,8 +76,9 @@
   let adbLast = 0;
 
   /**
-   * Flight `no` departing on `date` from AeroDataBox: an adsbdb-shaped response, or null when it knows no such flight
-   * (204, or 400 for a date outside the plan's range). Throws for other failures (wrong key 401/403, quota 429, network).
+   * Flight `no` departing on `date` from AeroDataBox: { response } (adsbdb-shaped), or { note } saying why there is no
+   * route (204: no such flight; 400: e.g. a date outside the plan's range). Throws for other failures (wrong key
+   * 401/403, quota 429, network).
    */
   const askAeroDataBox = async (no, date, key) => {
     const wait = adbLast + A.adbGap - Date.now();
@@ -85,7 +86,11 @@
     adbLast = Date.now();
     const res = await fetch(`https://${ADB_HOST}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure`,
       { headers: { Accept: 'application/json', 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': ADB_HOST } });
-    if (res.status === 204 || res.status === 404 || res.status === 400) return null;
+    if (res.status === 204 || res.status === 404) return { note: 'no such flight on that date' };
+    if (res.status === 400) {
+      const body = await res.json().catch(() => null);
+      return { note: `date not available${body && body.message ? `: ${body.message}` : ''}` };
+    }
     if (!res.ok) {
       const why = res.status === 401 || res.status === 403 ? ' – check the key' : res.status === 429 ? ' – quota or rate limit' : '';
       throw new Error(`HTTP ${res.status}${why}`);
@@ -93,16 +98,16 @@
     const list = await res.json().catch(() => null);
     const ok = (m) => m && m.airport && m.airport.iata;
     const f = Array.isArray(list) && list.find(x => ok(x.departure) && ok(x.arrival));
-    if (!f) return null;
-    return { flightroute: { callsign_iata: no, airline: f.airline ? { name: f.airline.name } : null,
-      origin: adbAirport(f.departure.airport), destination: adbAirport(f.arrival.airport) } };
+    if (!f) return { note: 'no route in its answer' };
+    return { response: { flightroute: { callsign_iata: no, airline: f.airline ? { name: f.airline.name } : null,
+      origin: adbAirport(f.departure.airport), destination: adbAirport(f.arrival.airport) } } };
   };
 
   /**
    * Returns the cache entry for a flight number on a date (ISO; today when empty). Queries only when no cached answer
    * exists, the cached one is provisional (A.isProvisional), or `force` is set. With an AeroDataBox key, asks
-   * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried) or fails (adbError), asks
-   * adsbdb. Network and server errors of adsbdb (anything but 200 / 404, e.g. 429 rate limit) are cached as 'error',
+   * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried, adbNote says why) or fails
+   * (adbError), asks adsbdb. Network and server errors of adsbdb (anything but 200 / 404, e.g. 429 rate limit) are cached as 'error',
    * which is not final: the next lookup asks again. A forced lookup that fails keeps the earlier answer in the cache.
    * `now` (the clock) and `key` (default: the one in the settings) are for tests.
    */
@@ -113,9 +118,9 @@
     const entry = { date: day, fetchedAt: now.toISOString() };
     if (key) {
       try {
-        const response = await askAeroDataBox(no, day, key);
+        const { response, note } = await askAeroDataBox(no, day, key);
         if (response) Object.assign(entry, { provider: 'aerodatabox', status: 'ok', response });
-        else entry.adbTried = true;
+        else Object.assign(entry, { adbTried: true, adbNote: note });
       } catch (err) {
         entry.adbError = String(err && err.message || err);
       }

@@ -979,7 +979,9 @@
         (r.source === 'manual' || !isFlight(draft) || r.provider === 'aerodatabox' ? ''
           : otherSeason(draft) ? `<br><b style="color:var(--danger)">Looked up in schedule season ${esc(E.iataSeason(lk.fetchedAt))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${again}`
           : '<br><span class="muted">This is the route listed for the flight number at lookup time (adsbdb ignores the date). Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>') +
-        (r.source !== 'manual' && lk && lk.adbError ? `<br><span class="muted">AeroDataBox failed (${esc(lk.adbError)}), so adsbdb was asked.</span>` : '');
+        (r.source === 'manual' || !lk ? ''
+          : lk.adbError ? `<br><span class="muted">AeroDataBox failed (${esc(lk.adbError)}), so adsbdb was asked.</span>`
+          : lk.adbNote ? `<br><span class="muted">AeroDataBox: ${esc(lk.adbNote)} (${esc(dateToField(lk.date))}), so adsbdb was asked.</span>` : '');
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
     } else if (lk && lk.status === 'notfound') {
@@ -1122,7 +1124,11 @@
     }
     save();
     updatePreview();
-    if (force && !res.entry.fromCache) toast(res.route ? 'Route updated from API' : 'No route found');
+    if (force && !res.entry.fromCache) {
+      const e = res.entry, adb = e.adbError ? `AeroDataBox failed (${e.adbError})` : e.adbNote ? `AeroDataBox: ${e.adbNote}` : '';
+      toast(!res.route ? (adb ? `${adb} · no route found` : 'No route found')
+        : e.provider === 'aerodatabox' ? 'Route updated from AeroDataBox for your date' : `${adb ? `${adb} · ` : ''}route from adsbdb`);
+    }
   };
 
   const autoLookup = () => {
