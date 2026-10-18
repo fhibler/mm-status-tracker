@@ -165,8 +165,12 @@
               </div>`).join('')}
           </div></div>
         <div class="card kpi"><div class="label">Cost ${year} (flown + plan)</div>
-          <div class="value">${money(totalCost, true)}</div>
-          <div class="meta">${money(sum.cost.actual.total, true)} spent · ${money(sum.cost.plan.total, true)} planned${sum.forecast.qp ? ` · ${money(totalCost / sum.forecast.qp)}/QP` : ''}</div></div>
+          <div class="value fit">${money(totalCost, true)}</div>
+          <div class="meta"><span class="nw">${money(sum.cost.actual.total, true)} spent</span> · <span class="nw">${money(sum.cost.plan.total, true)} planned</span></div>
+          <dl class="kpi-ratios" title="Cost (flown + plan) divided by the Points, QP and HON Points incl. planned flights">
+            ${[['p', 'per Point', '--s-p'], ['qp', 'per QP', '--s-qp'], ['hon', 'per HON Point', '--s-hon']].map(([k, label, color]) => `
+              <div><dt><i style="--c:var(${color})"></i>Cost ${label}</dt><dd>${sum.forecast[k] > 0 ? money(totalCost / sum.forecast[k]) : '–'}</dd></div>`).join('')}
+          </dl></div>
       </div>`;
 
     const warn = sum.unknown ? `<div class="card" style="border-color:var(--danger)"><b>${sum.unknown} segment(s) without haul information</b> earn 0 points until a route or haul is set. <button class="btn small" data-act="goto-flights">Fix in Activity</button></div>` : '';
@@ -202,7 +206,7 @@
           <div class="legend"><span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span><span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span><span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span></div>` : ''}
       </div>`;
 
-    fitText($$('.kpi-trio b', host));
+    fitText($$('.kpi-trio b, .kpi .value.fit', host));   // a large cost total shrinks to fit its card
     renderProgress(sum, rules);
     renderCumCharts(sum, rules);
     renderCostChart(sum);
