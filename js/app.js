@@ -44,6 +44,9 @@
   const PT_LABEL = { p: 'Points', qp: 'QP', hon: 'HON Points' };
   /** "50 Points, 20 QP" for the non-zero values of a gap (see E.gap). */
   const missingTxt = (g) => Object.entries(g).filter(([, v]) => v > 0).map(([k, v]) => `${num(v)} ${PT_LABEL[k]}`).join(', ');
+  const UNIT_LABEL = { p: 'P', qp: 'QP', hon: 'HON' };
+  /** "€6.97/QP": cost per point of kind k, or a dash when there are no such points. */
+  const perUnit = (cost, pts, k) => (pts > 0 ? `<span class="nw">${money(cost / pts)}</span>/${UNIT_LABEL[k]}` : '–');
   /** Anything that "Load demo data" would replace. */
   const hasData = () => state.flights.length || state.adjustments.length || state.stays.length
     || JSON.stringify(state.settings) !== JSON.stringify(S.empty().settings)   // starting status, rules, number, currency
@@ -162,15 +165,12 @@
                 <span class="k"><i style="--c:var(${color})"></i>${label}</span>
                 <b>${num(sum.actual[k])}</b>
                 <span class="fc" ${sum.forecast[k] === sum.actual[k] ? 'aria-hidden="true" style="visibility:hidden"' : ''} title="Forecast incl. planned flights">→ ${num(sum.forecast[k])}</span>
+                <span class="cpu" title="Cost ${year} (flown + plan) per ${PT_LABEL[k].replace(/s$/, '')} incl. planned flights">${perUnit(totalCost, sum.forecast[k], k)}</span>
               </div>`).join('')}
           </div></div>
         <div class="card kpi"><div class="label">Cost ${year} (flown + plan)</div>
           <div class="value fit">${money(totalCost, true)}</div>
-          <div class="meta"><span class="nw">${money(sum.cost.actual.total, true)} spent</span> · <span class="nw">${money(sum.cost.plan.total, true)} planned</span></div>
-          <dl class="kpi-ratios" title="Cost (flown + plan) divided by the Points, QP and HON Points incl. planned flights">
-            ${[['p', 'per Point', '--s-p'], ['qp', 'per QP', '--s-qp'], ['hon', 'per HON Point', '--s-hon']].map(([k, label, color]) => `
-              <div><dt><i style="--c:var(${color})"></i>Cost ${label}</dt><dd>${sum.forecast[k] > 0 ? money(totalCost / sum.forecast[k]) : '–'}</dd></div>`).join('')}
-          </dl></div>
+          <div class="meta"><span class="nw">${money(sum.cost.actual.total, true)} spent</span> · <span class="nw">${money(sum.cost.plan.total, true)} planned</span></div></div>
       </div>`;
 
     const warn = sum.unknown ? `<div class="card" style="border-color:var(--danger)"><b>${sum.unknown} segment(s) without haul information</b> earn 0 points until a route or haul is set. <button class="btn small" data-act="goto-flights">Fix in Activity</button></div>` : '';
@@ -316,18 +316,16 @@
       return `<tr data-year="${h.year}" ${h.year === year ? 'style="font-weight:600"' : ''}>
         <td>${h.year}</td>
         <td class="num">${h.rows.filter(r => !r.planned).length}${hasPlan ? ` <span class="muted">+${h.rows.filter(r => r.planned && r.counts).length}</span>` : ''}</td>
-        <td class="num">${num(h.actual.p)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.p)}</span>` : ''}</td>
-        <td class="num">${num(h.actual.qp)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.qp)}</span>` : ''}</td>
-        <td class="num">${num(h.actual.hon)}${hasPlan ? ` <span class="muted">→ ${num(h.forecast.hon)}</span>` : ''}</td>
+        ${['p', 'qp', 'hon'].map(k => `<td class="num">${num(h.actual[k])}${hasPlan ? ` <span class="muted">→ ${num(h.forecast[k])}</span>` : ''}
+          <div class="cpu">${perUnit(total, h.forecast[k], k)}</div></td>`).join('')}
         <td>${badge(h.statusActual)}${h.fromStatement ? ' <span class="muted">(statement)</span>' : ''}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
         <td>${h.statusActual !== 'NONE' || h.statusForecast !== 'NONE' ? C.fmtDate(E.validUntil(h.year)) : '–'}</td>
         <td>${badge(h.held)}${h.downgraded ? `<div class="muted">${downgradeTxt(h)}</div>` : h.carriedByPlan && h.held === h.carriedIn ? '<div class="muted">with planned flights</div>' : ''}</td>
         <td class="num">${money(total, true)}${hasPlan ? ` <span class="muted">(${money(h.cost.plan.total, true)} plan)</span>` : ''}</td>
-        <td class="num">${h.forecast.qp ? money(total / h.forecast.qp) : '–'}</td>
       </tr>`;
     }).join('');
     $('#histTable').innerHTML = `<table>
-      <thead><tr><th>CY</th><th class="num">Segments</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status earned</th><th>Valid until</th><th>Status held</th><th class="num">Cost</th><th class="num">Cost / QP</th></tr></thead>
+      <thead><tr><th>CY</th><th class="num">Segments</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status earned</th><th>Valid until</th><th>Status held</th><th class="num">Cost</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
     $$('#histTable tr[data-year]').forEach(tr => tr.addEventListener('click', () => { year = +tr.dataset.year; render(); }));
     const yc = $('#yearCost');
