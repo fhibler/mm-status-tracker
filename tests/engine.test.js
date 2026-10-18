@@ -6,7 +6,7 @@ const assert = require('assert');
 
 // The app's scripts run in their own context (like a browser page). fetch is stubbed per test via `respond`.
 let respond = () => { throw new Error('unexpected fetch'); };
-const ctx = { console, fetch: async (url) => respond(url) };
+const ctx = { console, fetch: async (url, opts) => respond(url, opts) };
 ctx.window = ctx;
 vm.createContext(ctx);
 for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js']) {
@@ -14,6 +14,9 @@ for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js']) {
 }
 const { MM } = ctx;
 const E = MM.engine, S = MM.store, A = MM.api;
+// no AeroDataBox key from the browser (tests/browser.html shares localStorage with the app): tests pass one as `key`
+A.aerodataboxKey = () => '';
+A.adbGap = 0;
 const rules = MM.DEFAULT_RULES;
 const TODAY = '2026-06-15';   // fixed "today": later items are planned
 // Objects and arrays made by the app come from its context; compare their fields (or joined strings), since
@@ -405,7 +408,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(rich))), JSON.stringify(rich));
 }
 
-/* ---------- route lookup (adsbdb) with a stubbed fetch ---------- */
+/* ---------- route lookup (adsbdb, AeroDataBox) with a stubbed fetch ---------- */
 async function apiTests() {
   const st = state();
   const reply = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -459,6 +462,35 @@ async function apiTests() {
   assert.strictEqual((await A.lookup(s2, 'LH1966', '2026-07-10', { now: winter })).fromCache, true);   // a past summer flight keeps its answer
   assert.strictEqual(A.cacheKey('lh1966', '2026-11-17'), 'LH1966 2026-11-17');
   assert.strictEqual(`${A.isCacheKey('LH1966 2026-11-17')}:${A.isCacheKey('4Y123 2026-01-01')}:${A.isCacheKey('LH1966')}`, 'true:true:false');
+
+  // with an AeroDataBox key: the route on the date first, adsbdb when it knows no such flight or fails
+  const adbAp = (iata, city, cc) => ({ iata, name: `${city} Airport`, municipalityName: city, countryCode: cc, location: { lat: 1, lon: 2 } });
+  const adbFlight = { number: 'LH 1966', airline: { name: 'Lufthansa' }, departure: { airport: adbAp('MUC', 'Munich', 'DE') }, arrival: { airport: adbAp('BER', 'Berlin', 'DE') } };
+  const s3 = state(), heads = [];
+  let adb = () => reply(200, [adbFlight]);
+  calls.length = 0;
+  respond = (url, opts) => {
+    calls.push(url.replace(/^https:\/\/([^/]+).*?([^/]+)$/, '$1 $2'));
+    if (url.includes('aerodatabox')) { heads.push(opts.headers['X-RapidAPI-Key']); return adb(); }
+    return reply(200, { response: fr('OLB') });
+  };
+  const k = { key: 'secret', now: october };
+  const byDate = await A.resolveRoute(s3, 'LH1966', null, '2026-11-17', k);
+  assert.strictEqual(`${byDate.route.destination.iata}:${byDate.route.destination.city}:${byDate.route.provider}:${heads}`, 'BER:Berlin:aerodatabox:secret');
+  assert.strictEqual(`${calls}:${A.otherSeason(byDate.entry, '2026-11-17')}`, 'aerodatabox.p.rapidapi.com 2026-11-17?dateLocalRole=Departure:false');   // date-exact, no adsbdb
+  assert.strictEqual(A.airport(s3, 'BER').city, 'Berlin');                                       // airports from its answers too
+  adb = () => reply(204, null);
+  const none = await A.lookup(s3, 'LH1967', '2026-11-17', k);                                       // no such flight: adsbdb
+  assert.strictEqual(`${none.provider}:${none.adbTried}:${none.response.flightroute.destination.iata_code}`, 'undefined:true:OLB');
+  assert.strictEqual(A.isProvisional(none, '2026-11-17', '2026-10-18', 'secret'), false);          // asked once, not again
+  adb = () => reply(429, null);
+  const quota = await A.lookup(s3, 'LH1968', '2026-11-17', k);                                     // quota: adsbdb, ask again later
+  assert.strictEqual(`${quota.status}:${quota.adbError}:${A.isProvisional(quota, '2026-11-17', '2026-10-18', 'secret')}`, 'ok:HTTP 429 – quota or rate limit:true');
+  // an adsbdb answer from another season is asked again as soon as a key is set
+  adb = () => reply(200, [adbFlight]);
+  s2.apiCache['LH1966 2026-11-17'] = nov;                                                            // the summer answer again
+  const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', k);
+  assert.strictEqual(`${withKey.fromCache}:${withKey.provider}`, 'false:aerodatabox');
 }
 
 module.exports = apiTests().then(() => console.log('engine tests passed'));

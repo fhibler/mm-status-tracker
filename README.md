@@ -12,7 +12,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   as a single total on the booking's first segment (the first one that counts towards the forecast, if a planned
   segment is left out), so the cost charts, cost per QP and yearly totals put it in that segment's month and year.
   The booking's other segments show where the fare is. Upgrade and CO₂ costs stay per segment.
-- **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key).
+- **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key), or by date
+  via [AeroDataBox](https://rapid.aerodatabox.com/pricing) with your own free key.
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.
 - **Points engine**: earns on the booked class, or on the upgrade class for fixed-price (online or airport) and bid upgrades. Upgrades with miles, vouchers or operational upgrades earn on the booked class.
@@ -147,6 +148,12 @@ site to GitHub Pages.
   dialog ask adsbdb again. If an airline reused or changed the number, the lookup can still show the wrong route
   (e.g. UA2837 shows NRT–SFO). Type the
   airports by hand, or set the haul, in the dialog in that case.
+- **Routes by date (optional)**: with your own [AeroDataBox](https://rapid.aerodatabox.com/pricing) key from RapidAPI
+  (Settings → Route lookup), the app asks AeroDataBox for the route on the flight date first and falls back to
+  adsbdb when it doesn't know the flight or fails (e.g. quota used up). The free Basic plan has 400 units a month,
+  and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
+  set, routes marked **check** are looked up again. The key is kept in this browser only (not in the `.json`), so
+  set it on each device; "Delete all data" removes it.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
   Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland
