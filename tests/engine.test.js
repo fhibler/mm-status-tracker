@@ -14,9 +14,7 @@ for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js']) {
 }
 const { MM } = ctx;
 const E = MM.engine, S = MM.store, A = MM.api;
-// no AeroDataBox key from the browser (tests/browser.html shares localStorage with the app): tests pass one as `key`
-A.aerodataboxKey = () => '';
-A.adbGap = 0;
+A.adbGap = 0;   // no wait between AeroDataBox requests
 const rules = MM.DEFAULT_RULES;
 const TODAY = '2026-06-15';   // fixed "today": later items are planned
 // Objects and arrays made by the app come from its context; compare their fields (or joined strings), since
@@ -400,9 +398,9 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.throws(() => S.parse(JSON.stringify({ format: 'mm-status-tracker', version: 1, flights: [] })), /older version/);
   assert.throws(() => S.parse(JSON.stringify({ format: 'other', version: 2 })), /Not a Miles/);
   assert.throws(() => S.parse(JSON.stringify({ version: 2 })), /Not a Miles/);
-  // a saved file loads back unchanged: demo data plus stays, a scenario, starting status and number
+  // a saved file loads back unchanged: demo data plus stays, a scenario, starting status, number and AeroDataBox key
   const rich = S.demo(), f0 = rich.flights[0];
-  Object.assign(rich.settings, { startStatus: { status: 'SEN', year: 2025 }, memberNumber: '992000123456789' });
+  Object.assign(rich.settings, { startStatus: { status: 'SEN', year: 2025 }, memberNumber: '992000123456789', aerodataboxKey: 'ab12cd34' });
   rich.stays.push(S.newStay(f0.date));
   rich.plans[f0.date.slice(0, 4)] = { co2: { [f0.id]: { level: 'small', cost: 5 } }, mix: [S.newMixRow()] };
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(rich))), JSON.stringify(rich));
@@ -466,7 +464,7 @@ async function apiTests() {
   // with an AeroDataBox key: the route on the date first, adsbdb when it knows no such flight or fails
   const adbAp = (iata, city, cc) => ({ iata, name: `${city} Airport`, municipalityName: city, countryCode: cc, location: { lat: 1, lon: 2 } });
   const adbFlight = { number: 'LH 1966', airline: { name: 'Lufthansa' }, departure: { airport: adbAp('MUC', 'Munich', 'DE') }, arrival: { airport: adbAp('BER', 'Berlin', 'DE') } };
-  const s3 = state(), heads = [];
+  const s3 = state({ settings: { aerodataboxKey: ' secret ' } }), heads = [];   // the key from the settings (spaces dropped)
   let adb = () => reply(200, [adbFlight]);
   calls.length = 0;
   respond = (url, opts) => {
@@ -474,7 +472,7 @@ async function apiTests() {
     if (url.includes('aerodatabox')) { heads.push(opts.headers['X-RapidAPI-Key']); return adb(); }
     return reply(200, { response: fr('OLB') });
   };
-  const k = { key: 'secret', now: october };
+  const k = { now: october };
   const byDate = await A.resolveRoute(s3, 'LH1966', null, '2026-11-17', k);
   assert.strictEqual(`${byDate.route.destination.iata}:${byDate.route.destination.city}:${byDate.route.provider}:${heads}`, 'BER:Berlin:aerodatabox:secret');
   assert.strictEqual(`${calls}:${A.otherSeason(byDate.entry, '2026-11-17')}`, 'aerodatabox.p.rapidapi.com 2026-11-17?dateLocalRole=Departure:false');   // date-exact, no adsbdb
@@ -489,7 +487,7 @@ async function apiTests() {
   // an adsbdb answer from another season is asked again as soon as a key is set
   adb = () => reply(200, [adbFlight]);
   s2.apiCache['LH1966 2026-11-17'] = nov;                                                            // the summer answer again
-  const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', k);
+  const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', { ...k, key: 'secret' });
   assert.strictEqual(`${withKey.fromCache}:${withKey.provider}`, 'false:aerodatabox');
 }
 

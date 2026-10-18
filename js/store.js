@@ -12,7 +12,7 @@
 
   S.empty = () => ({
     format: FORMAT, version: VERSION,
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '' },
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '', aerodataboxKey: '' },
     flights: [],
     bookings: {},      // booking code -> { fare }: one fare per booking, counted once on one of its segments (E.fareHolders)
     adjustments: [],   // manual point corrections from the account statement
@@ -48,6 +48,8 @@
 
   /** Miles & More number: digits only (cards show it in groups, e.g. "992 000 123 456 789"). */
   S.memberNumber = (v) => String(v || '').replace(/\D/g, '').slice(0, 20);
+  /** An API key as typed, without spaces and other characters keys don't have (RapidAPI keys are hex-like); '' when unset. */
+  S.apiKey = (v) => String(v || '').replace(/[^\w-]/g, '').slice(0, 200);
 
   /** "miles-and-more-992000123456789.json" with a Miles & More number, else "miles-and-more-status-2026-10-16.json". */
   S.fileName = (state) => {
@@ -161,6 +163,7 @@
     s.settings.rules = mergeRules(MM.DEFAULT_RULES, set.rules);
     if (MM.CURRENCIES.includes(set.currency)) s.settings.currency = set.currency;
     s.settings.memberNumber = S.memberNumber(set.memberNumber);
+    s.settings.aerodataboxKey = S.apiKey(set.aerodataboxKey);
     if (isObj(set.startStatus) && MM.STATUS_ORDER.includes(set.startStatus.status)) {
       const y = +set.startStatus.year;
       s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };

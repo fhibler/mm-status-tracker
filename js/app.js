@@ -44,7 +44,7 @@
    */
   const needsLookup = (f) => isFlight(f) && ((!f.route && f.haulOverride === 'auto'
     && !(f.routeLookup && f.routeLookup.status === 'notfound' && f.routeLookup.flightNo === f.flightNo))
-    || (hasRoute(f.route) && f.route.source === 'api' && A.isProvisional(f.routeLookup, f.date)));
+    || (hasRoute(f.route) && f.route.source === 'api' && A.isProvisional(f.routeLookup, f.date, undefined, A.aerodataboxKey(state))));
   const HAUL_LABEL = { continental: 'Continental', intercontinental: 'Intercontinental' };
   /** Haul in a table cell: short, and a warning when it is unknown. */
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
@@ -839,16 +839,17 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Route lookup</h2><span class="sub">kept in this browser only, not in the .json</span></div>
+          <div class="card-head"><h2>Route lookup</h2><span class="sub">your own key, saved with your data</span></div>
           <div class="grid">
-            <label>AeroDataBox key (RapidAPI)<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(A.aerodataboxKey())}">
-              <small class="field-hint">${A.aerodataboxKey() ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
+            <label>AeroDataBox key (RapidAPI)<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(A.aerodataboxKey(state))}">
+              <small class="field-hint">${A.aerodataboxKey(state) ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
           </div>
           <p class="hint">Without a key, routes come from adsbdb.com, which knows one route per flight number (the one flown
             at the moment) and ignores the date. With your own <a href="https://rapid.aerodatabox.com/pricing" target="_blank" rel="noopener">AeroDataBox</a>
             key, the app asks for the route on the flight date first and falls back to adsbdb. The free Basic plan has
             400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached, so each flight is asked once.
-            The key stays in this browser: set it again on another device.</p>
+            The key is saved in this browser and in your <code>.json</code>, so loading the file on another device brings it
+            along. Keep the file to yourself.</p>
         </div>
         <div class="card">
           <div class="card-head"><h2>Data</h2></div>
@@ -883,9 +884,8 @@
     }));
     $('#currency', host).addEventListener('change', (e) => { state.settings.currency = e.target.value; save(); toast('Currency updated'); });
     $('#adbKey', host).addEventListener('change', (e) => {
-      const k = e.target.value.trim();
-      if (!A.setAerodataboxKey(k)) { toast('Could not save the key: browser storage is blocked'); return; }
-      render(); toast(k ? 'AeroDataBox key saved in this browser' : 'AeroDataBox key removed');
+      state.settings.aerodataboxKey = S.apiKey(e.target.value);
+      save(); render(); toast(state.settings.aerodataboxKey ? 'AeroDataBox key saved' : 'AeroDataBox key removed');
     });
     const member = $('#memberNumber', host);
     member.addEventListener('input', () => { $('#memberHint', host).textContent = memberHint(S.memberNumber(member.value)); });
@@ -980,8 +980,8 @@
       const prov = r.provider === 'aerodatabox' ? `AeroDataBox for ${esc(dateToField(lk && lk.date || draft.date))}` : 'adsbdb.com';
       const src = r.source === 'manual' ? 'entered manually' : `from ${prov}${r.via ? ` via ${esc(r.via)}` : ''}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
       const unknown = !r.origin.country || !r.destination.country;
-      const again = A.isProvisional(lk, draft.date) ? 'Click "Look up route" for the route on your date.'
-        : !A.aerodataboxKey() ? 'Add an AeroDataBox key in Settings to look up routes by date.'
+      const again = A.isProvisional(lk, draft.date, undefined, A.aerodataboxKey(state)) ? 'Click "Look up route" for the route on your date.'
+        : !A.aerodataboxKey(state) ? 'Add an AeroDataBox key in Settings to look up routes by date.'
         : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up routes" on the Flights page asks again.' : '';
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
         (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
@@ -996,7 +996,7 @@
     } else if (lk && lk.status === 'error') {
       info.innerHTML = `<b style="color:var(--danger)">Lookup failed</b> (${esc(lk.error || 'network error')}). Try again or enter the airports manually.`;
     } else {
-      info.textContent = A.aerodataboxKey() ? 'Route is looked up automatically for the flight number and date (AeroDataBox, else adsbdb.com). Results are cached in your .json.' : 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
+      info.textContent = A.aerodataboxKey(state) ? 'Route is looked up automatically for the flight number and date (AeroDataBox, else adsbdb.com). Results are cached in your .json.' : 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
     }
     info.insertAdjacentHTML('beforeend', operatingInfo());
   };
@@ -1358,7 +1358,7 @@
     }
     if (act === 'reset-rules') { state.settings.rules = S.empty().settings.rules; save(); render(); toast('Rules reset to defaults'); }
     if (act === 'clear-cache') confirmInline(b, 'Clear cache? Click again', () => { state.apiCache = {}; save(); render(); toast('API cache cleared'); });
-    if (act === 'clear-all') confirmInline(b, 'Delete everything? Click again', () => { state = S.empty(); A.setAerodataboxKey(''); save(); render(); toast('All data deleted'); });
+    if (act === 'clear-all') confirmInline(b, 'Delete everything? Click again', () => { state = S.empty(); save(); render(); toast('All data deleted'); });
   });
 
   $$('.tabs button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));

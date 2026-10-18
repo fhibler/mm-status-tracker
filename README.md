@@ -55,7 +55,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   thresholds, costs per month, a segment breakdown, and a history table by year with each status and
   its validity.
 - **Save / Load `.json`**: the file holds your flights and fares, point corrections, hotel stays, planner
-  scenarios, your settings and every route lookup the app made so far (`apiCache`, with a `status` per flight
+  scenarios, your settings (including an AeroDataBox key) and every route lookup the app made so far (`apiCache`, with a `status` per flight
   number and date). When you load a saved file, the app reuses those answers and does not call the API again
   (except for a provisional route, see Notes). Lookups saved before 18 Oct 2026 had no date and are dropped on load;
   the routes stored with your flights stay. Files in the old format (version 1, saved
@@ -152,8 +152,8 @@ site to GitHub Pages.
   (Settings → Route lookup), the app asks AeroDataBox for the route on the flight date first and falls back to
   adsbdb when it doesn't know the flight or fails (e.g. quota used up). The free Basic plan has 400 units a month,
   and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
-  set, routes marked **check** are looked up again. The key is kept in this browser only (not in the `.json`), so
-  set it on each device; "Delete all data" removes it.
+  set, routes marked **check** are looked up again. The key is saved with your settings, in the
+  browser and in the `.json`, so loading the file on another device brings it along: keep the file to yourself.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
   Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland
