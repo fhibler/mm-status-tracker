@@ -138,21 +138,20 @@ site to GitHub Pages.
   the **operating** airline: UA9414 operated by Lufthansa earns Points, QP and HON Circle Points, while LH9246
   operated by United earns Points only (Star Alliance). Exception: SWISS LX8000–8499 operated by Edelweiss
   earns like SWISS. When the marketing number has no route, the app uses the operating flight's route (in the
-  dialog and in "Look up routes"). Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
+  flight dialog). Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
 - adsbdb keeps one route per flight number (the one it currently operates) and ignores the date. The app caches
   each lookup per flight number and date, so an answer for one date is not reused for another. Airlines plan routes
   per IATA schedule season (summer from the last Sunday of March, winter from the last Sunday of October), and some
   fly a number on another route in the other season: LH1966 is MUC–OLB in summer and MUC–BER in winter. A route
-  looked up in another season than the flight's is marked **check** in the flights table and explained in the
-  dialog. Once the flight's season has started, "Look up routes" on the Flights page and "Look up route" in the
-  dialog ask adsbdb again. If an airline reused or changed the number, the lookup can still show the wrong route
+  looked up in another season than the flight's is explained in the flight dialog; once the flight's season has
+  started, "Look up route" there asks adsbdb again. If an airline reused or changed the number, the lookup can still show the wrong route
   (e.g. UA2837 shows NRT–SFO). Type the
   airports by hand, or set the haul, in the dialog in that case.
 - **Routes by date (optional)**: with your own [AeroDataBox](https://rapid.aerodatabox.com/pricing) key from RapidAPI
   (Settings → Route lookup), the app asks AeroDataBox for the route on the flight date first and falls back to
   adsbdb when it doesn't know the flight or fails (e.g. quota used up). The free Basic plan has 400 units a month,
   and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
-  set, routes marked **check** are looked up again. The key is saved with your settings, in the
+  set, "Look up route" in the dialog replaces a route from another season. The key is saved with your settings, in the
   browser and in the `.json`, so loading the file on another device brings it along: keep the file to yourself.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;

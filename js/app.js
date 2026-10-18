@@ -36,15 +36,8 @@
   const hasRoute = (r) => !!(r && r.origin && r.destination);
   /** A looked-up route from another IATA season than the flight's (A.otherSeason): it may differ on the flight date. */
   const otherSeason = (f) => hasRoute(f.route) && f.route.source === 'api' && A.otherSeason(f.routeLookup, f.date);
-  const routeTxt = (f) => (hasRoute(f.route) ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}${otherSeason(f) ? ' <span class="pill warn" title="Looked up in another schedule season – check the route on your ticket">check</span>' : ''}` : '<span class="pill warn">no route</span>');
+  const routeTxt = (f) => (hasRoute(f.route) ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}` : '<span class="pill warn">no route</span>');
   const isFlight = (f) => f.transport === 'flight';
-  /**
-   * A flight whose route a lookup may still find: no train or bus (not in adsbdb), no haul override, not "not found";
-   * or a looked-up route that is provisional (looked up in another IATA season, and the flight's season has started).
-   */
-  const needsLookup = (f) => isFlight(f) && ((!f.route && f.haulOverride === 'auto'
-    && !(f.routeLookup && f.routeLookup.status === 'notfound' && f.routeLookup.flightNo === f.flightNo))
-    || (hasRoute(f.route) && f.route.source === 'api' && A.isProvisional(f.routeLookup, f.date, undefined, A.aerodataboxKey(state))));
   const HAUL_LABEL = { continental: 'Continental', intercontinental: 'Intercontinental' };
   /** Haul in a table cell: short, and a warning when it is unknown. */
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
@@ -349,7 +342,6 @@
     const sum = E.yearSummary(state, year);
     const showCO2 = sum.rows.some(r => E.hasBooster(r.f));
     const flown = sum.rows.filter(r => !r.planned), planned = sum.rows.filter(r => r.planned);
-    const missing = sum.rows.filter(r => needsLookup(r.f)).length;
     // Flown / planned is shown by the section rows, so there is no status column.
     const cols = 12 + (showCO2 ? 1 : 0);
     const segs = E.bookingSegments(state), holders = E.fareHolders(state);
@@ -396,7 +388,6 @@
           <h2>Flights &amp; trains · CY ${year}</h2>
           <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
-            ${missing ? `<button class="btn small" data-act="lookup-missing">Look up ${missing} route(s)</button>` : ''}
             <button class="btn primary" data-act="add">+ Add flight / train</button>
           </div>
         </div>
@@ -982,7 +973,7 @@
       const unknown = !r.origin.country || !r.destination.country;
       const again = A.isProvisional(lk, draft.date, undefined, A.aerodataboxKey(state)) ? 'Click "Look up route" for the route on your date.'
         : !A.aerodataboxKey(state) ? 'Add an AeroDataBox key in Settings to look up routes by date.'
-        : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up routes" on the Flights page asks again.' : '';
+        : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up route" asks again.' : '';
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
         (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
         (r.source === 'manual' || !isFlight(draft) || r.provider === 'aerodatabox' ? ''
@@ -1326,20 +1317,6 @@
   });
 
   /* ================= global actions ================= */
-  /** Looks up the routes of this year's flights that have none or a provisional one (see needsLookup); like the dialog, a codeshare falls back to its operating flight. */
-  const lookupMissing = async () => {
-    const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && needsLookup(f));
-    let ok = 0;
-    for (const f of todo) {
-      const op = E.operating(f);
-      const res = await A.resolveRoute(state, f.flightNo, op && op.iata, f.date);
-      f.routeLookup = A.lookupInfo(res.entry, f.flightNo, res.via);
-      if (res.route) { f.route = res.route; ok++; }
-    }
-    save(); render();
-    toast(`${ok} of ${todo.length} route(s) found`);
-  };
-
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
@@ -1351,7 +1328,6 @@
     if (act === 'goto-settings') { e.preventDefault(); setView('settings'); }
     if (act === 'goto-planner') setView('planner');
     if (act === 'load') $('#fileLoad').click();
-    if (act === 'lookup-missing') { b.disabled = true; lookupMissing(); }   // the next render replaces the button
     if (act === 'demo') {
       const go = () => { state = S.demo(); year = new Date().getFullYear(); save(); render(); toast('Demo data loaded'); };
       hasData() ? confirmInline(b, 'Replace all data? Click again', go) : go();
