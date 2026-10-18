@@ -8,7 +8,7 @@ It is deployed to GitHub Pages by `.github/workflows/deploy.yml`.
 - `js/data.js`: airlines and earning groups, zones, default rules (`MM.DEFAULT_RULES`), CO₂ price model (`MM.CO2_PRICE`, see `docs/CO2-PRICE-MODEL.md`)
 - `js/engine.js`: pure calculation logic (earning, haul, status, history, rail caps, soft landing, fares per booking, CO₂ price estimate, planner scenarios). Functions that depend on the date take `today` as a parameter
 - `js/store.js`: state (`flights`, `bookings`, `adjustments`, `stays`, `plans`, `apiCache`), `S.normalize` (fills defaults, resets invalid choice fields, drops invalid entries; no migrations), `S.parse` (refuses other files and older versions), `.json` import/export, `S.saveFlight` / `S.deleteFlight`, demo data
-- `js/api.js`: adsbdb.com route lookup with a cache that is saved in the `.json`, and the codeshare fallback to the operating flight (`A.resolveRoute`)
+- `js/api.js`: adsbdb.com route lookup with a cache per flight number and date (`A.cacheKey`) that is saved in the `.json`, provisional answers from another IATA season (`A.isProvisional`, `E.iataSeason`), and the codeshare fallback to the operating flight (`A.resolveRoute`)
 - `js/app.js`, `js/charts.js`: UI and SVG charts
 - `js/airports.js`: generated in CI by `tools/build-airports.ps1` and git-ignored
 - `tests/engine.test.js` (Node, run by CI), plus `tests/browser.html` to run the same tests in a browser

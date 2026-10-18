@@ -34,11 +34,17 @@
   const downgradeTxt = (h, when = '') => (h.downgraded ? `${esc(MM.STATUS_LABEL[h.prevHeld])} → ${esc(MM.STATUS_LABEL[h.held])}${when} (not requalified)` : '');
   /** A route with both airports (a stored route may lack one). */
   const hasRoute = (r) => !!(r && r.origin && r.destination);
-  const routeTxt = (f) => (hasRoute(f.route) ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}` : '<span class="pill warn">no route</span>');
+  /** A looked-up route from another IATA season than the flight's (A.otherSeason): it may differ on the flight date. */
+  const otherSeason = (f) => hasRoute(f.route) && f.route.source === 'api' && A.otherSeason(f.routeLookup, f.date);
+  const routeTxt = (f) => (hasRoute(f.route) ? `${esc(f.route.origin.iata)}→${esc(f.route.destination.iata)}${otherSeason(f) ? ' <span class="pill warn" title="Looked up in another schedule season – check the route on your ticket">check</span>' : ''}` : '<span class="pill warn">no route</span>');
   const isFlight = (f) => f.transport === 'flight';
-  /** A flight without route that a lookup may still find: no train or bus (not in adsbdb), no haul override, not "not found". */
-  const needsLookup = (f) => isFlight(f) && !f.route && f.haulOverride === 'auto'
-    && !(f.routeLookup && f.routeLookup.status === 'notfound' && f.routeLookup.flightNo === f.flightNo);
+  /**
+   * A flight whose route a lookup may still find: no train or bus (not in adsbdb), no haul override, not "not found";
+   * or a looked-up route that is provisional (looked up in another IATA season, and the flight's season has started).
+   */
+  const needsLookup = (f) => isFlight(f) && ((!f.route && f.haulOverride === 'auto'
+    && !(f.routeLookup && f.routeLookup.status === 'notfound' && f.routeLookup.flightNo === f.flightNo))
+    || (hasRoute(f.route) && f.route.source === 'api' && A.isProvisional(f.routeLookup, f.date)));
   const HAUL_LABEL = { continental: 'Continental', intercontinental: 'Intercontinental' };
   /** Haul in a table cell: short, and a warning when it is unknown. */
   const haulTxt = (h) => (h === 'continental' ? 'Continental' : h === 'intercontinental' ? 'Intercont.' : '<span class="pill warn">unknown</span>');
@@ -390,7 +396,7 @@
           <h2>Flights &amp; trains · CY ${year}</h2>
           <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
-            ${missing ? `<button class="btn small" data-act="lookup-missing">Look up ${missing} missing route(s)</button>` : ''}
+            ${missing ? `<button class="btn small" data-act="lookup-missing">Look up ${missing} route(s)</button>` : ''}
             <button class="btn primary" data-act="add">+ Add flight / train</button>
           </div>
         </div>
@@ -958,7 +964,9 @@
       const unknown = !r.origin.country || !r.destination.country;
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
         (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
-        (r.source !== 'manual' && isFlight(draft) ? '<br><span class="muted">This is the route currently listed for the flight number, not for your date. Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>' : '');
+        (r.source === 'manual' || !isFlight(draft) ? ''
+          : otherSeason(draft) ? `<br><b style="color:var(--danger)">Looked up in schedule season ${esc(E.iataSeason(lk.fetchedAt))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${A.isProvisional(lk, draft.date) ? 'Click "Look up route" for the current one.' : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up routes" on the Flights page asks again.' : ''}`
+          : '<br><span class="muted">This is the route listed for the flight number at lookup time (adsbdb ignores the date). Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>');
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
     } else if (lk && lk.status === 'notfound') {
@@ -979,7 +987,7 @@
       : E.isEdelweissCodeshare(draft) ? ' · LX8000–8499 earns like SWISS'
       : ` · operator decides earning: ${esc(MM.GROUP_LABEL[op.airline.group])}`;
     const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)}${decides}`;
-    const entry = state.apiCache[op.iata];
+    const entry = A.cached(state, op.iata, draft.date);
     const opRoute = A.routeFromCache(entry);
     const r = draft.route;
     let check = '';
@@ -995,7 +1003,7 @@
   const lookupOperating = async () => {
     const op = E.operating(draft), d = draft;
     if (op && !hasRoute(draft.route) && E.parseFlightNo(draft.flightNo)) { await doLookup(false); return; }
-    if (op) await A.lookup(state, op.iata);
+    if (op) await A.lookup(state, op.iata, draft.date);
     if (stale(d)) return;
     save();
     updatePreview();
@@ -1091,7 +1099,7 @@
     const seq = ++lookupSeq, d = draft;
     draft.routeLookup = { status: 'loading' };
     routeInfo();
-    const res = await A.resolveRoute(state, parsed.iata, op && op.iata, { force });
+    const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force });
     if (seq !== lookupSeq || stale(d)) return;
     draft.routeLookup = A.lookupInfo(res.entry, parsed.iata, res.via);
     if (res.route) {   // without one, a route typed by hand stays
@@ -1296,13 +1304,13 @@
   });
 
   /* ================= global actions ================= */
-  /** Looks up the routes of this year's flights that have none; like the dialog, a codeshare falls back to its operating flight. */
+  /** Looks up the routes of this year's flights that have none or a provisional one (see needsLookup); like the dialog, a codeshare falls back to its operating flight. */
   const lookupMissing = async () => {
     const todo = state.flights.filter(f => +f.date.slice(0, 4) === year && needsLookup(f));
     let ok = 0;
     for (const f of todo) {
       const op = E.operating(f);
-      const res = await A.resolveRoute(state, f.flightNo, op && op.iata);
+      const res = await A.resolveRoute(state, f.flightNo, op && op.iata, f.date);
       f.routeLookup = A.lookupInfo(res.entry, f.flightNo, res.via);
       if (res.route) { f.route = res.route; ok++; }
     }

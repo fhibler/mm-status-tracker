@@ -27,6 +27,10 @@ const state = (o = {}) => S.normalize(o);   // a state as the app holds it
 const pts = (e) => [e.p, e.qp, e.hon].join(',');
 const earn = (o) => E.earn(flight(o), rules);
 
+/* ---------- IATA schedule seasons (2026: summer from 29 Mar, winter from 25 Oct) ---------- */
+assert.strictEqual(['2026-03-28', '2026-03-29', '2026-10-24', '2026-10-25', '2027-01-10', '2025-12-31'].map(E.iataSeason).join(','), 'W25,S26,S26,W26,W26,W25');
+assert.strictEqual(E.iataSeason('2026-11-17T08:00:00.000Z'), 'W26');   // a fetchedAt timestamp works too
+
 /* ---------- flight numbers and airports ---------- */
 assert.strictEqual(E.parseFlightNo('lh 400').iata, 'LH400');
 assert.strictEqual(E.parseFlightNo('4Y123').code, '4Y');
@@ -366,12 +370,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     settings: { currency: 'XYZ', memberNumber: '992 000-123 456 789' },
     flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01' }, { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }],
     adjustments: [{ date: '2026-13' }, { date: '2026-04-01', p: 5 }], stays: [{ nights: 2 }],
-    apiCache: { LH1: null, LH2: { status: 'notfound' } },
+    apiCache: { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { status: 'notfound' }, LH3: { status: 'ok' } },   // LH3: saved before lookups had a date
     plans: { 2025: { co2: { 'ok-1': { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }, { id: 'm', kind: 'RAIL', cls: 'First', co2Level: 'large' }, { id: 'm' }] } },   // what-if for a 2026 flight in 2025
   });
   assert.ok(/^[\w-]+$/.test(st.flights[0].id) && st.flights[0].id !== 'x"><b>');
   assert.ok(st.flights[2].id !== 'ok-1' && st.plans['2025'].mix[2].id !== 'm');
-  assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.adjustments.length}:${st.stays.length}:${Object.keys(st.apiCache)}:${st.settings.currency}`, '3:ok-1:1:0:LH2:EUR');
+  assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.adjustments.length}:${st.stays.length}:${Object.keys(st.apiCache)}:${st.settings.currency}`, '3:ok-1:1:0:LH2 2026-01-01:EUR');
   const mix = st.plans['2025'].mix;
   assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${mix[0].count}:${mix[0].kind}`, '0:2:LHG');
   assert.strictEqual(`${mix[1].cls}:${mix[1].co2Level}`, 'Business:none');   // trains: 1st class at most, no booster
@@ -420,10 +424,10 @@ async function apiTests() {
   assert.strictEqual((await A.lookup(st, 'LH400')).status, 'notfound');           // an error is asked again
   respond = () => reply(200, { response: route });
   assert.strictEqual((await A.lookup(st, 'LH400')).fromCache, true);              // "not found" is final ...
-  assert.strictEqual((await A.lookup(st, 'LH400', { force: true })).status, 'ok');   // ... until forced
+  assert.strictEqual((await A.lookup(st, 'LH400', null, { force: true })).status, 'ok');   // ... until forced
   respond = () => { throw new Error('offline'); };
-  res = await A.lookup(st, 'LH400', { force: true });
-  assert.strictEqual(`${res.status}:${st.apiCache.LH400.status}`, 'error:ok');    // a failed forced lookup keeps the answer
+  res = await A.lookup(st, 'LH400', null, { force: true });
+  assert.strictEqual(`${res.status}:${A.cached(st, 'LH400').status}`, 'error:ok');    // a failed forced lookup keeps the answer
 
   // codeshares: without a route of their own, the operating flight's route (an error there is not final)
   respond = (url) => (url.endsWith('/LH488') ? reply(200, { response: route }) : reply(404, { response: 'unknown callsign' }));
@@ -432,6 +436,29 @@ async function apiTests() {
   respond = (url) => { if (url.endsWith('/LH499')) throw new Error('offline'); return reply(404, { response: 'unknown callsign' }); };
   const failed = await A.resolveRoute(st, 'UA2', 'LH499');
   assert.strictEqual(`${failed.entry.status}:${failed.route}:${(await A.resolveRoute(st, 'UA2')).entry.status}`, 'error:null:notfound');
+
+  // lookups are cached per flight date. adsbdb ignores the date, so an answer from another schedule season is
+  // provisional and asked again once the flight's season has started (LH1966: MUC–OLB in summer, MUC–BER in winter).
+  const fr = (dest) => ({ flightroute: { origin: { iata_code: 'MUC', country_iso_name: 'DE' }, destination: { iata_code: dest, country_iso_name: dest === 'OLB' ? 'IT' : 'DE' } } });
+  const s2 = state();
+  let dest = 'OLB';
+  calls.length = 0;
+  respond = (url) => { calls.push(url); return url.endsWith('/DLH1966') ? reply(200, { response: fr(dest) }) : reply(404, { response: 'unknown callsign' }); };
+  const summer = new Date('2026-07-01T10:00:00Z'), october = new Date('2026-10-18T10:00:00Z'), winter = new Date('2026-10-26T10:00:00Z');
+  const jul = await A.resolveRoute(s2, 'LH1966', null, '2026-07-10', { now: summer });
+  assert.strictEqual(`${jul.route.destination.iata}:${A.otherSeason(jul.entry, '2026-07-10')}`, 'OLB:false');
+  const nov = await A.lookup(s2, 'LH1966', '2026-11-17', { now: october });
+  assert.strictEqual(`${nov.fromCache}:${calls.length}:${Object.keys(s2.apiCache).join('|')}`, 'false:4:LH1966 2026-07-10|LH1966 2026-11-17');   // its own key
+  assert.strictEqual(`${A.otherSeason(nov, '2026-11-17')}:${A.isProvisional(nov, '2026-11-17', '2026-10-18')}`, 'true:false');   // summer answer, winter flight
+  assert.strictEqual((await A.lookup(s2, 'LH1966', '2026-11-17', { now: october })).fromCache, true);   // not asked again before winter
+  dest = 'BER';
+  const info = A.lookupInfo(nov, 'LH1966');
+  assert.strictEqual(`${A.isProvisional(info, '2026-11-17', '2026-10-25')}:${info.date}`, 'true:2026-11-17');   // f.routeLookup tells too
+  const again = await A.resolveRoute(s2, 'LH1966', null, '2026-11-17', { now: winter });                    // winter has started
+  assert.strictEqual(`${again.entry.fromCache}:${again.route.destination.iata}:${A.otherSeason(again.entry, '2026-11-17')}`, 'false:BER:false');
+  assert.strictEqual((await A.lookup(s2, 'LH1966', '2026-07-10', { now: winter })).fromCache, true);   // a past summer flight keeps its answer
+  assert.strictEqual(A.cacheKey('lh1966', '2026-11-17'), 'LH1966 2026-11-17');
+  assert.strictEqual(`${A.isCacheKey('LH1966 2026-11-17')}:${A.isCacheKey('4Y123 2026-01-01')}:${A.isCacheKey('LH1966')}`, 'true:true:false');
 }
 
 module.exports = apiTests().then(() => console.log('engine tests passed'));

@@ -55,7 +55,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   its validity.
 - **Save / Load `.json`**: the file holds your flights and fares, point corrections, hotel stays, planner
   scenarios, your settings and every route lookup the app made so far (`apiCache`, with a `status` per flight
-  number). When you load a saved file, the app reuses those answers and does not call the API again. Files in the old format (version 1, saved
+  number and date). When you load a saved file, the app reuses those answers and does not call the API again
+  (except for a provisional route, see Notes). Lookups saved before 18 Oct 2026 had no date and are dropped on load;
+  the routes stored with your flights stay. Files in the old format (version 1, saved
   before the fares-per-booking update of 16 Oct 2026) can no longer be loaded.
   With your Miles & More number set in Settings, the file is named `miles-and-more-<number>.json`.
 - **Light / dark mode** switch in the header (Light · System · Dark). System follows the OS setting.
@@ -135,9 +137,15 @@ site to GitHub Pages.
   the **operating** airline: UA9414 operated by Lufthansa earns Points, QP and HON Circle Points, while LH9246
   operated by United earns Points only (Star Alliance). Exception: SWISS LX8000–8499 operated by Edelweiss
   earns like SWISS. When the marketing number has no route, the app uses the operating flight's route (in the
-  dialog and in "Look up missing routes"). Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
-- adsbdb keeps one route per flight number (the one it currently operates) and ignores the date. If an airline
-  reused or changed the number, the lookup can show the wrong route (e.g. UA2837 shows NRT–SFO). Type the
+  dialog and in "Look up routes"). Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
+- adsbdb keeps one route per flight number (the one it currently operates) and ignores the date. The app caches
+  each lookup per flight number and date, so an answer for one date is not reused for another. Airlines plan routes
+  per IATA schedule season (summer from the last Sunday of March, winter from the last Sunday of October), and some
+  fly a number on another route in the other season: LH1966 is MUC–OLB in summer and MUC–BER in winter. A route
+  looked up in another season than the flight's is marked **check** in the flights table and explained in the
+  dialog. Once the flight's season has started, "Look up routes" on the Flights page and "Look up route" in the
+  dialog ask adsbdb again. If an airline reused or changed the number, the lookup can still show the wrong route
+  (e.g. UA2837 shows NRT–SFO). Type the
   airports by hand, or set the haul, in the dialog in that case.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;

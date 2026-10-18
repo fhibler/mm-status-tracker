@@ -2,9 +2,24 @@
 (function () {
   const E = (MM.engine = {});
 
-  E.todayISO = () => {
-    const d = new Date();
+  E.todayISO = (d = new Date()) => {
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+
+  /**
+   * IATA schedule season of an ISO date: 'S26' (summer, from the last Sunday of March) or 'W26' (winter, from the
+   * last Sunday of October until the next summer). Airlines plan their routes per season, so a flight number can fly
+   * another route in the other season (LH1966: MUC–OLB in summer, MUC–BER in winter).
+   */
+  E.iataSeason = (iso) => {
+    const y = +iso.slice(0, 4);
+    const lastSunday = (m) => {   // m: 3 = March, 10 = October; the 31st minus its weekday
+      const d = new Date(Date.UTC(y, m - 1, 31));
+      return `${y}-${String(m).padStart(2, '0')}-${String(31 - d.getUTCDay()).padStart(2, '0')}`;
+    };
+    const d = iso.slice(0, 10), yy = (n) => String(n % 100).padStart(2, '0');
+    if (d < lastSunday(3)) return `W${yy(y - 1)}`;
+    return d < lastSunday(10) ? `S${yy(y)}` : `W${yy(y)}`;
   };
 
   /** "LH 400", "lh400", "4Y123", "DLH400" -> { code, number, iata, airline } */

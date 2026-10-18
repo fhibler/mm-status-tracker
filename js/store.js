@@ -165,7 +165,7 @@
       const y = +set.startStatus.year;
       s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };
     }
-    s.apiCache = Object.fromEntries(Object.entries(isObj(raw.apiCache) ? raw.apiCache : {}).filter(([, c]) => isObj(c)));
+    s.apiCache = Object.fromEntries(Object.entries(isObj(raw.apiCache) ? raw.apiCache : {}).filter(([k, c]) => MM.api.isCacheKey(k) && isObj(c)));
     s.flights = list(raw.flights, S.newFlight).map(normalizeFlight);
     s.adjustments = list(raw.adjustments, S.newAdjustment);
     s.stays = list(raw.stays, S.newStay);
@@ -254,13 +254,15 @@
       const date = isoUTC(ty, tm - 1 + mo, Math.min(27, 3 + (i * 5) % 25));
       const p = E.parseFlightNo(no);
       const resp = { flightroute: { callsign: no, callsign_iata: no, airline: { name: p.airline.name, iata: p.code, icao: p.airline.icao }, origin: apResp(from), destination: apResp(to) } };
-      s.apiCache[no] = { fetchedAt: new Date().toISOString(), status: 'ok', response: resp };
+      const key = MM.api.cacheKey(no, date);
+      // as if looked up on the flight date, so no route shows as provisional (A.otherSeason)
+      s.apiCache[key] = { date, fetchedAt: `${date}T12:00:00.000Z`, status: 'ok', response: resp };
       const f = { ...S.newFlight(date), flightNo: no, bookingCode: pnr,
         bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : bid ? 'bid' : 'voucher',
         upgradeCost: uco, co2Level: co2, co2Cost: co2c };
       s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
-      f.route = MM.api.routeFromCache(s.apiCache[no]);
-      f.routeLookup = MM.api.lookupInfo({ ...s.apiCache[no], fromCache: true }, no);
+      f.route = MM.api.routeFromCache(s.apiCache[key]);
+      f.routeLookup = MM.api.lookupInfo({ ...s.apiCache[key], fromCache: true }, no);
       s.flights.push(f);
     });
     // One statement correction, 10 days after the LX318 segment.
