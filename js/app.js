@@ -908,7 +908,7 @@
     const opts = MM.CLASSES.map(c => `<option>${c}</option>`).join('');
     form.upgradeClass.innerHTML = opts;
     form.earnClassOverride.innerHTML = '<option value="auto">Auto (from classes)</option>' + opts;
-    form.upgradeType.innerHTML = '<option value="">– not specified –</option>' +
+    form.upgradeType.innerHTML = '<option value="">– choose –</option>' +
       Object.entries(MM.UPGRADE_TYPES).map(([v, t]) => `<option value="${v}">${esc(t.label)}</option>`).join('');
     form.co2Level.innerHTML = MM.CO2_LEVELS.map(l => {
       const b = state.settings.rules.co2[l];
@@ -1302,6 +1302,9 @@
     const T = TRANSPORT[draft.transport];
     if (!draft.date) { toast('Please enter the date as YYYY/MM/DD'); form.date.focus(); return; }
     if (!E.parseFlightNo(draft.flightNo)) { toast(`Please enter a valid ${T.number.toLowerCase()} number, e.g. ${T.placeholder}`); form.flightNo.focus(); return; }
+    if (isFlight(draft) && draft.upgradeClass !== draft.bookedClass && !MM.UPGRADE_TYPES[draft.upgradeType]) {
+      toast('Please choose how the upgrade was obtained'); form.upgradeType.focus(); return;
+    }
     if (isFlight(draft) && !draft.route && !(draft.routeLookup && draft.routeLookup.flightNo === draft.flightNo)) {
       const d = draft;
       await doLookup(false);
