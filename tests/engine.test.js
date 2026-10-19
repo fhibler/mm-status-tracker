@@ -434,13 +434,22 @@ async function apiTests() {
   res = await A.lookup(st, 'LH400', D, { ...at, force: true });
   assert.strictEqual(`${res.status}:${A.cached(st, 'LH400', D).status}`, 'error:ok');   // a failed forced lookup keeps the answer
 
-  // codeshares: without a route of their own, the operating flight's route (an error there is not final)
-  respond = (url) => (url.endsWith('/LH488') ? reply(200, { response: route }) : reply(404, { response: 'unknown callsign' }));
+  // codeshares: the operating flight is asked first (the codeshare number is often unknown), then the flight number;
+  // an error is not final
+  let asked = [];
+  respond = (url) => { asked.push(url.split('/').pop()); return url.endsWith('/LH488') ? reply(200, { response: route }) : reply(404, { response: 'unknown callsign' }); };
   const op = await A.resolveRoute(st, 'UA1', 'LH488', D, at);
-  assert.strictEqual(`${op.entry.status}:${op.via}:${op.route.via}:${op.route.origin.iata}`, 'ok:LH488:LH488:FRA');
+  assert.strictEqual(`${op.entry.status}:${op.via}:${op.route.via}:${op.resolved}:${op.route.origin.iata}`, 'ok:LH488:LH488:LH488:FRA');
+  assert.strictEqual(asked.join(), 'LH488');                                    // the codeshare number is not asked
+  asked = [];
+  respond = (url) => { asked.push(url.split('/').pop()); return url.endsWith('/UA3') ? reply(200, { response: route }) : reply(404, { response: 'unknown callsign' }); };
+  const own = await A.resolveRoute(st, 'UA3', 'LH477', D, at);                   // the operating flight is unknown
+  assert.strictEqual(`${own.entry.status}:${own.via}:${own.route.via}:${own.resolved}`, 'ok:undefined:undefined:UA3');
+  assert.strictEqual(asked.join(), 'LH477,DLH477,UA3');
+  assert.strictEqual(A.lookupInfo(own.entry, 'UA3', own.via, 'LH477').operating, 'LH477');   // the dialog says it fell back
   respond = (url) => { if (url.endsWith('/LH499')) throw new Error('offline'); return reply(404, { response: 'unknown callsign' }); };
   const failed = await A.resolveRoute(st, 'UA2', 'LH499', D, at);
-  assert.strictEqual(`${failed.entry.status}:${failed.route}:${(await A.resolveRoute(st, 'UA2', null, D, at)).entry.status}`, 'error:null:notfound');
+  assert.strictEqual(`${failed.entry.status}:${failed.route}:${failed.resolved}:${(await A.resolveRoute(st, 'UA2', null, D, at)).entry.status}`, 'error:null:null:notfound');
 
   // lookups are cached per flight date. adsbdb ignores the date, so an answer from another schedule season is
   // provisional and asked again once the flight's season has started (LH1966: MUC–OLB in summer, MUC–BER in winter).

@@ -973,14 +973,19 @@
       const km = E.distanceKm(r.origin, r.destination);
       const name = a => esc([a.city || a.name, a.country].filter(Boolean).join(', ') || a.iata);
       const prov = r.provider === 'aerodatabox' ? `AeroDataBox for ${esc(dateToField(lk && lk.date || draft.date))}` : 'adsbdb.com';
-      const src = r.source === 'manual' ? 'entered manually' : `from ${prov}${r.via ? ` via ${esc(r.via)}` : ''}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
+      const src = r.source === 'manual' ? 'entered manually' : `from ${prov}${lk && lk.source === 'cache' ? ' (cached)' : ''}`;
+      /** Which number gave the route of a codeshare: the operating flight (asked first) or the flight number. */
+      const resolved = r.source === 'manual' || !isFlight(draft) ? ''
+        : r.via ? `<br>Route resolved for <b>${esc(r.via)}</b>, the operating flight.`
+        : lk && lk.operating ? `<br>${esc(lk.operating)} (operating flight) gave no route, so it was resolved for <b>${esc(lk.flightNo)}</b>, your flight number.`
+        : '';
       const unknown = !r.origin.country || !r.destination.country;
       const key = state.settings.aerodataboxKey;
       /** What asks for the route of the flight's season (only for a route of another season, so lk is set). */
       const again = () => (A.isProvisional(lk, draft.date, undefined, key) ? 'Click "Look up route" for the route on your date.'
         : !key ? 'Add an AeroDataBox key in Settings to look up routes by date.'
         : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up route" asks again.' : '');
-      info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` +
+      info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` + resolved +
         (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
         (r.source === 'manual' || !isFlight(draft) ? ''
           : otherSeason(draft) ? `<br><b style="color:var(--danger)">This is the route of schedule season ${esc(A.lookupSeason(lk))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${again()}`
@@ -992,7 +997,7 @@
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
     } else if (lk && lk.status === 'notfound') {
-      info.innerHTML = '<b>Route not found</b> for this flight number – enter the airports manually and/or choose the haul.';
+      info.innerHTML = `<b>Route not found</b> for ${lk.operating ? `${esc(lk.operating)} (operating flight) or ${esc(lk.flightNo)}` : 'this flight number'} – enter the airports manually and/or choose the haul.`;
     } else if (lk && lk.status === 'error') {
       info.innerHTML = `<b style="color:var(--danger)">Lookup failed</b> (${esc(lk.error || 'network error')}). Try again or enter the airports manually.`;
     } else {
@@ -1013,7 +1018,8 @@
     const opRoute = A.routeFromCache(entry);
     const r = draft.route;
     let check = '';
-    if (opRoute && hasRoute(r)) {
+    if (r && r.via === op.iata) check = '';   // the route is the operating flight's: nothing to cross-check
+    else if (opRoute && hasRoute(r)) {
       const same = opRoute.origin.iata === r.origin.iata && opRoute.destination.iata === r.destination.iata;
       check = same ? ' · <span style="color:var(--s-hon)">✓ same route</span>'
         : ` · <b style="color:var(--danger)">⚠ ${esc(op.iata)} is listed as ${esc(opRoute.origin.iata)}→${esc(opRoute.destination.iata)}</b>`;
@@ -1021,10 +1027,13 @@
     return `<br>${head}${check}`;
   };
 
-  /** Looks up a new operating flight: for the route when there is none yet, else (cached) for the cross-check above. */
+  /**
+   * After the operating flight changed: looks up the route when there is none (the change handler drops a looked-up
+   * one, as the operating flight is asked first), else (cached) the operating flight for the cross-check above.
+   */
   const lookupOperating = async () => {
     const op = E.operating(draft), d = draft;
-    if (op && !hasRoute(draft.route) && E.parseFlightNo(draft.flightNo)) { await doLookup(false); return; }
+    if (!hasRoute(draft.route) && E.parseFlightNo(draft.flightNo)) { await doLookup(false); return; }
     if (op && draft.date) await A.lookup(state, op.iata, draft.date);
     if (stale(d)) return;
     save();
@@ -1114,7 +1123,7 @@
   };
 
   /**
-   * Looks up the route of the flight number on the flight date, or of the operating flight (see A.resolveRoute), and
+   * Looks up the route on the flight date: of the operating flight first, else of the flight number (A.resolveRoute), and
    * shows it. Returns the lookup, which saving waits for (pendingLookup).
    */
   const doLookup = (force) => (pendingLookup = lookupRoute(force));
@@ -1128,7 +1137,7 @@
     routeInfo();
     const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force });
     if (seq !== lookupSeq || stale(d)) return;
-    draft.routeLookup = A.lookupInfo(res.entry, parsed.iata, res.via);
+    draft.routeLookup = A.lookupInfo(res.entry, parsed.iata, res.via, op ? op.iata : undefined);
     if (res.route) {   // without one, a route typed by hand stays
       draft.route = res.route;
       form.origin.value = res.route.origin.iata || '';
@@ -1138,17 +1147,19 @@
     updatePreview();
     if (force && !res.entry.fromCache) {
       const e = res.entry, adb = e.adbError ? `AeroDataBox failed (${e.adbError})` : e.adbNote ? `AeroDataBox: ${e.adbNote}` : '';
+      const of = op && res.route ? ` of ${res.resolved}` : '';   // a codeshare: which number gave the route
       toast(!res.route ? (adb ? `${adb} · no route found` : 'No route found')
-        : e.provider === 'aerodatabox' ? 'Route updated from AeroDataBox for your date' : `${adb ? `${adb} · ` : ''}route from adsbdb`);
+        : e.provider === 'aerodatabox' ? `Route${of} updated from AeroDataBox for your date` : `${adb ? `${adb} · ` : ''}route${of} from adsbdb`);
     }
   };
 
   /** Looks up the route unless it was typed in or is known for this flight number and date. */
   const autoLookup = () => {
     if (form.transport.value !== 'flight') return;   // adsbdb only knows flights
-    const parsed = E.parseFlightNo(form.flightNo.value), lk = draft.routeLookup;
+    const parsed = E.parseFlightNo(form.flightNo.value), lk = draft.routeLookup, op = E.operating(draft);
     if (!parsed) return;
-    const known = lk && lk.flightNo === parsed.iata && lk.date === draft.date && draft.route;
+    const known = lk && lk.flightNo === parsed.iata && lk.date === draft.date && draft.route
+      && (lk.operating || lk.via || '') === (op ? op.iata : '');
     if (known || (draft.route && draft.route.source === 'manual')) return;
     doLookup(false);
   };
@@ -1293,7 +1304,9 @@
     if (e.target.name === 'operatingFlightNo') {
       const parsed = E.parseFlightNo(form.operatingFlightNo.value);
       if (parsed) form.operatingFlightNo.value = parsed.iata;
-      if (draft.route && draft.route.via && (!parsed || parsed.iata !== draft.route.via)) {
+      // A looked-up route depends on the operating flight, which is asked first: look it up again for the new one
+      const lk = draft.routeLookup, before = lk ? lk.operating || lk.via || '' : '';
+      if (draft.route && draft.route.source !== 'manual' && (parsed ? parsed.iata : '') !== before) {
         draft.route = null; form.origin.value = ''; form.destination.value = '';
       }
       readForm();

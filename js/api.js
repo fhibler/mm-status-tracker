@@ -43,8 +43,11 @@
   A.isProvisional = (lk, date, today = E.todayISO(), key = '') => A.otherSeason(lk, date)
     && (E.iataSeason(today) === E.iataSeason(date) || (!!key && !lk.adbTried));
 
-  /** What a flight remembers about the lookup of `flightNo` (f.routeLookup); via: the operating flight that gave the route. */
-  A.lookupInfo = (entry, flightNo, via) => ({ status: entry.status, source: entry.fromCache ? 'cache' : 'api', flightNo, via, error: entry.error,
+  /**
+   * What a flight remembers about the lookup of `flightNo` (f.routeLookup); operating: the operating flight asked
+   * first (A.resolveRoute), via: set to it when it gave the route.
+   */
+  A.lookupInfo = (entry, flightNo, via, operating) => ({ status: entry.status, source: entry.fromCache ? 'cache' : 'api', flightNo, operating, via, error: entry.error,
     date: entry.date, fetchedAt: entry.fetchedAt, provider: entry.provider, adbTried: entry.adbTried, adbNote: entry.adbNote, adbError: entry.adbError });
 
   /** Airport by IATA code: from a cached route lookup, else from the bundled airport table (MM.airport). */
@@ -143,16 +146,21 @@
   };
 
   /**
-   * Route of a flight number on a date; a codeshare without one falls back to its operating flight (`operatingIata`).
-   * Returns { entry, route, via }: route (or null) carries `via` when it came from the operating flight. entry is the
-   * lookup to remember (see A.lookupInfo): the operating flight's when that gave the route or failed (an error is not
-   * final, so the flight is looked up again later), else the marketing flight's.
+   * Route of a flight number on a date. A codeshare number is often unknown to the APIs, so with an operating flight
+   * (`operatingIata`) that is asked first, and the flight number only when it gives no route.
+   * Returns { entry, route, via, resolved }: resolved is the number that gave the route (or null); route carries `via`
+   * when it came from the operating flight. entry is the lookup to remember (see A.lookupInfo): the one that gave the
+   * route, else one that failed (an error is not final, so the flight is looked up again later), else the flight number's.
    */
   A.resolveRoute = async (state, flightNo, operatingIata, date, opts) => {
+    if (operatingIata) {
+      const op = await A.lookup(state, operatingIata, date, opts);
+      if (op.status === 'ok') return { entry: op, route: { ...A.routeFromCache(op), via: operatingIata }, via: operatingIata, resolved: operatingIata };
+      const own = await A.lookup(state, flightNo, date, opts);
+      if (own.status === 'ok') return { entry: own, route: A.routeFromCache(own), via: undefined, resolved: flightNo };
+      return { entry: op.status === 'error' ? op : own, route: null, via: undefined, resolved: null };
+    }
     const entry = await A.lookup(state, flightNo, date, opts);
-    if (entry.status === 'ok' || !operatingIata) return { entry, route: A.routeFromCache(entry), via: undefined };
-    const op = await A.lookup(state, operatingIata, date, opts);
-    if (op.status === 'ok') return { entry: op, route: { ...A.routeFromCache(op), via: operatingIata }, via: operatingIata };
-    return { entry: op.status === 'error' ? op : entry, route: null, via: undefined };
+    return { entry, route: A.routeFromCache(entry), via: undefined, resolved: entry.status === 'ok' ? flightNo : null };
   };
 })();

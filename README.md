@@ -139,8 +139,9 @@ site to GitHub Pages.
 - **Codeshares**: enter the operating flight in "Operated by" (e.g. UA9414 → `LH488`). Miles & More credits by
   the **operating** airline: UA9414 operated by Lufthansa earns Points, QP and HON Circle Points, while LH9246
   operated by United earns Points only (Star Alliance). Exception: SWISS LX8000–8499 operated by Edelweiss
-  earns like SWISS. When the marketing number has no route, the app uses the operating flight's route (in the
-  flight dialog). Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
+  earns like SWISS. Codeshare numbers are often unknown to the route APIs, so the app looks up the operating
+  flight first and the marketing number only when that gives no route; the flight dialog says which one the route
+  came from. Route lookups try the IATA (`UA9414`) and the ICAO (`UAL9414`) form.
 - adsbdb keeps one route per flight number (the one it currently operates) and ignores the date. The app caches
   each lookup per flight number and date, so an answer for one date is not reused for another. Airlines plan routes
   per IATA schedule season (summer from the last Sunday of March, winter from the last Sunday of October), and some
