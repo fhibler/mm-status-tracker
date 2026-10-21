@@ -446,8 +446,9 @@
    *  1. plan.co2 = { flightId: { level, cost } } – a CO₂ booster per existing or planned flight without one (a flight
    *     with a booster is locked, so a what-if for it is ignored)
    *  2. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in)
-   * Returns the totals after each step, the extra cost of each step and the status reached (a starting status
-   * from the statement counts in every step, see E.yearSummary).
+   * Returns the totals after each step, the extra cost of each step, the status reached (a starting status
+   * from the statement counts in every step, see E.yearSummary) and when each status of the
+   * scenario is reached (see E.planReached).
    */
   E.planScenario = (state, year, plan, today = E.todayISO()) => {
     const rules = state.settings.rules;
@@ -466,7 +467,7 @@
     });
     const costOf = (s) => s.cost.all.total;
     return {
-      base, withCo2, mix, total,
+      base, withCo2, mix, total, reached: E.planReached(withCo2, mix, year, rules),
       cost: { base: costOf(base), co2Extra: costOf(withCo2) - costOf(base), mix: mixCost, total: costOf(withCo2) + mixCost },
       status: {
         actual: base.statusActual, forecast: base.statusForecast, withCo2: withCo2.statusForecast,
@@ -504,5 +505,28 @@
       }
     }
     return { ...state, flights };
+
+  };
+
+  /**
+   * Date on which each status is reached in a planner scenario: { FTL: { date, step }, … } with step 'co2' when
+   * the flights (with the CO₂ what-ifs) reach it, 'mix' when it needs the extra segments. Those have no dates, so
+   * they count on 31 December. Like E.yearSummary, a date is cleared when a negative correction takes the status
+   * away again. Statuses not reached have no entry.
+   */
+  E.planReached = (withCo2, mix, year, rules) => {
+    const t = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 }, out = {};
+    const add = (e, date, step) => {
+      t.p += e.p; t.qp += e.qp; t.hon += e.hon;
+      if (e.rail) { t.qpRail += e.qp; t.honRail += e.hon; }
+      const s = E.status(t, rules);
+      for (const k of MM.STATUSES) {
+        if (E.rank(s) < E.rank(k)) delete out[k];
+        else if (!out[k]) out[k] = { date, step };
+      }
+    };
+    for (const ev of withCo2.events) if (ev.counts) add(ev.e, ev.date, 'co2');
+    for (const m of mix) add({ ...m.sum, rail: m.e.rail }, `${year}-12-31`, 'mix');
+    return out;
   };
 })();

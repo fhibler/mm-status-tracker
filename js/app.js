@@ -727,10 +727,12 @@
     const target = (key) => {
       const ok = E.rank(sc.status.total) >= E.rank(key);
       // reached.forecast includes flown segments, so check what was already flown first
-      const done = sc.base.reached.actual[key], fc = sc.base.reached.forecast[key];
+      const done = sc.base.reached.actual[key], fc = sc.base.reached.forecast[key], est = sc.reached[key];
       const how = done ? `✓ reached on ${C.fmtDate(done)}`
         : sc.base.fromStatement && E.rank(sc.status.actual) >= E.rank(key) ? '✓ earned as per your statement'
-        : fc ? `✓ with your planned flights on ${C.fmtDate(fc)}` : '✓ reached with this scenario';
+        : fc ? `✓ with your planned flights on ${C.fmtDate(fc)}`
+        : est && est.step === 'co2' ? `✓ with the CO₂ what-ifs on ${C.fmtDate(est.date)}`
+        : est ? `✓ with the extra segments by ${C.fmtDate(est.date)}` : '✓ reached with this scenario';
       return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? how : `missing ${missingTxt(E.gap(sc.total, key, rules))}`}</span></div>`;
     };
     const signedMoney = (v, i) => (i > 0 && v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v), true);

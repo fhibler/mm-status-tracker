@@ -349,6 +349,16 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(pts(sc.total), `${300 + 80 + 384 + 180},${300 + 80 + 384},${240 + 80}`);
   assert.strictEqual(`${sc.cost.mix}:${sc.status.total}`, '4200:FTL');
   assert.strictEqual(lh.co2Level, 'large');   // what-ifs never change the flight itself
+  // when the status is reached: the extra segments have no dates, so they count on 31 December
+  assert.strictEqual(JSON.stringify(sc.reached), '{"FTL":{"date":"2026-12-31","step":"mix"}}');
+  {  // the CO₂ what-ifs date it by the flight that carries them
+    const three = state({ flights: ['2026-01-10', '2026-02-10', '2026-03-10'].map((date, i) => lhBiz({ id: `t${i}`, date })) });   // 3 × 200 P
+    const at = (plan, today = TODAY) => JSON.stringify(E.planScenario(three, 2026, { co2: {}, mix: [], ...plan }, today).reached.FTL);
+    assert.strictEqual(at({}), undefined);
+    assert.strictEqual(at({ co2: { t1: { level: 'large', cost: 40 } } }), '{"date":"2026-03-10","step":"co2"}');   // 300 + 200 + 200 ≥ 650 with the 3rd
+    const oneMore = { mix: [{ count: 1, kind: 'LHG', haul: 'intercontinental', cls: 'Economy', co2Level: 'none', cost: 0 }] };
+    assert.strictEqual(at(oneMore), '{"date":"2026-12-31","step":"mix"}');
+  }
   {  // a compensated flight is locked: loading drops its what-ifs; removing the compensation unlocks it
     const lk = state({ flights: [lh], plans: { 2026: { co2: { a: { level: 'xlarge', cost: 90 } }, mix: [] } } });
     assert.strictEqual('a' in lk.plans['2026'].co2, false);
