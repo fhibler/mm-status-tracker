@@ -362,6 +362,13 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     assert.strictEqual('a' in lk.plans['2026'].co2, false);
     assert.strictEqual(S.removeBooster(lk, 'nope'), undefined);
   }
+  // the dashboard's "incl. Planner" view: the same totals, cost and status as the scenario, as planned items
+  const sp = state({ ...st, plans: { 2026: plan, 2025: { co2: {}, mix: [plan.mix[0]] } } });
+  const wp = E.yearSummary(E.withPlans(sp, TODAY), 2026, TODAY);
+  assert.strictEqual(`${pts(wp.forecast)}:${pts(wp.actual)}:${wp.cost.all.total}:${wp.statusForecast}`, `${pts(sc.total)}:${pts(sc.withCo2.actual)}:${sc.cost.total}:FTL`);
+  assert.strictEqual(`${wp.rows.filter(x => x.planned).length}:${wp.reached.forecastBy.FTL}`, '9:Planner');
+  assert.strictEqual(E.yearSummary(E.withPlans(sp, TODAY), 2025, TODAY).rows.length, 1);   // no extra segments in an ended year
+  assert.strictEqual(`${sp.flights.length}:${sp.flights.find(f => f.id === 'a').co2Level}`, '2:large');   // the state itself is unchanged
   // trains in the mix: continental, no booster, QP capped
   const rail = E.planScenario(st, 2026, { co2: {}, mix: [{ count: 30, kind: 'RAIL', haul: 'intercontinental', cls: 'Business', co2Level: 'xlarge', cost: 0 }] }, TODAY);
   assert.strictEqual(rail.mix[0].e.qp, 40);

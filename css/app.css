@@ -255,6 +255,8 @@ label.btn { font-size: 14px; color: var(--ink); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--ink-3); cursor: pointer;
 }
+.theme-switch[hidden] { display: none; }
+.theme-switch button.with-label { width: auto; gap: 6px; padding: 0 9px; font: inherit; font-size: 13px; font-weight: 600; }
 .theme-switch button svg { width: 16px; height: 16px; }
 .theme-switch button:hover { color: var(--ink); }
 .theme-switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }

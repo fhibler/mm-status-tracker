@@ -474,4 +474,35 @@
       },
     };
   };
+
+  /**
+   * The state with every year's planner scenario applied, for the dashboard's "incl. Planner" view: the CO₂ what-ifs
+   * apply to flights without a booster (locked ones keep theirs), and each extra segment of the mix becomes a planned
+   * flight on 31 Dec of its year (the mix has no dates; skipped for years that have ended), flightNo 'Planner', cost =
+   * its cost per segment.
+   * Its totals match E.planScenario. The state itself is not changed.
+   */
+  E.withPlans = (state, today = E.todayISO()) => {
+    const flights = state.flights.map(f => {
+      const o = (state.plans[f.date.slice(0, 4)] || { co2: {} }).co2[f.id];
+      return o && !E.hasBooster(f) ? { ...f, co2Level: o.level, co2Cost: o.cost } : f;
+    });
+    for (const [y, plan] of Object.entries(state.plans)) {
+      const date = `${y}-12-31`;
+      if (!E.isPlanned({ date }, today)) continue;
+      for (const row of plan.mix) {
+        const rail = row.kind === 'RAIL';
+        for (let i = 0; i < row.count; i++) {
+          flights.push({
+            id: `plan-${y}-${row.id}-${i}`, bookingCode: '', date, transport: rail ? 'rail' : 'flight',
+            flightNo: 'Planner', operatingFlightNo: '', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
+            bookedClass: row.cls, upgradeClass: row.cls, upgradeType: '', flightCost: +row.cost || 0, upgradeCost: 0,
+            co2Level: rail ? 'none' : row.co2Level, co2Cost: 0, earnClassOverride: 'auto',
+            haulOverride: rail ? 'continental' : row.haul, route: null, routeLookup: null, includeInPlan: true, notes: '',
+          });
+        }
+      }
+    }
+    return { ...state, flights };
+  };
 })();

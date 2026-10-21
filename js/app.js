@@ -11,6 +11,8 @@
   try { state = S.load() || S.empty(); } catch (err) { state = S.empty(); loadError = err.message; }   // old data stays stored until the first change
   let year = new Date().getFullYear();
   let view = 'dashboard';
+  let withPlanner = false;   // dashboard incl. the Planner's scenarios (per browser, not part of the .json)
+  try { withPlanner = localStorage.getItem('mm-status-tracker:withPlanner') === '1'; } catch { /* ignore */ }
 
   const money = (v, compact) => new Intl.NumberFormat('en-US', {
     style: 'currency', currency: state.settings.currency, maximumFractionDigits: compact ? 0 : 2, minimumFractionDigits: compact ? 0 : 2,
@@ -62,6 +64,7 @@
     view = v;
     $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
     $$('.view').forEach(s => (s.hidden = s.id !== 'view-' + v));
+    $('#planSwitch').hidden = v !== 'dashboard';
     render();
     try { localStorage.setItem('mm-status-tracker:view', v); } catch { /* ignore */ }
   };
@@ -131,8 +134,9 @@
     const host = $('#view-dashboard');
     if (!state.flights.length && !state.adjustments.length && !state.stays.length) { host.innerHTML = emptyState(); return; }
     const rules = state.settings.rules;
-    const hist = E.history(state, year);
-    const sum = hist.find(h => h.year === year) || { ...E.yearSummary(state, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
+    const st = withPlanner ? E.withPlans(state) : state;   // the Planner's scenarios count as planned items
+    const hist = E.history(st, year);
+    const sum = hist.find(h => h.year === year) || { ...E.yearSummary(st, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
     const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
       : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${sum.fromStatement ? 'as per your statement' : C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
@@ -155,7 +159,7 @@
           <div class="value">${badge(sum.statusActual)}</div>
           <div class="meta">${sum.fromStatement ? `From your statement · valid until ${C.fmtDate(E.validUntil(year))}`
             : sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
-        <div class="card kpi"><div class="label">Forecast incl. plan</div>
+        <div class="card kpi"><div class="label">Forecast incl. ${withPlanner ? 'Planner' : 'plan'}</div>
           <div class="value">${badge(sum.statusForecast)}</div>
           <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
         <div class="card kpi"><div class="label">Points ${year} · flown</div>
@@ -180,7 +184,7 @@
       ${warn}
       <div class="cols">
         <div class="card">
-          <div class="card-head"><h2>Status progress ${year}</h2><span class="sub">solid = flown · hatched = incl. planned flights</span>
+          <div class="card-head"><h2>Status progress ${year}</h2><span class="sub">solid = flown · hatched = incl. planned flights${withPlanner ? ' and Planner (extra segments on 31 Dec)' : ''}</span>
             <div class="right"><button class="btn small" data-act="goto-planner">Plan in Planner →</button></div></div>
           <div class="progress-list" id="progList"></div>
         </div>
@@ -1435,6 +1439,15 @@
   }));
   darkMQ.addEventListener('change', applyTheme);
   applyTheme();
+
+  const planBtn = $('#btnWithPlanner');
+  planBtn.setAttribute('aria-pressed', String(withPlanner));
+  planBtn.addEventListener('click', () => {
+    withPlanner = !withPlanner;
+    planBtn.setAttribute('aria-pressed', String(withPlanner));
+    try { localStorage.setItem('mm-status-tracker:withPlanner', withPlanner ? '1' : '0'); } catch { /* ignore */ }
+    render();
+  });
 
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
