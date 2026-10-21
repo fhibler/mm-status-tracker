@@ -551,7 +551,8 @@
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
         <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.flownClass(f))}</div>` : ''}</td>
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
-        ${locked ? `<td colspan="3"><span class="muted">compensated · remove it to try another booster</span></td>
+        ${locked ? `<td style="white-space:nowrap"><span class="muted">compensated · locked</span></td>
+        <td class="num" style="white-space:nowrap">${plusPts(E.co2Gain({ ...f, co2Level: 'none' }, f.co2Level, state.settings.rules))}</td><td></td>
         <td><button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button></td>`
         : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
