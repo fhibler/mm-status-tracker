@@ -545,17 +545,19 @@
     const eur = state.settings.currency === 'EUR';
 
     const co2Row = (r) => {
-      const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level;
-      return `<tr data-co2-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''}" style="cursor:default">
+      const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level, locked = E.hasBooster(f);
+      return `<tr data-co2-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''}${locked ? ' locked' : ''}" style="cursor:default">
         <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
         <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.flownClass(f))}</div>` : ''}</td>
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
-        <td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
+        ${locked ? `<td colspan="3"><span class="muted">compensated · remove it to try another booster</span></td>
+        <td><button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button></td>`
+        : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
-        <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : (+f.co2Cost || '')}" aria-label="Booster cost" class="num-input">
+        <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : ''}" aria-label="Booster cost" class="num-input">
           <div class="muted" data-cell="co2-est">${co2EstCell(f, level)}</div></td>
-        <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>
+        <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>`}
       </tr>`;
     };
 
@@ -594,7 +596,7 @@
       <div class="card">
         <div class="card-head">
           <h2>CO₂ compensation · existing and planned flights · CY ${year}</h2>
-          <span class="sub">try a booster per flight and see what it adds · Apply saves it to the flight</span>
+          <span class="sub">try a booster per flight and see what it adds · Apply saves it to the flight, which locks it until you remove the compensation (✕)</span>
           ${co2Rows.length ? `<div class="right">
             <select id="co2Bulk" aria-label="Booster to set">${opts(MM.CO2_LEVELS.filter(l => l !== 'none'), co2BulkLevel, l => MM.CO2_LABEL[l])}</select>
             <button class="btn small" data-co2-bulk="flown">Set for flown</button>
@@ -627,6 +629,15 @@
     };
     $$('tr[data-co2-id]', host).forEach(tr => {
       const f = state.flights.find(x => x.id === tr.dataset.co2Id);
+      const remove = $('[data-co2-remove]', tr);
+      if (remove) {   // compensated: locked, the only action is removing the compensation (after a second click)
+        remove.addEventListener('click', () => confirmInline(remove, 'Remove?', () => {
+          const level = f.co2Level;
+          S.removeBooster(state, f.id);
+          save(); renderPlanner(); toast(`${f.flightNo}: ${MM.CO2_LABEL[level]} removed from the flight`);
+        }));
+        return;
+      }
       const sel = $('[data-co2-level]', tr), cost = $('[data-co2-cost]', tr);
       sel.addEventListener('change', () => { cost.value = co2CostFor(f, sel.value) || ''; setOverride(tr, f, sel.value, cost.value); planChanged(); });
       cost.addEventListener('input', () => { setOverride(tr, f, sel.value, cost.value); planChanged(); });
@@ -646,6 +657,7 @@
       const mode = b.dataset.co2Bulk, level = co2BulkLevel;
       if (mode === 'reset') plan.co2 = {};
       for (const r of co2Rows) {
+        if (E.hasBooster(r.f)) continue;   // compensated flights are locked
         if (mode !== 'all' && !(mode === 'planned' && r.planned) && !(mode === 'flown' && !r.planned)) continue;
         if (co2OnlyHon && !E.earn({ ...r.f, co2Level: 'none' }, state.settings.rules).hon) continue;
         if (level === r.f.co2Level) delete plan.co2[r.f.id];

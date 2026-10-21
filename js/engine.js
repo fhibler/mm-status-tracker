@@ -141,7 +141,8 @@
 
   /** CO₂ compensation boosters (and their cost) exist for flights only, not for trains or buses. */
   E.hasBooster = (f) => f.transport === 'flight' && f.co2Level !== 'none';
-  /** Flights for which the planner offers CO₂ what-ifs: a booster changes their Points. */
+  /** Flights for which the planner offers CO₂ what-ifs: a booster changes their Points. A flight with a booster is
+      locked there (no what-ifs) until its compensation is removed (S.removeBooster). */
   E.canBoost = (f) => f.transport === 'flight' && E.earningGroup(f) !== 'NONE';
 
   /**
@@ -442,7 +443,8 @@
 
   /**
    * What-if scenario for a calendar year, on top of the forecast (flown + planned flights, corrections, stays):
-   *  1. plan.co2 = { flightId: { level, cost } } – a CO₂ booster per existing or planned flight instead of its own
+   *  1. plan.co2 = { flightId: { level, cost } } – a CO₂ booster per existing or planned flight without one (a flight
+   *     with a booster is locked, so a what-if for it is ignored)
    *  2. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in)
    * Returns the totals after each step, the extra cost of each step and the status reached (a starting status
    * from the statement counts in every step, see E.yearSummary).
@@ -451,7 +453,7 @@
     const rules = state.settings.rules;
     const over = plan.co2;
     const base = E.yearSummary(state, year, today);
-    const flights = state.flights.map(f => (over[f.id] ? { ...f, co2Level: over[f.id].level, co2Cost: over[f.id].cost } : f));
+    const flights = state.flights.map(f => (over[f.id] && !E.hasBooster(f) ? { ...f, co2Level: over[f.id].level, co2Cost: over[f.id].cost } : f));
     const withCo2 = E.yearSummary({ ...state, flights }, year, today);
     const total = { ...withCo2.forecast };
     let mixCost = 0;

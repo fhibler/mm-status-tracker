@@ -73,15 +73,22 @@
     state.flights = state.flights.filter(f => f.id !== id);
     prune(state);
   };
+  /** Removes the CO₂ compensation (booster and its cost) from a flight, which unlocks it in the planner. */
+  S.removeBooster = (state, id) => {
+    const f = state.flights.find(x => x.id === id);
+    if (f) { f.co2Level = 'none'; f.co2Cost = 0; }
+    prune(state);
+    return f;
+  };
 
   /**
-   * Drops bookings without segments and CO₂ what-ifs for flights that no longer exist, moved to another year or no
-   * longer take a booster (see E.canBoost), since the planner neither shows nor resets those.
+   * Drops bookings without segments and CO₂ what-ifs for flights that no longer exist, moved to another year, no
+   * longer take a booster (see E.canBoost) or have one (locked), since the planner neither shows nor resets those.
    */
   const prune = (state) => {
     const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
     for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
-    const yearOf = new Map(state.flights.filter(E.canBoost).map(f => [f.id, f.date.slice(0, 4)]));
+    const yearOf = new Map(state.flights.filter(f => E.canBoost(f) && !E.hasBooster(f)).map(f => [f.id, f.date.slice(0, 4)]));
     for (const [y, p] of Object.entries(state.plans)) for (const id of Object.keys(p.co2)) if (yearOf.get(id) !== y) delete p.co2[id];
     return state;
   };

@@ -336,7 +336,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(E.co2PriceEstimate(flight({ flightNo: 'LH1', bookedClass: 'Economy' }), 'medium'), null);   // no route
 
   const plan = {
-    co2: { a: { level: 'none', cost: 0 } },   // what if flight a had no booster
+    co2: { a: { level: 'none', cost: 0 } },   // flight a is compensated, so it is locked: this what-if is ignored
     mix: [
       { count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 300 },
       { count: 4, kind: 'LHG', haul: 'intercontinental', cls: 'Premium Economy', co2Level: 'medium', cost: 900 },
@@ -344,11 +344,24 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     ],
   };
   const sc = E.planScenario(st, 2026, plan, TODAY);
-  assert.strictEqual(`${pts(sc.base.forecast)}:${pts(sc.withCo2.forecast)}:${sc.cost.co2Extra}`, '300,300,240:200,200,200:-40');
+  assert.strictEqual(`${pts(sc.base.forecast)}:${pts(sc.withCo2.forecast)}:${sc.cost.co2Extra}`, '300,300,240:300,300,240:0');
   // + 2 × 40 continental Business, 4 × 96 Premium Economy intercontinental (80 + 20 %, no HON), 3 × 60 Star Alliance (Points only)
-  assert.strictEqual(pts(sc.total), `${200 + 80 + 384 + 180},${200 + 80 + 384},${200 + 80}`);
+  assert.strictEqual(pts(sc.total), `${300 + 80 + 384 + 180},${300 + 80 + 384},${240 + 80}`);
   assert.strictEqual(`${sc.cost.mix}:${sc.status.total}`, '4200:FTL');
   assert.strictEqual(lh.co2Level, 'large');   // what-ifs never change the flight itself
+  {  // a compensated flight is locked: loading drops its what-ifs; removing the compensation unlocks it
+    const lk = state({ flights: [lh], plans: { 2026: { co2: { a: { level: 'xlarge', cost: 90 } }, mix: [] } } });
+    assert.strictEqual('a' in lk.plans['2026'].co2, false);
+    const f = S.removeBooster(lk, 'a');
+    assert.strictEqual(`${f.co2Level}:${f.co2Cost}:${E.hasBooster(f)}:${lh.co2Level}`, 'none:0:false:large');
+    const un = E.planScenario(lk, 2026, { co2: { a: { level: 'large', cost: 40 } }, mix: [] }, TODAY);
+    assert.strictEqual(`${pts(un.base.forecast)}:${pts(un.withCo2.forecast)}:${un.cost.co2Extra}`, '200,200,200:300,300,240:40');
+    // saving a booster to the flight (Apply, or the flight dialog) locks it again and drops its what-ifs
+    lk.plans['2026'].co2.a = { level: 'small', cost: 10 };
+    S.saveFlight(lk, { ...f, co2Level: 'large', co2Cost: 40 }, 0);
+    assert.strictEqual('a' in lk.plans['2026'].co2, false);
+    assert.strictEqual(S.removeBooster(lk, 'nope'), undefined);
+  }
   // trains in the mix: continental, no booster, QP capped
   const rail = E.planScenario(st, 2026, { co2: {}, mix: [{ count: 30, kind: 'RAIL', haul: 'intercontinental', cls: 'Business', co2Level: 'xlarge', cost: 0 }] }, TODAY);
   assert.strictEqual(rail.mix[0].e.qp, 40);
@@ -403,7 +416,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.throws(() => S.parse(JSON.stringify({ format: 'other', version: 2 })), /Not a Miles/);
   assert.throws(() => S.parse(JSON.stringify({ version: 2 })), /Not a Miles/);
   // a saved file loads back unchanged: demo data plus stays, a scenario, starting status, number and AeroDataBox key
-  const rich = S.demo(), f0 = rich.flights[0];
+  const rich = S.demo(), f0 = rich.flights.find(f => E.canBoost(f) && !E.hasBooster(f));   // a what-if needs a flight without a booster
   Object.assign(rich.settings, { startStatus: { status: 'SEN', year: 2025 }, memberNumber: '992000123456789', aerodataboxKey: 'ab12cd34' });
   rich.stays.push(S.newStay(f0.date));
   rich.plans[f0.date.slice(0, 4)] = { co2: { [f0.id]: { level: 'small', cost: 5 } }, mix: [S.newMixRow()] };
