@@ -260,6 +260,7 @@ label.btn { font-size: 14px; color: var(--ink); }
 .theme-switch button svg { width: 16px; height: 16px; }
 .theme-switch button:hover { color: var(--ink); }
 .theme-switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.theme-switch button.with-label[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
 .theme-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* ---------- footer ---------- */

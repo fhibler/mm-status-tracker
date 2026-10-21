@@ -159,7 +159,7 @@
           <div class="value">${badge(sum.statusActual)}</div>
           <div class="meta">${sum.fromStatement ? `From your statement · valid until ${C.fmtDate(E.validUntil(year))}`
             : sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
-        <div class="card kpi"><div class="label">Forecast incl. ${withPlanner ? 'Planner' : 'plan'}</div>
+        <div class="card kpi"><div class="label">${withPlanner ? 'Forecast with Planner' : 'Forecast'}</div>
           <div class="value">${badge(sum.statusForecast)}</div>
           <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
         <div class="card kpi"><div class="label">Points ${year} · flown</div>
@@ -184,7 +184,7 @@
       ${warn}
       <div class="cols">
         <div class="card">
-          <div class="card-head"><h2>Status progress ${year}</h2><span class="sub">solid = flown · hatched = incl. planned flights${withPlanner ? ' and Planner (extra segments on 31 Dec)' : ''}</span>
+          <div class="card-head"><h2>Status progress ${year}</h2><span class="sub"${withPlanner ? ' title="Planned flights and the Planner scenario; its extra segments count on 31 Dec"' : ''}>solid = flown · hatched = ${withPlanner ? 'forecast with Planner' : 'incl. planned flights'}</span>
             <div class="right"><button class="btn small" data-act="goto-planner">Plan in Planner →</button></div></div>
           <div class="progress-list" id="progList"></div>
         </div>
