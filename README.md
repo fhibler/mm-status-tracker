@@ -15,7 +15,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   segment's month and year.
   The booking's other segments show where the fare is. Upgrade and CO₂ costs stay per segment.
 - **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key), or by date
-  via [AeroDataBox](https://rapid.aerodatabox.com/pricing) with your own free key.
+  via [AeroDataBox](https://aerodatabox.com/) with your own key (called directly or via RapidAPI).
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.
 - **Points engine**: earns on the booked class, or on the upgrade class for fixed-price (online or airport) and bid upgrades. Upgrades with miles, vouchers or operational upgrades earn on the booked class.
@@ -150,9 +150,13 @@ site to GitHub Pages.
   started, "Look up route" there asks adsbdb again. If an airline reused or changed the number, the lookup can still show the wrong route
   (e.g. UA2837 shows NRT–SFO). Type the
   airports by hand, or set the haul, in the dialog in that case.
-- **Routes by date (optional)**: with your own [AeroDataBox](https://rapid.aerodatabox.com/pricing) key from RapidAPI
-  (Settings → Route lookup), the app asks AeroDataBox for the route on the flight date first and falls back to
-  adsbdb when it doesn't know the flight or fails (e.g. quota used up). The free Basic plan has 400 units a month,
+- **Routes by date (optional)**: with your own AeroDataBox key (Settings → Route lookup), the app asks AeroDataBox
+  for the route on the flight date first and falls back to
+  adsbdb when it doesn't know the flight or fails (e.g. quota used up). "Call AeroDataBox" there picks where the key
+  is from: **directly** from AeroDataBox's own store [API.Market](https://api.market/store/aedbx/aerodatabox)
+  (`prod.api.market`, header `x-api-market-key`) or **via RapidAPI** ([AeroDataBox on RapidAPI](https://rapid.aerodatabox.com/pricing),
+  headers `X-RapidAPI-Key` / `X-RapidAPI-Host`; the default, also for files saved before the choice existed). Route
+  lookups, "Look up times" and "Refresh" all go that way. On RapidAPI, the free Basic plan has 400 units a month,
   and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
   set, "Look up route" in the dialog replaces a route from another season. Changing a flight's date looks its route
   up again for the new date (a route typed by hand stays). The key is saved with your settings, in the
@@ -180,7 +184,7 @@ are used here only to describe what the tool is compatible with.
 
 Points, status dates and costs are estimates. The official Miles & More terms and your account
 statement always apply. Route data comes from [adsbdb.com](https://www.adsbdb.com) and, with your own key,
-[AeroDataBox](https://rapid.aerodatabox.com/pricing), and may be
+[AeroDataBox](https://aerodatabox.com/), and may be
 incomplete or out of date. Airport data for routes you type by hand (5,400+ airports with an IATA
 code) comes from [OurAirports](https://ourairports.com/data/), which is public domain.
 

@@ -434,7 +434,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.throws(() => S.parse(JSON.stringify({ version: 2 })), /Not a Miles/);
   // a saved file loads back unchanged: demo data plus stays, a scenario, starting status, number and AeroDataBox key
   const rich = S.demo(), f0 = rich.flights.find(f => E.canBoost(f) && !E.hasBooster(f));   // a what-if needs a flight without a booster
-  Object.assign(rich.settings, { startStatus: { status: 'SEN', year: 2025 }, memberNumber: '992000123456789', aerodataboxKey: 'ab12cd34' });
+  Object.assign(rich.settings, { startStatus: { status: 'SEN', year: 2025 }, memberNumber: '992000123456789', aerodataboxKey: 'ab12cd34', aerodataboxVia: 'direct' });
   rich.stays.push(S.newStay(f0.date));
   rich.plans[f0.date.slice(0, 4)] = { co2: { [f0.id]: { level: 'small', cost: 5 } }, mix: [S.newMixRow()] };
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(rich))), JSON.stringify(rich));
@@ -537,6 +537,16 @@ async function apiTests() {
   assert.strictEqual(`${byDate.route.destination.iata}:${byDate.route.destination.city}:${byDate.route.provider}:${heads}`, 'BER:Berlin:aerodatabox:secret');
   assert.strictEqual(`${calls}:${A.otherSeason(byDate.entry, '2026-11-17')}`, 'aerodatabox.p.rapidapi.com 2026-11-17?dateLocalRole=Departure:false');   // date-exact, no adsbdb
   assert.strictEqual(A.airport(s3, 'BER').city, 'Berlin');                                       // airports from its answers too
+  // called directly (API.Market) instead of via RapidAPI: same path, its host and key header
+  assert.strictEqual(`${s3.settings.aerodataboxVia}:${state({ settings: { aerodataboxVia: 'other' } }).settings.aerodataboxVia}`, 'rapidapi:rapidapi');   // the default, also for older files
+  const sd = state({ settings: { aerodataboxKey: 'mkt', aerodataboxVia: 'direct' } }), sent = [], viaRapid = respond;
+  respond = (url, opts) => { sent.push(`${url} ${JSON.stringify(opts.headers)}`); return adb(); };
+  assert.strictEqual((await A.lookup(sd, 'LH1966', '2026-11-17', k)).provider, 'aerodatabox');
+  assert.strictEqual(sent.join(), 'https://prod.api.market/api/v1/aedbx/aerodatabox/flights/number/LH1966/2026-11-17?dateLocalRole=Departure {"Accept":"application/json","x-api-market-key":"mkt"}');
+  sd.apiCache = {};   // a forced refresh of the times goes the same way
+  await A.refreshTimes(sd, 'LH1966', '2026-11-17', k);
+  assert.ok(sent[1].startsWith('https://prod.api.market/') && sent[1].includes('x-api-market-key'));
+  respond = viaRapid;
   // its route is for the date it was asked for: a flight moved to the summer is flagged and asked again
   assert.strictEqual(`${A.lookupSeason(byDate.entry)}:${A.isProvisional(A.lookupInfo(byDate.entry, 'LH1966'), '2026-07-10', '2026-10-18', 'secret')}`, 'W26:true');
   adb = () => reply(204, null);

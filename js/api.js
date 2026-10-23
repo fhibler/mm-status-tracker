@@ -1,14 +1,26 @@
-/* Route lookup: AeroDataBox (by date, with the user's own RapidAPI key) and adsbdb.com (free, no key).
+/* Route lookup: AeroDataBox (by date, with the user's own key, called directly or via RapidAPI) and adsbdb.com (free, no key).
  * Every answer is cached in state.apiCache keyed by IATA flight number and flight date ("LH1966 2026-11-17"), and
  * the cache is part of the exported .json – so an imported file re-queries only errors and provisional answers
- * (below). The AeroDataBox key is a setting (state.settings.aerodataboxKey), saved in the browser and in the .json.
+ * (below). The AeroDataBox key and how it is called (state.settings.aerodataboxKey, aerodataboxVia: A.ADB_VIA) are
+ * settings, saved in the browser and in the .json.
  * AeroDataBox knows the route on the flight date. adsbdb ignores the date: it knows one route per number, the one
  * flown at the moment. So an adsbdb answer for a flight in another IATA schedule season (E.iataSeason) is
  * provisional, and is asked again once that season has started, or when AeroDataBox can be asked. */
 (function () {
   const A = (MM.api = {});
   const BASE = 'https://api.adsbdb.com/v0/callsign/';
-  const ADB_HOST = 'aerodatabox.p.rapidapi.com';
+  /**
+   * Ways to call AeroDataBox (state.settings.aerodataboxVia): directly, with a key from AeroDataBox's own store
+   * (API.Market), or via RapidAPI. Both answer the same paths in the same shape; only the host and the key header differ.
+   */
+  A.ADB_VIA = {
+    direct: { label: 'Directly (API.Market)', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox',
+      headers: (key) => ({ 'x-api-market-key': key }) },
+    rapidapi: { label: 'Via RapidAPI', base: 'https://aerodatabox.p.rapidapi.com',
+      headers: (key) => ({ 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' }) },
+  };
+  /** The way to call AeroDataBox of a setting: A.ADB_VIA's 'rapidapi' (keys saved before there was a choice) when unknown. */
+  A.adbVia = (v) => Object.keys(A.ADB_VIA).includes(v) ? v : 'rapidapi';
   const E = MM.engine;
 
   /** Cache key of a flight number on an ISO date. */
@@ -112,16 +124,17 @@
   let adbLast = 0;
 
   /**
-   * Flight `no` departing on `date` from AeroDataBox: { response } (adsbdb-shaped), or { note } saying why there is no
-   * route (204: no such flight; 400: e.g. a date outside the plan's range). Throws for other failures (wrong key
-   * 401/403, quota 429, network).
+   * Flight `no` departing on `date` from AeroDataBox, called the way the settings say (A.ADB_VIA): { response }
+   * (adsbdb-shaped), or { note } saying why there is no route (204: no such flight; 400: e.g. a date outside the plan's
+   * range). Throws for other failures (wrong key 401/403, quota 429, network).
    */
-  const askAeroDataBox = async (no, date, key) => {
+  const askAeroDataBox = async (no, date, settings) => {
+    const via = A.ADB_VIA[A.adbVia(settings.aerodataboxVia)];
     const wait = adbLast + A.adbGap - Date.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     adbLast = Date.now();
-    const res = await fetch(`https://${ADB_HOST}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure`,
-      { headers: { Accept: 'application/json', 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': ADB_HOST } });
+    const res = await fetch(`${via.base}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure`,
+      { headers: { Accept: 'application/json', ...via.headers(settings.aerodataboxKey) } });
     if (res.status === 204 || res.status === 404) return { note: 'no such flight on that date' };
     if (res.status === 400) {
       const body = await res.json().catch(() => null);
@@ -184,7 +197,7 @@
       if (!(cached.status === 'ok' && A.wantsTimes(cached, key))) return { ...cached, fromCache: true };
       // a route without times: only AeroDataBox can add them, and an answer without them keeps the route
       try {
-        const { response, note } = await askAeroDataBox(no, date, key);
+        const { response, note } = await askAeroDataBox(no, date, state.settings);
         if (response) return { ...(state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response }), fromCache: false };
         Object.assign(cached, { adbTried: true, adbNote: note });   // not asked again
       } catch { /* e.g. the quota: asked again next time */ }
@@ -193,7 +206,7 @@
     const entry = { date, fetchedAt: now.toISOString() };
     if (key) {
       try {
-        const { response, note } = await askAeroDataBox(no, date, key);
+        const { response, note } = await askAeroDataBox(no, date, state.settings);
         if (response) Object.assign(entry, { provider: 'aerodatabox', status: 'ok', response });
         else Object.assign(entry, { adbTried: true, adbNote: note });
       } catch (err) {
@@ -237,7 +250,7 @@
     if (!key) return { entry: cached, note: 'no AeroDataBox key' };
     if (now.getTime() < A.refreshAllowedAt(cached)) return { entry: cached, note: 'refreshed less than 5 minutes ago' };
     if (cached) cached.refreshedAt = now.toISOString();   // failed requests count too
-    const { response, note } = await askAeroDataBox(no, date, key);
+    const { response, note } = await askAeroDataBox(no, date, state.settings);
     if (!response) return { entry: cached, note };
     const entry = state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response };
     return { entry, note: '' };
