@@ -72,6 +72,28 @@
   const adbAirport = (a) => ({ iata_code: a.iata, name: a.name, municipality: a.municipalityName, country_iso_name: a.countryCode,
     latitude: a.location && a.location.lat, longitude: a.location && a.location.lon });
 
+  /**
+   * AeroDataBox time ("2026-11-17 06:15Z", "2026-11-17 07:15+01:00", seconds optional) -> ISO without seconds
+   * ("2026-11-17T06:15Z", "2026-11-17T07:15+01:00"), or null.
+   */
+  A.isoTime = (t) => {
+    const m = typeof t === 'string' && t.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/);
+    return m ? `${m[1]}T${m[2]}${m[3] === 'Z' ? 'Z' : m[3].replace(/^([+-]\d{2}):?(\d{2})$/, '$1:$2')}` : null;
+  };
+  /** { utc, local } of an AeroDataBox time object (or of the older scheduledTimeUtc / scheduledTimeLocal fields), or null. */
+  const adbTime = (o, utc, local) => {
+    const t = { utc: A.isoTime(o && o.utc || utc), local: A.isoTime(o && o.local || local) };
+    return t.utc && t.local ? t : null;
+  };
+  /** Departure or arrival of an AeroDataBox flight: scheduled and revised (estimated or actual) time, terminal. */
+  const adbMovement = (m) => {
+    const out = { scheduled: adbTime(m.scheduledTime, m.scheduledTimeUtc, m.scheduledTimeLocal) };
+    const rev = adbTime(m.revisedTime || m.actualTime || m.runwayTime, m.actualTimeUtc, m.actualTimeLocal);
+    if (rev) out.revised = rev;
+    if (m.terminal) out.terminal = String(m.terminal);
+    return out;
+  };
+
   /** Minimum time between AeroDataBox requests in ms: the free plan allows 1 per second. */
   A.adbGap = 1100;
   let adbLast = 0;
@@ -100,13 +122,37 @@
     const ok = (m) => m && m.airport && m.airport.iata;
     const f = Array.isArray(list) && list.find(x => ok(x.departure) && ok(x.arrival));
     if (!f) return { note: 'no route in its answer' };
+    const ac = f.aircraft || {};
     return { response: { flightroute: { callsign_iata: no, airline: f.airline ? { name: f.airline.name } : null,
-      origin: adbAirport(f.departure.airport), destination: adbAirport(f.arrival.airport) } } };
+      origin: adbAirport(f.departure.airport), destination: adbAirport(f.arrival.airport),
+      schedule: { departure: adbMovement(f.departure), arrival: adbMovement(f.arrival), aircraft: ac.model || null, reg: ac.reg || null } } } };
+  };
+
+  /**
+   * Flight times and aircraft of a cache entry, as a flight keeps them (f.times; see E.flightTimes): for the flight
+   * number `flightNo` on `date`, `via` the operating flight that gave them. null when the entry has none (adsbdb knows
+   * no times).
+   */
+  A.timesFromCache = (entry, flightNo, date, via) => {
+    const sc = entry && entry.status === 'ok' && entry.response && entry.response.flightroute && entry.response.flightroute.schedule;
+    if (!sc || !sc.departure || !sc.departure.scheduled) return null;
+    return { flightNo, date, via, provider: entry.provider, fetchedAt: entry.fetchedAt,
+      dep: sc.departure, arr: sc.arrival, aircraft: sc.aircraft, reg: sc.reg };
+  };
+  /**
+   * Whether AeroDataBox could add the times to a cache entry: a key is set, the entry is not an AeroDataBox answer that
+   * already asked for them (answers saved before times were looked up did not), and AeroDataBox has not answered
+   * "no such flight" for it yet.
+   */
+  A.wantsTimes = (entry, key) => {
+    const fr = entry.response && entry.response.flightroute;
+    return !!key && !entry.adbTried && !(entry.provider === 'aerodatabox' && fr && 'schedule' in fr);
   };
 
   /**
    * Returns the cache entry for a flight number on an ISO date. Queries only when no cached answer exists, the
-   * cached one is provisional (A.isProvisional), or `force` is set. With an AeroDataBox key (settings), asks
+   * cached one is provisional (A.isProvisional), or `force` is set. A cached route without times
+   * asks AeroDataBox for them (A.wantsTimes), and keeps its route when AeroDataBox gives none. With an AeroDataBox key (settings), asks
    * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried, adbNote says why) or fails
    * (adbError), asks adsbdb. Network and server errors of adsbdb (anything but 200 / 404, e.g. 429 rate limit) are cached as 'error',
    * which is not final: the next lookup asks again. A forced lookup that fails keeps the earlier answer in the cache.
@@ -115,7 +161,16 @@
   A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date() } = {}) => {
     const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
     const cached = state.apiCache[ck];
-    if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) return { ...cached, fromCache: true };
+    if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) {
+      if (!(cached.status === 'ok' && A.wantsTimes(cached, key))) return { ...cached, fromCache: true };
+      // a route without times: only AeroDataBox can add them, and an answer without them keeps the route
+      try {
+        const { response, note } = await askAeroDataBox(no, date, key);
+        if (response) return { ...(state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response }), fromCache: false };
+        Object.assign(cached, { adbTried: true, adbNote: note });   // not asked again
+      } catch { /* e.g. the quota: asked again next time */ }
+      return { ...cached, fromCache: true };
+    }
     const entry = { date, fetchedAt: now.toISOString() };
     if (key) {
       try {
@@ -143,6 +198,23 @@
     }
     if (entry.status !== 'error' || !cached || cached.status === 'error') state.apiCache[ck] = entry;
     return { ...entry, fromCache: false };
+  };
+
+  /**
+   * Whether A.resolveRoute (not forced) would ask an API for the times of a flight on `date`: an AeroDataBox key is set
+   * and the number it ends with has no final answer in the cache yet (or one that could still get times).
+   */
+  A.timesPending = (state, flightNo, operatingIata, date, today = E.todayISO()) => {
+    const key = state.settings.aerodataboxKey;
+    if (!key) return false;
+    const asks = (no) => {
+      const c = A.cached(state, no, date);
+      return !c || c.status === 'error' || A.isProvisional(c, date, today, key) || (c.status === 'ok' && A.wantsTimes(c, key));
+    };
+    if (!operatingIata) return asks(flightNo);
+    if (asks(operatingIata)) return true;
+    const op = A.cached(state, operatingIata, date);
+    return op.status !== 'ok' && asks(flightNo);   // the flight number is asked only when the operating flight gives no route
   };
 
   /**

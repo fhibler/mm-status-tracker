@@ -440,6 +440,23 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(rich))), JSON.stringify(rich));
 }
 
+/* ---------- flight times: kept per flight number and date, flights sorted by departure in UTC ---------- */
+{
+  const times = (flightNo, date, depUtc) => ({ flightNo, date, provider: 'aerodatabox', aircraft: 'Airbus A350-900', reg: 'D-AIXA',
+    dep: { scheduled: { utc: `${date}T${depUtc}Z`, local: `${date}T${depUtc}+00:00` }, terminal: 1 },
+    arr: { scheduled: { utc: `${date}T23:00Z`, local: `${date}T18:00-05:00` } } });
+  const a = flight({ id: 'a', flightNo: 'LH400', date: '2026-03-01', times: times('LH400', '2026-03-01', '18:00') });
+  const b = flight({ id: 'b', flightNo: 'LH401', date: '2026-03-01', times: times('LH401', '2026-03-01', '06:00') });
+  const c = flight({ id: 'c', flightNo: 'LH402', date: '2026-03-01' });                                          // no times: last
+  const d = flight({ id: 'd', flightNo: 'LH403', date: '2026-02-28', times: times('LH403', '2026-02-28', '23:00') });
+  const st = state({ flights: [c, a, b, d] });
+  assert.strictEqual(E.yearSummary(st, 2026, TODAY).rows.map(r => r.f.id).join(''), 'dbac');
+  assert.strictEqual(`${st.flights[1].times.dep.terminal}:${st.flights[1].times.arr.scheduled.local}`, '1:2026-03-01T18:00-05:00');   // normalized
+  assert.strictEqual(E.flightTimes({ ...st.flights[1], date: '2026-03-02' }), null);       // looked up for another date ...
+  assert.strictEqual(E.flightTimes({ ...st.flights[1], flightNo: 'LH9' }), null);          // ... or number
+  assert.strictEqual(state({ flights: [{ ...a, times: { ...a.times, dep: { scheduled: { utc: 'soon' } } } }] }).flights[0].times, null);   // invalid times are dropped
+}
+
 /* ---------- route lookup (adsbdb, AeroDataBox) with a stubbed fetch ---------- */
 async function apiTests() {
   const st = state();
@@ -540,6 +557,39 @@ async function apiTests() {
   s2.settings.aerodataboxKey = 'secret';
   const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', k);
   assert.strictEqual(`${withKey.fromCache}:${withKey.provider}`, 'false:aerodatabox');
+
+  // times and aircraft: AeroDataBox gives them with the route (adsbdb knows none), in UTC and local time
+  assert.strictEqual(`${A.isoTime('2026-11-17 06:15Z')}|${A.isoTime('2026-11-17 07:15+0100')}|${A.isoTime('2026-11-17T07:15:00-05:30')}|${A.isoTime('07:15')}`,
+    '2026-11-17T06:15Z|2026-11-17T07:15+01:00|2026-11-17T07:15-05:30|null');
+  const timed = { ...adbFlight, aircraft: { reg: 'D-AINA', model: 'Airbus A320 NEO' },
+    departure: { ...adbFlight.departure, scheduledTime: { utc: '2026-11-17 06:15Z', local: '2026-11-17 07:15+01:00' }, terminal: '2' },
+    arrival: { ...adbFlight.arrival, scheduledTime: { utc: '2026-11-17 07:20Z', local: '2026-11-17 08:20+01:00' }, revisedTime: { utc: '2026-11-17 07:31Z', local: '2026-11-17 08:31+01:00' } } };
+  const s4 = state({ settings: { aerodataboxKey: 'secret' } });
+  adb = () => reply(200, [timed]);
+  calls.length = 0;
+  const lk = await A.resolveRoute(s4, 'LH1966', null, '2026-11-17', k);
+  const t = A.timesFromCache(lk.entry, 'LH1966', '2026-11-17', lk.via);
+  assert.strictEqual(`${calls.length}:${t.dep.scheduled.utc}:${t.dep.scheduled.local}:${t.dep.terminal}:${t.arr.revised.utc}:${t.aircraft}:${t.reg}`,
+    '1:2026-11-17T06:15Z:2026-11-17T07:15+01:00:2:2026-11-17T07:31Z:Airbus A320 NEO:D-AINA');   // one request for route and times
+  assert.strictEqual(A.timesPending(s4, 'LH1966', null, '2026-11-17', '2026-10-18'), false);
+  // a cached route without times (adsbdb, or AeroDataBox before times were kept) asks AeroDataBox once more, and only it
+  s4.apiCache['LH1966 2026-11-17'] = { ...nov, adbTried: undefined };   // adsbdb, summer route
+  s4.apiCache['LH1967 2026-11-17'] = { date: '2026-11-17', fetchedAt: '2026-10-18T10:00:00.000Z', provider: 'aerodatabox', status: 'ok', response: { flightroute: { ...fr('BER').flightroute } } };
+  assert.strictEqual(`${A.timesPending(s4, 'LH1967', null, '2026-11-17', '2026-10-18')}:${A.timesPending(state(), 'LH1967', null, '2026-11-17')}`, 'true:false');   // not without a key
+  adb = () => reply(429, null);
+  calls.length = 0;
+  const kept = await A.lookup(s4, 'LH1967', '2026-11-17', k);
+  assert.strictEqual(`${calls.length}:${kept.provider}:${kept.response.flightroute.destination.iata_code}:${A.wantsTimes(kept, 'secret')}`, '1:aerodatabox:BER:true');   // the route stays, asked again later
+  adb = () => reply(204, null);
+  await A.lookup(s4, 'LH1967', '2026-11-17', k);
+  assert.strictEqual(`${A.cached(s4, 'LH1967', '2026-11-17').adbTried}:${A.timesPending(s4, 'LH1967', null, '2026-11-17', '2026-10-18')}`, 'true:false');   // no such flight: not again
+  adb = () => reply(200, [timed]);
+  const added = await A.resolveRoute(s4, 'LH1966', null, '2026-11-17', k);
+  assert.strictEqual(`${added.route.destination.iata}:${!!A.timesFromCache(added.entry)}`, 'BER:true');
+  // codeshare: the operating flight's times
+  calls.length = 0;
+  const cs = await A.resolveRoute(s4, 'UA9', 'LH1966', '2026-11-17', k);
+  assert.strictEqual(`${calls.length}:${A.timesFromCache(cs.entry, 'UA9', '2026-11-17', cs.via).via}`, '0:LH1966');
 }
 
 module.exports = apiTests().then(() => console.log('engine tests passed'));

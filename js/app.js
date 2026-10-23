@@ -343,13 +343,88 @@
   };
 
   /* ================= flights view ================= */
+  const expanded = new Set();   // flights whose times row is folded out (per page view)
+  let timesBusy = false;
+
+  /** "+01:00" -> "UTC+1", "+05:30" -> "UTC+5:30". */
+  const utcOffset = (iso) => {
+    const m = iso.match(/([+-])(\d{2}):(\d{2})$/);
+    return !m ? 'UTC' : `UTC${m[1]}${+m[2]}${m[3] !== '00' ? ':' + m[3] : ''}`;
+  };
+  /** Clock time of an ISO time, with its date when that is not `day` ("07:15", "00:40 · 18 Nov 2026"). */
+  const clock = (iso, day) => `${iso.slice(11, 16)}${iso.slice(0, 10) !== day ? ` <span class="muted">${C.fmtDate(iso.slice(0, 10))}</span>` : ''}`;
+  /** Local and UTC time of a departure or arrival, as "07:15 local (UTC+1) · 06:15 UTC". */
+  const bothTimes = (t, day) => `<b>${clock(t.local, day)}</b> <span class="muted">local (${utcOffset(t.local)})</span> · ${clock(t.utc, day)} <span class="muted">UTC</span>`;
+  const movementTxt = (label, iata, m, day) => {
+    const late = m.revised && m.revised.utc !== m.scheduled.utc
+      ? ` · <span class="muted">${label === 'Departure' ? 'departed / expected' : 'arrived / expected'}</span> ${bothTimes(m.revised, day)}` : '';
+    return `<div><span class="k">${label}</span> <b>${esc(iata || '')}</b> ${bothTimes(m.scheduled, day)}${m.terminal ? ` · <span class="muted">Terminal</span> ${esc(m.terminal)}` : ''}${late}</div>`;
+  };
+  const durationTxt = (a, b) => {
+    const min = Math.round((Date.parse(b) - Date.parse(a)) / 60000);
+    return min > 0 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : '';
+  };
+  /** Whether "Look up times" can get a flight's times: from the cache, or by asking AeroDataBox (A.timesPending). */
+  const timesAvailable = (f) => {
+    const p = isFlight(f) && !E.flightTimes(f) && E.parseFlightNo(f.flightNo), op = E.operating(f);
+    if (!p) return false;
+    const c = A.cached(state, (op && op.iata) || p.iata, f.date) || A.cached(state, p.iata, f.date);
+    return !!A.timesFromCache(c) || A.timesPending(state, p.iata, op && op.iata, f.date);
+  };
+  /** The folded-out row of a flight: departure and arrival (scheduled, local and UTC), flight time and aircraft. */
+  const timesDetail = (f) => {
+    const t = E.flightTimes(f);
+    if (!t) {
+      const why = !isFlight(f) ? 'Times are looked up for flights only.'
+        : timesAvailable(f) ? `Not looked up yet. <button class="btn small" data-act="times-one" data-id="${esc(f.id)}">Look up times</button>`
+        : !state.settings.aerodataboxKey ? 'Departure and arrival times and the aircraft come from AeroDataBox: add your key in <a href="#" data-act="goto-settings">Settings</a>.'
+        : 'AeroDataBox has no times for this flight.';
+      return `<div class="times muted">${why}</div>`;
+    }
+    const day = t.dep.scheduled.local.slice(0, 10), r = hasRoute(f.route) ? f.route : null;
+    const dur = durationTxt(t.dep.scheduled.utc, t.arr.scheduled.utc);
+    const ac = [t.aircraft && esc(t.aircraft), t.reg && `<span class="muted">${esc(t.reg)}</span>`].filter(Boolean).join(' ');
+    return `<div class="times">
+      ${movementTxt('Departure', r && r.origin.iata, t.dep, day)}
+      ${movementTxt('Arrival', r && r.destination.iata, t.arr, day)}
+      <div>${dur ? `<span class="k">Flight time</span> ${dur} · ` : ''}<span class="k">Aircraft</span> ${ac || '<span class="muted">not known yet</span>'}
+        <span class="muted">· scheduled times${t.via ? ` of ${esc(t.via)}` : ''} from AeroDataBox, looked up ${C.fmtDate((t.fetchedAt || '').slice(0, 10))}</span></div>
+    </div>`;
+  };
+  /**
+   * Looks up the times of these flights (A.resolveRoute: the cache first, AeroDataBox only for those without an
+   * answer). A looked-up route is updated with the answer for the date, a route typed in stays.
+   */
+  const lookupTimes = async (flights) => {
+    if (timesBusy) return;
+    timesBusy = true;
+    let got = 0;
+    try {
+      for (const f of flights) {
+        const p = E.parseFlightNo(f.flightNo), op = E.operating(f);
+        const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date);
+        f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via);
+        if (f.times) { got++; expanded.add(f.id); }
+        if (!(f.route && f.route.source === 'manual')) {
+          f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
+          if (res.route) f.route = res.route;
+        }
+      }
+    } finally {
+      timesBusy = false;
+      save(); render();
+    }
+    toast(flights.length === 1 ? (got ? 'Times looked up' : 'AeroDataBox has no times for this flight') : `Times found for ${got} of ${flights.length} flight(s)`);
+  };
+
   const renderFlights = () => {
     const host = $('#view-flights');
     const sum = E.yearSummary(state, year);
     const showCO2 = sum.rows.some(r => E.hasBooster(r.f));
     const flown = sum.rows.filter(r => !r.planned), planned = sum.rows.filter(r => r.planned);
     // Flown / planned is shown by the section rows, so there is no status column.
-    const cols = 12 + (showCO2 ? 1 : 0);
+    const cols = 13 + (showCO2 ? 1 : 0);
+    const missing = sum.rows.filter(r => timesAvailable(r.f)).length;
     const segs = E.bookingSegments(state), holders = E.fareHolders(state);
     /**
      * Fare cell. A booking with several segments shows its whole fare once, on the segment that carries it
@@ -366,7 +441,9 @@
     const row = (r) => {
       const f = r.f, up = E.isUpgraded(f);
       const co2 = E.hasBooster(f);
+      const open = expanded.has(f.id);
       return `<tr data-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
+        <td class="fold"><button class="fold-btn" data-fold="${esc(f.id)}" aria-expanded="${open}" title="Times and aircraft">▸</button></td>
         <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
         <td><b>${esc(f.flightNo)}</b>${f.transport === 'rail' ? ' <span class="pill">Train</span>' : f.transport === 'bus' ? ' <span class="pill">Bus</span>' : ''}<div class="muted"><code>${esc(f.bookingCode || '–')}</code></div></td>
         <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
@@ -377,14 +454,15 @@
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
         <td class="num">${fareCell(f, r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
         ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
-      </tr>`;
+      </tr>
+      <tr class="detail-row ${r.planned ? 'planned' : ''}" data-detail="${esc(f.id)}" ${open ? '' : 'hidden'}><td></td><td colspan="${cols - 1}">${timesDetail(f)}</td></tr>`;
     };
     const tot = (rs) => rs.reduce((a, r) => {
       if (!r.counts) return a;
       a.p += r.e.p; a.qp += r.e.qp; a.hon += r.e.hon; a.flight += r.c.flight; a.upgrade += r.c.upgrade; a.co2 += r.c.co2;
       return a;
     }, { p: 0, qp: 0, hon: 0, flight: 0, upgrade: 0, co2: 0 });
-    const footRow = (label, t) => `<tr><td colspan="7">${label} <span class="muted">· costs ${money(t.flight + t.upgrade + t.co2)}</span></td>
+    const footRow = (label, t) => `<tr><td colspan="8">${label} <span class="muted">· costs ${money(t.flight + t.upgrade + t.co2)}</span></td>
       <td class="num">${num(t.p)}</td><td class="num">${num(t.qp)}</td><td class="num">${num(t.hon)}</td>
       <td class="num">${money(t.flight)}</td><td class="num">${money(t.upgrade)}</td>${showCO2 ? `<td class="num">${money(t.co2)}</td>` : ''}</tr>`;
 
@@ -394,12 +472,14 @@
           <h2>Flights &amp; trains · CY ${year}</h2>
           <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
+            ${missing ? `<button class="btn" data-act="times-all" title="Departure and arrival times and the aircraft from AeroDataBox, for the flights of ${year} without them">Look up times (${missing})</button>` : ''}
+            ${sum.rows.length ? `<button class="btn" data-act="fold-all">${sum.rows.every(r => expanded.has(r.f.id)) ? 'Collapse all' : 'Expand all'}</button>` : ''}
             <button class="btn primary" data-act="add">+ Add flight / train</button>
           </div>
         </div>
         ${sum.rows.length ? `<div class="table-wrap"><table>
           <thead><tr>
-            <th>Date</th><th>Flight</th><th>Airline</th><th>Route</th><th>Haul</th><th>Booked</th><th>Upgrade</th>
+            <th class="fold"></th><th>Date</th><th>Flight</th><th>Airline</th><th>Route</th><th>Haul</th><th>Booked</th><th>Upgrade</th>
             <th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th class="num">Fare</th><th class="num">Upg. cost</th>
             ${showCO2 ? '<th class="num">CO₂ cost</th>' : ''}
           </tr></thead>
@@ -418,6 +498,13 @@
       ${renderAdjustmentsCard(sum)}
       ${renderStaysCard(sum)}`;
     $$('tbody tr[data-id]', host).forEach(tr => tr.addEventListener('click', () => openDialog(state.flights.find(f => f.id === tr.dataset.id))));
+    $$('[data-fold]', host).forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();   // the row opens the dialog
+      const id = b.dataset.fold, open = !expanded.has(id);
+      open ? expanded.add(id) : expanded.delete(id);
+      b.setAttribute('aria-expanded', open);
+      $(`tr[data-detail="${id}"]`, host).hidden = !open;
+    }));
     $$('tbody tr[data-adj-id]', host).forEach(tr => tr.addEventListener('click', () => openAdjDialog(state.adjustments.find(a => a.id === tr.dataset.adjId))));
     $$('tbody tr[data-stay-id]', host).forEach(tr => tr.addEventListener('click', () => openStayDialog(state.stays.find(s => s.id === tr.dataset.stayId))));
   };
@@ -1157,6 +1244,7 @@
     const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force });
     if (seq !== lookupSeq || stale(d)) return;
     draft.routeLookup = A.lookupInfo(res.entry, parsed.iata, res.via, op ? op.iata : undefined);
+    draft.times = A.timesFromCache(res.entry, draft.flightNo, draft.date, res.via);
     if (res.route) {   // without one, a route typed by hand stays
       draft.route = res.route;
       form.origin.value = res.route.origin.iata || '';
@@ -1370,6 +1458,7 @@
     }
     const flight = structuredClone(draft);
     if (flight.routeLookup && flight.routeLookup.status === 'loading') flight.routeLookup = null;
+    if (!E.flightTimes(flight)) flight.times = null;   // looked up for another number or date
     S.saveFlight(state, flight, fareInfo().fare);
     year = +flight.date.slice(0, 4);
     save(); dlg.close();
@@ -1386,6 +1475,13 @@
     if (act === 'add-adj') openAdjDialog(null);
     if (act === 'add-stay') openStayDialog(null);
     if (act === 'goto-flights') setView('flights');
+    if (act === 'times-one') { lookupTimes([state.flights.find(f => f.id === b.dataset.id)]); }
+    if (act === 'times-all') { b.disabled = true; b.textContent = 'Looking up…'; lookupTimes(E.yearSummary(state, year).rows.map(r => r.f).filter(timesAvailable)); }
+    if (act === 'fold-all') {
+      const ids = E.yearSummary(state, year).rows.map(r => r.f.id), all = ids.every(id => expanded.has(id));
+      ids.forEach(id => (all ? expanded.delete(id) : expanded.add(id)));
+      render();
+    }
     if (act === 'goto-settings') { e.preventDefault(); setView('settings'); }
     if (act === 'goto-planner') setView('planner');
     if (act === 'load') $('#fileLoad').click();

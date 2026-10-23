@@ -51,6 +51,19 @@
   };
 
   /**
+   * Looked-up times and aircraft of a flight (f.times, see MM.api.timesFromCache), or null when it has none or they
+   * were looked up for another flight number or date.
+   */
+  E.flightTimes = (f) => (f.transport === 'flight' && f.times && f.times.date === f.date && f.times.flightNo === f.flightNo ? f.times : null);
+  /** Scheduled departure of a flight in UTC ("2026-11-17T06:15Z"), or '' without looked-up times. */
+  E.depUtc = (f) => { const t = E.flightTimes(f); return t ? t.dep.scheduled.utc : ''; };
+  /** Flights and trains by date, then by departure in UTC; those without times last on their date. */
+  E.byDeparture = (a, b) => {
+    const x = E.depUtc(a), y = E.depUtc(b);
+    return a.date.localeCompare(b.date) || (!x || !y ? !x - !y : x < y ? -1 : x > y ? 1 : 0);
+  };
+
+  /**
    * Money field text -> amount ≥ 0; 0 if empty or no number. A comma or a point is the decimal separator ("9,11"
    * and "9.11" are 9.11); with both, the last one is (1.234,56 and 1,234.56). Alone, it groups thousands when it
    * occurs more than once (1.000.000) or has exactly three digits after it (1,200 and 1.200 are 1200, as the app shows
@@ -276,7 +289,8 @@
 
   /**
    * Walks one calendar year in date order (flights, manual corrections and Marriott stays; on the same day in
-   * that order). rows: flights; adjustments: corrections; stays: hotel stays; events: all of them in date order.
+   * that order, flights by departure time: E.byDeparture). rows: flights; adjustments: corrections; stays: hotel stays;
+   * events: all of them in date order.
    * Also returns totals (actual vs. incl. plan), costs (actual, plan, all), the dates on which each status held at the
    * end of the walk was (or will be) reached and, for the forecast, the item that reached it (reached.forecastBy). Items after `today`
    * are planned. A starting status from the statement earned in this year raises statusActual / statusForecast
@@ -291,7 +305,7 @@
       ...state.flights.filter(inYear).map(f => ({ kind: 'flight', f, date: f.date })),
       ...state.adjustments.filter(inYear).map(a => ({ kind: 'adj', a, date: a.date })),
       ...state.stays.filter(inYear).map(s => ({ kind: 'stay', s, date: s.date })),
-    ].sort((x, y) => x.date.localeCompare(y.date) || ORDER[x.kind] - ORDER[y.kind]);
+    ].sort((x, y) => x.date.localeCompare(y.date) || ORDER[x.kind] - ORDER[y.kind] || (x.f ? E.byDeparture(x.f, y.f) : 0));
     const zero = () => ({ p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 });
     const noCost = () => ({ flight: 0, upgrade: 0, co2: 0, total: 0 });
     const act = zero(), all = zero();

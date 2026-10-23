@@ -206,6 +206,16 @@ tbody tr { cursor: pointer; }
 tfoot td { font-weight: 700; border-bottom: 0; border-top: 2px solid var(--border); }
 td .route { font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
 td .muted, .muted { color: var(--ink-3); font-size: 12px; }
+th.fold, td.fold { width: 22px; padding-left: 2px; padding-right: 0; }
+.fold-btn { width: 22px; height: 22px; border: 0; border-radius: 5px; background: none; color: var(--ink-3); cursor: pointer; font-size: 12px; line-height: 1; transition: transform .15s; }
+.fold-btn:hover { background: var(--surface-2); color: var(--ink); }
+.fold-btn[aria-expanded="true"] { transform: rotate(90deg); }
+tbody tr.detail-row { cursor: default; }
+tbody tr.detail-row:hover { background: inherit; }
+tbody tr.detail-row.planned:hover { background: var(--planned-bg); }
+tr:has(+ tr.detail-row:not([hidden])) td { border-bottom-color: transparent; }
+.times { display: grid; gap: 3px; padding: 0 0 4px; white-space: normal; }
+.times .k { display: inline-block; min-width: 72px; color: var(--ink-3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .sep-row td { background: var(--surface-2); font-size: 11px; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px; cursor: default; }
 
 /* ---------- dialog ---------- */

@@ -25,7 +25,7 @@
     flightNo: '', operatingFlightNo: '',
     earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradeType: '',   // see MM.UPGRADE_TYPES
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
-    earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, includeInPlan: true, notes: '',
+    earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, times: null, includeInPlan: true, notes: '',
   });
 
   /** Manual correction as shown on the Miles & More account statement (values may be negative). */
@@ -121,8 +121,25 @@
     upgradeType: ['', ...Object.keys(MM.UPGRADE_TYPES)],
     co2Level: MM.CO2_LEVELS,
   };
+  const str = (x, max) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : null);
+  const time = (t) => (isObj(t) && MM.api.isoTime(t.utc) && MM.api.isoTime(t.local) ? { utc: MM.api.isoTime(t.utc), local: MM.api.isoTime(t.local) } : null);
+  const movement = (m) => {
+    if (!isObj(m) || !time(m.scheduled)) return null;
+    const out = { scheduled: time(m.scheduled) };
+    if (time(m.revised)) out.revised = time(m.revised);
+    const term = typeof m.terminal === 'number' ? String(m.terminal) : str(m.terminal, 10);
+    if (term) out.terminal = term;
+    return out;
+  };
+  /** Looked-up times of a flight (MM.api.timesFromCache) with valid times, or null. */
+  S.normalizeTimes = (t) => {
+    if (!isObj(t) || !E.parseFlightNo(t.flightNo) || E.parseDate(t.date) !== t.date || !movement(t.dep) || !movement(t.arr)) return null;
+    return { flightNo: t.flightNo, date: t.date, via: str(t.via, 8) || undefined, provider: str(t.provider, 20), fetchedAt: str(t.fetchedAt, 30),
+      dep: movement(t.dep), arr: movement(t.arr), aircraft: str(t.aircraft, 60), reg: str(t.reg, 12) };
+  };
   const normalizeFlight = (f) => {
     const d = S.newFlight(f.date);
+    f.times = S.normalizeTimes(f.times);
     for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
     // as the dialog saves them: trains in 2nd or 1st class; trains and buses without the flight-only fields
     if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = 'Economy';
