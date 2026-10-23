@@ -219,6 +219,30 @@
     return { ...entry, fromCache: false };
   };
 
+  /** Minimum time between two forced refreshes of the times of one flight number and date (A.refreshTimes), in ms. */
+  A.refreshGap = 5 * 60 * 1000;
+  /** When the times of a cache entry may be refreshed again (ms since the epoch): A.refreshGap after its last request. */
+  A.refreshAllowedAt = (entry) => {
+    const last = Date.parse(entry && (entry.refreshedAt || entry.fetchedAt));
+    return isNaN(last) ? 0 : last + A.refreshGap;
+  };
+  /**
+   * Asks AeroDataBox again for the times (e.g. a delay) of flight `no` on `date`, at most once per A.refreshGap.
+   * Only AeroDataBox is asked, since adsbdb knows no times; when it gives no answer, the cached route stays.
+   * Returns { entry, note } (note says why nothing changed), or throws when AeroDataBox fails.
+   */
+  A.refreshTimes = async (state, iataFlightNo, date, { now = new Date() } = {}) => {
+    const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
+    const cached = state.apiCache[ck];
+    if (!key) return { entry: cached, note: 'no AeroDataBox key' };
+    if (now.getTime() < A.refreshAllowedAt(cached)) return { entry: cached, note: 'refreshed less than 5 minutes ago' };
+    if (cached) cached.refreshedAt = now.toISOString();   // failed requests count too
+    const { response, note } = await askAeroDataBox(no, date, key);
+    if (!response) return { entry: cached, note };
+    const entry = state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response };
+    return { entry, note: '' };
+  };
+
   /**
    * Whether A.resolveRoute (not forced) would ask an API for the times of a flight on `date`: an AeroDataBox key is set
    * and the number it ends with has no final answer in the cache yet (or one that could still get times).

@@ -597,6 +597,20 @@ async function apiTests() {
     'true:1:HAM:2026-11-17T09:00Z');
   assert.strictEqual(A.airport(s4, 'SYL').city, 'SYL');   // airports of every leg
 
+  // a forced refresh of the times: AeroDataBox only, at most once per 5 minutes per number and date
+  const t0 = new Date('2026-11-17T05:00:00Z'), later = (min) => ({ now: new Date(t0.getTime() + min * 60000) });
+  s4.apiCache['LH5 2026-11-17'] = { date: '2026-11-17', fetchedAt: t0.toISOString(), provider: 'aerodatabox', status: 'ok', response: { flightroute: A.legs(lk.entry)[0] } };
+  calls.length = 0;
+  assert.strictEqual((await A.refreshTimes(s4, 'LH5', '2026-11-17', later(4))).note, 'refreshed less than 5 minutes ago');
+  adb = () => reply(200, [{ ...timed, departure: { ...timed.departure, revisedTime: { utc: '2026-11-17 06:45Z', local: '2026-11-17 07:45+01:00' } } }]);
+  const fresh = await A.refreshTimes(s4, 'LH5', '2026-11-17', later(5));
+  assert.strictEqual(`${calls.length}:${fresh.note}:${A.timesFromCache(fresh.entry, 'LH5', '2026-11-17').dep.revised.utc}`, '1::2026-11-17T06:45Z');
+  adb = () => reply(429, null);
+  await assert.rejects(A.refreshTimes(s4, 'LH5', '2026-11-17', later(11)));
+  assert.strictEqual(`${(await A.refreshTimes(s4, 'LH5', '2026-11-17', later(12))).note}:${calls.length}:${A.cached(s4, 'LH5', '2026-11-17').provider}`,
+    'refreshed less than 5 minutes ago:2:aerodatabox');   // a failed request counts too, and the answer stays
+  assert.strictEqual((await A.refreshTimes(state(), 'LH5', '2026-11-17')).note, 'no AeroDataBox key');
+
   // codeshare: the operating flight's times
   calls.length = 0;
   const cs = await A.resolveRoute(s4, 'UA9', 'LH1966', '2026-11-17', k);

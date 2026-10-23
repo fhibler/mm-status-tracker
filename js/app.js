@@ -371,8 +371,53 @@
     const c = A.cached(state, (op && op.iata) || p.iata, f.date) || A.cached(state, p.iata, f.date);
     return !!A.timesFromCache(c) || A.timesPending(state, p.iata, op && op.iata, f.date);
   };
+  /** The number whose times a flight shows or would get: the operating flight that gave them, else the flight number. */
+  const timesNo = (f) => {
+    const t = E.flightTimes(f), lk = f.routeLookup, op = E.operating(f);
+    return (t && t.via) || (lk && lk.via) || (op && op.iata) || E.parseFlightNo(f.flightNo).iata;
+  };
+  /** Refresh button of a folded-out flight (A.refreshTimes), disabled for 5 minutes after the last request. */
+  const refreshBtn = (f) => {
+    if (!isFlight(f) || !state.settings.aerodataboxKey || !E.parseFlightNo(f.flightNo)) return '';
+    const wait = A.refreshAllowedAt(A.cached(state, timesNo(f), f.date)) - Date.now();
+    if (wait > 0) scheduleRefreshUnlock(wait);
+    return `<button class="btn small refresh-btn" data-act="times-refresh" data-id="${esc(f.id)}" ${wait > 0 ? 'disabled' : ''}
+      title="${wait > 0 ? `Refreshed recently – possible again in ${Math.ceil(wait / 60000)} min (saves API calls)` : 'Ask AeroDataBox again for the current times, e.g. a delay or a new aircraft'}">↻ Refresh</button>`;
+  };
+  /** Re-renders the flights view once the earliest disabled refresh button may be used again. */
+  let unlockT = null, unlockAt = Infinity;
+  const scheduleRefreshUnlock = (wait) => {
+    const at = Date.now() + wait;
+    if (at >= unlockAt) return;
+    clearTimeout(unlockT);
+    unlockAt = at;
+    unlockT = setTimeout(() => { unlockAt = Infinity; if (view === 'flights' && !dlg.open) render(); }, wait + 500);
+  };
+  /** Asks AeroDataBox again for a flight's times (A.refreshTimes) and keeps the leg of its route. */
+  const refreshTimes = async (f, b) => {
+    b.disabled = true; b.textContent = '↻ Refreshing…';
+    const no = timesNo(f);
+    let msg;
+    try {
+      const { entry, note } = await A.refreshTimes(state, no, f.date);
+      const via = no !== E.parseFlightNo(f.flightNo).iata ? no : undefined;
+      if (!note && entry) {
+        const leg = A.legIndex(entry, f.route);
+        f.times = A.timesFromCache(entry, f.flightNo, f.date, via, leg);
+        if (!(f.route && f.route.source === 'manual') && A.routeFromCache(entry, leg)) {
+          f.route = via ? { ...A.routeFromCache(entry, leg), via } : A.routeFromCache(entry, leg);
+          f.routeLookup = A.lookupInfo({ ...entry, fromCache: false }, E.parseFlightNo(f.flightNo).iata, via, E.operating(f) ? E.operating(f).iata : undefined);
+        }
+      }
+      msg = note ? `AeroDataBox: ${note} – nothing changed` : f.times ? 'Times refreshed' : 'AeroDataBox has no times for this flight';
+    } catch (err) {
+      msg = `AeroDataBox failed (${err.message}) – try again in 5 minutes`;
+    }
+    save(); render(); toast(msg);
+  };
   /** The folded-out row of a flight: departure and arrival (scheduled, local and UTC), flight time and aircraft. */
-  const timesDetail = (f) => {
+  const timesDetail = (f) => `<div class="detail">${timesInfo(f)}${E.flightTimes(f) || !timesAvailable(f) ? refreshBtn(f) : ''}</div>`;
+  const timesInfo = (f) => {
     const t = E.flightTimes(f);
     if (!t) {
       const why = !isFlight(f) ? 'Times are looked up for flights only.'
@@ -389,7 +434,7 @@
       ${movementTxt('Departure', r && r.origin.iata, t.dep, day)}
       ${movementTxt('Arrival', r && r.destination.iata, t.arr, day)}
       <div>${dur ? `<span class="k">Flight time</span> ${dur} · ` : ''}<span class="k">Aircraft</span> ${ac || '<span class="muted">not known yet</span>'}
-        <span class="muted">· scheduled times${t.via ? ` of ${esc(t.via)}` : ''} from AeroDataBox, looked up ${C.fmtDate((t.fetchedAt || '').slice(0, 10))}</span></div>
+        <span class="muted">· scheduled times${t.via ? ` of ${esc(t.via)}` : ''} from AeroDataBox, looked up ${C.fmtDate((t.fetchedAt || '').slice(0, 10))}${t.fetchedAt ? `, ${esc(t.fetchedAt.slice(11, 16))} UTC` : ''}</span></div>
       ${n > 1 ? `<div class="muted">This number flies ${n} routes on that day: click the row to choose another.</div>` : ''}
     </div>`;
   };
@@ -1512,6 +1557,7 @@
     if (act === 'add-adj') openAdjDialog(null);
     if (act === 'add-stay') openStayDialog(null);
     if (act === 'goto-flights') setView('flights');
+    if (act === 'times-refresh') refreshTimes(state.flights.find(f => f.id === b.dataset.id), b);
     if (act === 'times-one') { lookupTimes([state.flights.find(f => f.id === b.dataset.id)]); }
     if (act === 'times-all') { b.disabled = true; b.textContent = 'Looking up…'; lookupTimes(E.yearSummary(state, year).rows.map(r => r.f).filter(timesAvailable)); }
     if (act === 'fold-all') {
