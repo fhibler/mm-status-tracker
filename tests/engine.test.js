@@ -586,6 +586,17 @@ async function apiTests() {
   adb = () => reply(200, [timed]);
   const added = await A.resolveRoute(s4, 'LH1966', null, '2026-11-17', k);
   assert.strictEqual(`${added.route.destination.iata}:${!!A.timesFromCache(added.entry)}`, 'BER:true');
+  // several routes for one number on a date (a flight with a stop): all are kept, the flight's airports pick one
+  const leg = (from, to, dep) => ({ ...timed, departure: { airport: adbAp(from, from, 'DE'), scheduledTime: { utc: `2026-11-17 ${dep}Z`, local: `2026-11-17 ${dep}+00:00` } },
+    arrival: { airport: adbAp(to, to, 'DE'), scheduledTime: { utc: '2026-11-17 23:00Z', local: '2026-11-17 23:00+00:00' } } });
+  adb = () => reply(200, [leg('MUC', 'HAM', '06:00'), leg('HAM', 'SYL', '09:00'), leg('MUC', 'HAM', '06:00')]);   // one listed twice
+  const two = await A.resolveRoute(s4, 'LH2', null, '2026-11-17', k);
+  assert.strictEqual(`${A.legs(two.entry).map(l => l.origin.iata_code + l.destination.iata_code)}:${two.leg}:${two.route.destination.iata}`, 'MUCHAM,HAMSYL:0:HAM');
+  const second = await A.resolveRoute(s4, 'LH2', null, '2026-11-17', { ...k, route: { origin: { iata: 'HAM' }, destination: { iata: 'SYL' } } });
+  assert.strictEqual(`${second.entry.fromCache}:${second.leg}:${second.route.origin.iata}:${A.timesFromCache(second.entry, 'LH2', '2026-11-17', undefined, second.leg).dep.scheduled.utc}`,
+    'true:1:HAM:2026-11-17T09:00Z');
+  assert.strictEqual(A.airport(s4, 'SYL').city, 'SYL');   // airports of every leg
+
   // codeshare: the operating flight's times
   calls.length = 0;
   const cs = await A.resolveRoute(s4, 'UA9', 'LH1966', '2026-11-17', k);

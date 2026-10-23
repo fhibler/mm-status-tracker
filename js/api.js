@@ -21,9 +21,21 @@
   /** adsbdb airport -> the app's airport shape. */
   const mapAirport = (a) => a && { iata: a.iata_code, name: a.name, city: a.municipality, country: a.country_iso_name, lat: a.latitude, lon: a.longitude };
 
-  A.routeFromCache = (entry) => {
-    if (!entry || entry.status !== 'ok') return null;
-    const fr = entry.response && entry.response.flightroute;
+  /**
+   * Routes of a cache entry: AeroDataBox can list several for a number on a date (a flight with stops, or two flights
+   * with one number; response.legs), adsbdb one (response.flightroute, which is also the first of the legs).
+   */
+  A.legs = (entry) => {
+    const r = entry && entry.status === 'ok' && entry.response;
+    return !r || !r.flightroute ? [] : Array.isArray(r.legs) && r.legs.length ? r.legs : [r.flightroute];
+  };
+  /** Index of the leg of a cache entry with the airports of `route` (a flight's route), else 0. */
+  A.legIndex = (entry, route) => Math.max(0, !route || !route.origin || !route.destination ? 0
+    : A.legs(entry).findIndex(l => l.origin && l.destination && l.origin.iata_code === route.origin.iata && l.destination.iata_code === route.destination.iata));
+
+  /** Route of leg `leg` of a cache entry (A.legs), or null. */
+  A.routeFromCache = (entry, leg = 0) => {
+    const fr = A.legs(entry)[leg];
     if (!fr) return null;
     return { origin: mapAirport(fr.origin), destination: mapAirport(fr.destination), airlineName: fr.airline && fr.airline.name,
       source: 'api', provider: entry.provider || 'adsbdb' };
@@ -53,9 +65,10 @@
   /** Airport by IATA code: from a cached route lookup, else from the bundled airport table (MM.airport). */
   A.airport = (state, iata) => {
     for (const c of Object.values(state.apiCache)) {
-      const fr = c.status === 'ok' && c.response && c.response.flightroute;
-      const a = fr && [fr.origin, fr.destination].find(x => x && x.iata_code === iata);
-      if (a) return mapAirport(a);
+      for (const fr of A.legs(c)) {
+        const a = [fr.origin, fr.destination].find(x => x && x.iata_code === iata);
+        if (a) return mapAirport(a);
+      }
     }
     return MM.airport(iata) || { iata, country: null, lat: null, lon: null };
   };
@@ -120,21 +133,27 @@
     }
     const list = await res.json().catch(() => null);
     const ok = (m) => m && m.airport && m.airport.iata;
-    const f = Array.isArray(list) && list.find(x => ok(x.departure) && ok(x.arrival));
-    if (!f) return { note: 'no route in its answer' };
-    const ac = f.aircraft || {};
-    return { response: { flightroute: { callsign_iata: no, airline: f.airline ? { name: f.airline.name } : null,
-      origin: adbAirport(f.departure.airport), destination: adbAirport(f.arrival.airport),
-      schedule: { departure: adbMovement(f.departure), arrival: adbMovement(f.arrival), aircraft: ac.model || null, reg: ac.reg || null } } } };
+    const seen = new Set();
+    const legs = (Array.isArray(list) ? list : []).filter(x => ok(x.departure) && ok(x.arrival)).map((f) => {
+      const ac = f.aircraft || {};
+      return { callsign_iata: no, airline: f.airline ? { name: f.airline.name } : null,
+        origin: adbAirport(f.departure.airport), destination: adbAirport(f.arrival.airport),
+        schedule: { departure: adbMovement(f.departure), arrival: adbMovement(f.arrival), aircraft: ac.model || null, reg: ac.reg || null } };
+    }).filter((l) => {   // the same leg listed twice (e.g. once per data source) is one route
+      const k = `${l.origin.iata_code} ${l.destination.iata_code} ${l.schedule.departure.scheduled ? l.schedule.departure.scheduled.utc : ''}`;
+      return !seen.has(k) && seen.add(k);
+    });
+    if (!legs.length) return { note: 'no route in its answer' };
+    return { response: legs.length > 1 ? { flightroute: legs[0], legs } : { flightroute: legs[0] } };
   };
 
   /**
-   * Flight times and aircraft of a cache entry, as a flight keeps them (f.times; see E.flightTimes): for the flight
-   * number `flightNo` on `date`, `via` the operating flight that gave them. null when the entry has none (adsbdb knows
-   * no times).
+   * Flight times and aircraft of leg `leg` of a cache entry (A.legs), as a flight keeps them (f.times; see
+   * E.flightTimes): for the flight number `flightNo` on `date`, `via` the operating flight that gave them. null when the
+   * entry has none (adsbdb knows no times).
    */
-  A.timesFromCache = (entry, flightNo, date, via) => {
-    const sc = entry && entry.status === 'ok' && entry.response && entry.response.flightroute && entry.response.flightroute.schedule;
+  A.timesFromCache = (entry, flightNo, date, via, leg = 0) => {
+    const fr = A.legs(entry)[leg], sc = fr && fr.schedule;
     if (!sc || !sc.departure || !sc.departure.scheduled) return null;
     return { flightNo, date, via, provider: entry.provider, fetchedAt: entry.fetchedAt,
       dep: sc.departure, arr: sc.arrival, aircraft: sc.aircraft, reg: sc.reg };
@@ -220,19 +239,25 @@
   /**
    * Route of a flight number on a date. A codeshare number is often unknown to the APIs, so with an operating flight
    * (`operatingIata`) that is asked first, and the flight number only when it gives no route.
-   * Returns { entry, route, via, resolved }: resolved is the number that gave the route (or null); route carries `via`
-   * when it came from the operating flight. entry is the lookup to remember (see A.lookupInfo): the one that gave the
+   * Returns { entry, route, via, resolved, leg }: resolved is the number that gave the route (or null); route carries
+   * `via` when it came from the operating flight. With several routes for the number (A.legs), `opts.route` (the
+   * flight's current route) picks the leg with its airports, else the first; leg is its index. entry is the lookup to remember (see A.lookupInfo): the one that gave the
    * route, else one that failed (an error is not final, so the flight is looked up again later), else the flight number's.
    */
   A.resolveRoute = async (state, flightNo, operatingIata, date, opts) => {
     if (operatingIata) {
       const op = await A.lookup(state, operatingIata, date, opts);
-      if (op.status === 'ok') return { entry: op, route: { ...A.routeFromCache(op), via: operatingIata }, via: operatingIata, resolved: operatingIata };
+      if (op.status === 'ok') {
+        const leg = A.legIndex(op, opts && opts.route);
+        return { entry: op, route: { ...A.routeFromCache(op, leg), via: operatingIata }, via: operatingIata, resolved: operatingIata, leg };
+      }
       const own = await A.lookup(state, flightNo, date, opts);
-      if (own.status === 'ok') return { entry: own, route: A.routeFromCache(own), via: undefined, resolved: flightNo };
-      return { entry: op.status === 'error' ? op : own, route: null, via: undefined, resolved: null };
+      const leg = A.legIndex(own, opts && opts.route);
+      if (own.status === 'ok') return { entry: own, route: A.routeFromCache(own, leg), via: undefined, resolved: flightNo, leg };
+      return { entry: op.status === 'error' ? op : own, route: null, via: undefined, resolved: null, leg: 0 };
     }
     const entry = await A.lookup(state, flightNo, date, opts);
-    return { entry, route: A.routeFromCache(entry), via: undefined, resolved: entry.status === 'ok' ? flightNo : null };
+    const leg = A.legIndex(entry, opts && opts.route);
+    return { entry, route: A.routeFromCache(entry, leg), via: undefined, resolved: entry.status === 'ok' ? flightNo : null, leg };
   };
 })();

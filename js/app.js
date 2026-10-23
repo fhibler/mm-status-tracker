@@ -381,14 +381,16 @@
         : 'AeroDataBox has no times for this flight.';
       return `<div class="times muted">${why}</div>`;
     }
-    const day = t.dep.scheduled.local.slice(0, 10), r = hasRoute(f.route) ? f.route : null;
+    const day = f.date, r = hasRoute(f.route) ? f.route : null;   // a later leg of the number can depart the next day
     const dur = durationTxt(t.dep.scheduled.utc, t.arr.scheduled.utc);
     const ac = [t.aircraft && esc(t.aircraft), t.reg && `<span class="muted">${esc(t.reg)}</span>`].filter(Boolean).join(' ');
+    const n = A.legs(routeEntry(f)).length;
     return `<div class="times">
       ${movementTxt('Departure', r && r.origin.iata, t.dep, day)}
       ${movementTxt('Arrival', r && r.destination.iata, t.arr, day)}
       <div>${dur ? `<span class="k">Flight time</span> ${dur} · ` : ''}<span class="k">Aircraft</span> ${ac || '<span class="muted">not known yet</span>'}
         <span class="muted">· scheduled times${t.via ? ` of ${esc(t.via)}` : ''} from AeroDataBox, looked up ${C.fmtDate((t.fetchedAt || '').slice(0, 10))}</span></div>
+      ${n > 1 ? `<div class="muted">This number flies ${n} routes on that day: click the row to choose another.</div>` : ''}
     </div>`;
   };
   /**
@@ -402,8 +404,8 @@
     try {
       for (const f of flights) {
         const p = E.parseFlightNo(f.flightNo), op = E.operating(f);
-        const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date);
-        f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via);
+        const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date, { route: f.route });
+        f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
         if (f.times) { got++; expanded.add(f.id); }
         if (!(f.route && f.route.source === 'manual')) {
           f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
@@ -1110,6 +1112,41 @@
       info.textContent = state.settings.aerodataboxKey ? 'Route is looked up automatically for the flight number and date (AeroDataBox, else adsbdb.com). Results are cached in your .json.' : 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
     }
     info.insertAdjacentHTML('beforeend', operatingInfo());
+    legChoice(info);
+  };
+
+  /** The cache entry that gave a looked-up route (of the operating flight or the flight number), or undefined. */
+  const routeEntry = (f) => {
+    const lk = f.routeLookup;
+    return lk && lk.date && lk.flightNo && f.route && f.route.source !== 'manual' ? A.cached(state, lk.via || lk.flightNo, lk.date) : undefined;
+  };
+  /** Days from ISO date a to ISO date b, as " +1" (or '' for the same day). */
+  const dayShift = (a, b) => { const n = Math.round((Date.parse(b) - Date.parse(a)) / 864e5); return n ? ` ${n > 0 ? '+' : '−'}${Math.abs(n)}` : ''; };
+  /** "FRA→MUC · 07:15–08:20" for a leg of a cache entry looked up for `date` (local times, when known; +1 for a later day). */
+  const legLabel = (l, date) => {
+    const sc = l.schedule, d = sc && sc.departure && sc.departure.scheduled, a = sc && sc.arrival && sc.arrival.scheduled;
+    const t = (x) => `${x.local.slice(11, 16)}${dayShift(date, x.local.slice(0, 10))}`;
+    return `${l.origin.iata_code}→${l.destination.iata_code}${d && a ? ` · ${t(d)}–${t(a)}` : ''}`;
+  };
+  /**
+   * When the lookup gave several routes for the number on that date (A.legs: a flight with stops, or two flights with
+   * one number), a choice of them below the route; choosing one sets the route and its times.
+   */
+  const legChoice = (info) => {
+    const entry = routeEntry(draft), legs = A.legs(entry);
+    if (legs.length < 2) return;
+    const cur = A.legIndex(entry, draft.route), lk = draft.routeLookup;
+    info.insertAdjacentHTML('beforeend', `<br><label class="leg-choice">${esc(lk.via || lk.flightNo)} flies ${legs.length} routes on ${esc(dateToField(lk.date))}:
+      <select id="legSelect">${legs.map((l, i) => `<option value="${i}" ${i === cur ? 'selected' : ''}>${esc(legLabel(l, lk.date))}</option>`).join('')}</select></label>
+      <span class="muted">choose the one on your ticket</span>`);
+    $('#legSelect', info).addEventListener('change', (e) => {
+      const i = +e.target.value;
+      draft.route = { ...A.routeFromCache(entry, i), via: lk.via };
+      draft.times = A.timesFromCache(entry, draft.flightNo, draft.date, lk.via, i);
+      form.origin.value = draft.route.origin.iata || '';
+      form.destination.value = draft.route.destination.iata || '';
+      updatePreview();
+    });
   };
 
   /** Second line in the route box for codeshares: operator, its earning group and a route cross-check. */
@@ -1121,7 +1158,7 @@
       : ` · operator decides earning: ${esc(MM.GROUP_LABEL[op.airline.group])}`;
     const head = `Operated by <b>${esc(op.name)}</b> as ${esc(op.iata)}${decides}`;
     const entry = A.cached(state, op.iata, draft.date);
-    const opRoute = A.routeFromCache(entry);
+    const opRoute = A.routeFromCache(entry, A.legIndex(entry, draft.route));   // of several, the one with the flight's airports
     const r = draft.route;
     let check = '';
     if (r && r.via === op.iata) check = '';   // the route is the operating flight's: nothing to cross-check
@@ -1241,10 +1278,10 @@
     const seq = ++lookupSeq, d = draft;
     draft.routeLookup = { status: 'loading' };
     routeInfo();
-    const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force });
+    const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force, route: draft.route });
     if (seq !== lookupSeq || stale(d)) return;
     draft.routeLookup = A.lookupInfo(res.entry, parsed.iata, res.via, op ? op.iata : undefined);
-    draft.times = A.timesFromCache(res.entry, draft.flightNo, draft.date, res.via);
+    draft.times = A.timesFromCache(res.entry, draft.flightNo, draft.date, res.via, res.leg);
     if (res.route) {   // without one, a route typed by hand stays
       draft.route = res.route;
       form.origin.value = res.route.origin.iata || '';
