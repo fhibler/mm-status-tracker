@@ -15,7 +15,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   segment's month and year.
   The booking's other segments show where the fare is. Upgrade and CO₂ costs stay per segment.
 - **Route lookup** from the flight number via [adsbdb.com](https://www.adsbdb.com) (free, no API key), or by date
-  via [AeroDataBox](https://aerodatabox.com/) with your own key (called directly or via RapidAPI).
+  via [AeroDataBox](https://aerodatabox.com/) with your own key (called directly, via API.Market or via RapidAPI).
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.
 - **Points engine**: earns on the booked class, or on the upgrade class for fixed-price (online or airport) and bid upgrades. Upgrades with miles, vouchers or operational upgrades earn on the booked class.
@@ -153,8 +153,9 @@ site to GitHub Pages.
 - **Routes by date (optional)**: with your own AeroDataBox key (Settings → Route lookup), the app asks AeroDataBox
   for the route on the flight date first and falls back to
   adsbdb when it doesn't know the flight or fails (e.g. quota used up). "Call AeroDataBox" there picks where the key
-  is from: **directly** from AeroDataBox's own store [API.Market](https://api.market/store/aedbx/aerodatabox)
-  (`prod.api.market`, header `x-api-market-key`) or **via RapidAPI** ([AeroDataBox on RapidAPI](https://rapid.aerodatabox.com/pricing),
+  is from: **directly** from [AeroDataBox](https://doc.aerodatabox.com/direct.html) (`api.aerodatabox.com`, header
+  `x-api-key`), **via API.Market** ([AeroDataBox on API.Market](https://api.market/store/aedbx/aerodatabox),
+  `prod.api.market`, header `x-api-market-key`) or **via RapidAPI** ([AeroDataBox on RapidAPI](https://rapid.aerodatabox.com/pricing),
   headers `X-RapidAPI-Key` / `X-RapidAPI-Host`; the default, also for files saved before the choice existed). Route
   lookups, "Look up times" and "Refresh" all go that way. On RapidAPI, the free Basic plan has 400 units a month,
   and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key

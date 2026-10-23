@@ -47,7 +47,7 @@
 
   /** Miles & More number: digits only (cards show it in groups, e.g. "992 000 123 456 789"). */
   S.memberNumber = (v) => String(v || '').replace(/\D/g, '').slice(0, 20);
-  /** An API key as typed, without spaces and other characters keys don't have (RapidAPI and API.Market keys are hex-like); '' when unset. */
+  /** An API key as typed, without spaces and other characters keys don't have (AeroDataBox, API.Market and RapidAPI keys are hex-like); '' when unset. */
   S.apiKey = (v) => String(v || '').replace(/[^\w-]/g, '').slice(0, 200);
 
   /** "miles-and-more-992000123456789.json" with a Miles & More number, else "miles-and-more-status-2026-10-16.json". */

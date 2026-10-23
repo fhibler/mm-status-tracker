@@ -988,17 +988,18 @@
           <div class="card-head"><h2>Route lookup</h2><span class="sub">your own key, saved with your data</span></div>
           <div class="grid">
             <label>Call AeroDataBox<select id="adbVia">${opts(Object.keys(MM.api.ADB_VIA), state.settings.aerodataboxVia, v => MM.api.ADB_VIA[v].label)}</select>
-              <small class="field-hint">${state.settings.aerodataboxVia === 'direct' ? 'With a key from API.Market' : 'With a key from RapidAPI'}</small></label>
+              <small class="field-hint">With a key from ${MM.api.ADB_VIA[MM.api.adbVia(state.settings.aerodataboxVia)].keyFrom}</small></label>
             <label>AeroDataBox key<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(state.settings.aerodataboxKey)}">
               <small class="field-hint">${state.settings.aerodataboxKey ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
           </div>
           <p class="hint">Without a key, routes come from adsbdb.com, which knows one route per flight number (the one flown
             at the moment) and ignores the date. With your own <a href="https://aerodatabox.com/pricing/" target="_blank" rel="noopener">AeroDataBox</a>
-            key, the app asks for the route on the flight date first and falls back to adsbdb. Get the key either directly from
-            AeroDataBox's own store <a href="https://api.market/store/aedbx/aerodatabox" target="_blank" rel="noopener">API.Market</a>
+            key, the app asks for the route on the flight date first and falls back to adsbdb. Get the key directly from
+            <a href="https://aerodatabox.com/pricing/" target="_blank" rel="noopener">AeroDataBox</a>, from
+            <a href="https://api.market/store/aedbx/aerodatabox" target="_blank" rel="noopener">API.Market</a>
             or from <a href="https://rapid.aerodatabox.com/pricing" target="_blank" rel="noopener">RapidAPI</a>, and choose the
             matching way above: route lookups, "Look up times" and "Refresh" all go that way. A key of one doesn't work with the
-            other. On RapidAPI, the free Basic plan has 400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached per flight number and date, so a
+            others. On RapidAPI, the free Basic plan has 400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached per flight number and date, so a
             flight is asked again only when its date changes or its route came from another schedule season.
             The key is saved in this browser and in your <code>.json</code>, so loading the file on another device brings it
             along. Keep the file to yourself.</p>

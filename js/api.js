@@ -1,4 +1,4 @@
-/* Route lookup: AeroDataBox (by date, with the user's own key, called directly or via RapidAPI) and adsbdb.com (free, no key).
+/* Route lookup: AeroDataBox (by date, with the user's own key, called directly, via API.Market or via RapidAPI) and adsbdb.com (free, no key).
  * Every answer is cached in state.apiCache keyed by IATA flight number and flight date ("LH1966 2026-11-17"), and
  * the cache is part of the exported .json – so an imported file re-queries only errors and provisional answers
  * (below). The AeroDataBox key and how it is called (state.settings.aerodataboxKey, aerodataboxVia: A.ADB_VIA) are
@@ -10,13 +10,16 @@
   const A = (MM.api = {});
   const BASE = 'https://api.adsbdb.com/v0/callsign/';
   /**
-   * Ways to call AeroDataBox (state.settings.aerodataboxVia): directly, with a key from AeroDataBox's own store
-   * (API.Market), or via RapidAPI. Both answer the same paths in the same shape; only the host and the key header differ.
+   * Ways to call AeroDataBox (state.settings.aerodataboxVia), each with a key from where it was bought: directly (its own
+   * gateway, see doc.aerodatabox.com/direct.html), via API.Market or via RapidAPI. All answer the same paths in the same
+   * shape; only the host and the key header differ.
    */
   A.ADB_VIA = {
-    direct: { label: 'Directly (API.Market)', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox',
+    direct: { label: 'Directly (AeroDataBox)', keyFrom: 'AeroDataBox', base: 'https://api.aerodatabox.com',
+      headers: (key) => ({ 'x-api-key': key }) },
+    apimarket: { label: 'Via API.Market', keyFrom: 'API.Market', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox',
       headers: (key) => ({ 'x-api-market-key': key }) },
-    rapidapi: { label: 'Via RapidAPI', base: 'https://aerodatabox.p.rapidapi.com',
+    rapidapi: { label: 'Via RapidAPI', keyFrom: 'RapidAPI', base: 'https://aerodatabox.p.rapidapi.com',
       headers: (key) => ({ 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' }) },
   };
   /** The way to call AeroDataBox of a setting: A.ADB_VIA's 'rapidapi' (keys saved before there was a choice) when unknown. */

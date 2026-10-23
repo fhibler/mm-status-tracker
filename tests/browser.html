@@ -34,6 +34,10 @@
           try { fn(); } catch (e) { if (re && !re.test(e.message)) fail(`throws: "${e.message}" does not match ${re}`); return; }
           fail('throws: no error');
         },
+        rejects: async (p, re) => {
+          try { await p; } catch (e) { if (re && !re.test(e.message)) fail(`rejects: "${e.message}" does not match ${re}`); return; }
+          fail('rejects: no error');
+        },
       });
       const vm = {
         createContext: (ctx) => {
