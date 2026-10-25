@@ -444,7 +444,7 @@
         : timesAvailable(f) ? `Not looked up yet. <button class="btn small" data-act="times-one" data-id="${esc(f.id)}"
             title="${timesCalls(f) ? `Asks AeroDataBox: up to ${esc(unitsTxt(timesCalls(f)))}` : 'From the cache: no request'}">Look up times</button>`
         : !state.settings.aerodataboxKey ? 'Departure and arrival times and the aircraft come from AeroDataBox: add your key in <a href="#" data-act="goto-settings">Settings</a>.'
-        : 'AeroDataBox has no times for this flight.';
+        : `No times: ${esc(noTimesWhy(f))}.`;
       return `<div class="times muted">${why}</div>`;
     }
     const day = f.date, r = hasRoute(f.route) ? f.route : null;   // a later leg of the number can depart the next day
@@ -460,10 +460,19 @@
     </div>`;
   };
   /**
+   * Why a flight without times has none (A.whyNoTimes): what AeroDataBox answered for it, else that its date is
+   * outside the plan's range (A.outsidePlan).
+   */
+  const noTimesWhy = (f) => {
+    const c = A.cached(state, timesNo(f), f.date), note = (c && c.adbNote) || (f.routeLookup && f.routeLookup.adbNote) || A.outsidePlan(state.settings, f.date);
+    return A.whyNoTimes(note);
+  };
+  /**
    * Looks up the routes, times and aircraft of these flights (A.resolveRoute: the cache first, AeroDataBox only for
    * those without an answer). A looked-up route is updated with the answer for the date, a route typed in stays.
-   * With `btn` (the "Refresh flight data" button), asks first what the AeroDataBox requests cost. Stops at the first
-   * failure that would repeat for every flight (A.lookup's failure); that flight keeps what it had.
+   * With `btn` (the "Refresh flight data" button), asks first what the AeroDataBox requests cost. Each answer is saved
+   * as it arrives (they cost units), and the button and the closing message don't depend on the rest going well. Stops
+   * at the first failure that would repeat for every flight (A.lookup's failure); that flight keeps what it had.
    */
   const lookupTimes = async (flights, btn) => {
     if (timesBusy) return;
@@ -472,28 +481,39 @@
       `This asks AeroDataBox up to ${calls} time${calls === 1 ? '' : 's'} and costs up to ${unitsTxt(calls)}. Flights answered from the cache cost nothing. Continue?`))) return;
     if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
     timesBusy = true;
-    let got = 0, without = 0, failed = 0, done = 0, stop = null;
+    let got = 0, failed = 0, done = 0, stop = null;
+    const why = {};   // flights without times, per reason (A.whyNoTimes)
     try {
       for (const f of flights) {
-        const p = E.parseFlightNo(f.flightNo), op = E.operating(f);
-        const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date, { route: f.route });
-        if (res.entry.failure) { stop = res.entry.failure; break; }
-        done++;
-        f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
-        if (f.times) { got++; expanded.add(f.id); } else if (res.entry.status === 'error') failed++; else without++;
-        if (!(f.route && f.route.source === 'manual')) {
-          f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
-          if (res.route) f.route = res.route;
+        try {
+          const p = E.parseFlightNo(f.flightNo), op = E.operating(f);
+          const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date, { route: f.route });
+          if (res.entry.failure) { stop = res.entry.failure; break; }
+          f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
+          if (f.times) { got++; expanded.add(f.id); } else if (res.entry.status === 'error') failed++;
+          else { const w = A.whyNoTimes(res.entry.adbNote || A.outsidePlan(state.settings, f.date)); why[w] = (why[w] || 0) + 1; }
+          if (!(f.route && f.route.source === 'manual')) {
+            f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
+            if (res.route) f.route = res.route;
+          }
+        } catch (err) {   // a flight that can't be done is counted, the others go on
+          console.error(err);
+          failed++;
         }
+        done++;
+        save();
       }
     } finally {
       timesBusy = false;
-      save(); render();
+      save();
+      try { render(); } catch (err) { console.error(err); }
+      if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = 'Refresh flight data'; }
     }
-    if (flights.length === 1 && !stop) { toast(got ? 'Times looked up' : failed ? 'The lookup failed – try again later' : 'AeroDataBox has no times for this flight'); return; }
+    const reasons = Object.entries(why).map(([w, n]) => `${n} × ${w}.`);
+    if (flights.length === 1 && !stop) { toast(got ? 'Times looked up' : failed ? 'The lookup failed – try again later' : `No times: ${Object.keys(why)[0]}`, got ? 2600 : 6000); return; }
     const left = flights.length - done;
     toast([`Found times for ${got} of ${flights.length} flight${flights.length === 1 ? '' : 's'}.`,
-      without && `${without} unknown to AeroDataBox or without times.`,
+      reasons.length && `Without times: ${reasons.join(' ')}`,
       failed && `${failed} failed (asked again next time).`,
       stop && `Stopped: ${failureTxt(stop)}`,
       stop && left > 1 && `${left} not looked up.`].filter(Boolean).join(' '), 0);
@@ -647,15 +667,20 @@
     btn.textContent = label;
     setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = old; } }, 4000);
   };
-  /** Asks a question in a dialog (#askDialog); resolves true when the user confirms. */
+  /**
+   * Asks a question in a dialog (#askDialog); resolves true when the user confirms. Its buttons answer directly, since
+   * some browsers deliver the dialog's close event late (e.g. in a hidden pane); closing it otherwise (Esc) is a no.
+   */
+  let askDone = null;
   const ask = (title, text, okLabel = 'Continue') => new Promise((resolve) => {
     const d = $('#askDialog');
     $('#askTitle').textContent = title; $('#askText').textContent = text; $('#askOk').textContent = okLabel;
-    d.returnValue = '';
-    d.addEventListener('close', () => resolve(d.returnValue === 'ok'), { once: true });
+    askDone = (ok) => { askDone = null; if (d.open) d.close(); resolve(ok); };
     d.showModal();
   });
-  $$('[data-close]', $('#askDialog')).forEach(b => b.addEventListener('click', () => $('#askDialog').close()));
+  $('#askOk').addEventListener('click', (e) => { e.preventDefault(); if (askDone) askDone(true); });
+  $$('[data-close]', $('#askDialog')).forEach(b => b.addEventListener('click', () => (askDone ? askDone(false) : $('#askDialog').close())));
+  $('#askDialog').addEventListener('close', () => { if (askDone) askDone(false); });
   /** The Delete button of a dialog: hidden for new items, else unarmed (see confirmInline). */
   const resetDelete = (btn, hidden) => { btn.hidden = hidden; btn.textContent = 'Delete'; btn.dataset.armed = ''; };
 
@@ -1088,10 +1113,12 @@
     $('#currency', host).addEventListener('change', (e) => { state.settings.currency = e.target.value; save(); toast('Currency updated'); });
     $('#adbVia', host).addEventListener('change', (e) => {
       state.settings.aerodataboxVia = MM.api.adbVia(e.target.value);
+      MM.api.forgetPlanNotes(state);   // another plan: dates another way couldn't answer may be asked
       save(); render(); toast(`AeroDataBox: ${MM.api.ADB_VIA[state.settings.aerodataboxVia].label}`);
     });
     $('#adbKey', host).addEventListener('change', (e) => {
       state.settings.aerodataboxKey = S.apiKey(e.target.value);
+      MM.api.forgetPlanNotes(state, true);   // a new key may be another plan
       save(); render(); toast(state.settings.aerodataboxKey ? 'AeroDataBox key saved' : 'AeroDataBox key removed');
     });
     const member = $('#memberNumber', host);
@@ -1205,7 +1232,7 @@
           : '<br><span class="muted">This is the route listed for the flight number at lookup time (adsbdb ignores the date). Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>') +
         (r.source === 'manual' || !lk ? ''
           : lk.adbError ? `<br><span class="muted">AeroDataBox failed: ${esc(lk.adbError)} So adsbdb was asked.</span>`
-          : lk.adbNote ? `<br><span class="muted">AeroDataBox: ${esc(lk.adbNote)} (${esc(dateToField(lk.date))}), so adsbdb was asked.</span>` : '');
+          : lk.adbNote ? `<br><span class="muted">No times: ${esc(A.whyNoTimes(lk.adbNote))} (${esc(dateToField(lk.date))}), so adsbdb was asked for the route.</span>` : '');
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
     } else if (lk && lk.status === 'notfound') {

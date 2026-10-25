@@ -30,6 +30,49 @@
   const failure = (reason, message) => Object.assign(new Error(message), { reason });
   /** Whether an error repeats for every flight (see failure): it is no answer about the flight, so it is not cached. */
   A.repeats = (err) => !!err && ['network', 'auth', 'quota'].includes(err.reason);
+  /**
+   * The date range of a plan, from AeroDataBox's 400 answer ("… must not be earlier than 180 day(s) ago …"):
+   * { pastDays } or { futureDays }, or null.
+   */
+  A.planLimit = (msg) => {
+    const past = /earlier than (\d+) day/i.exec(msg || ''), future = /later than (\d+) day/i.exec(msg || '');
+    return past ? { pastDays: +past[1] } : future ? { futureDays: +future[1] } : null;
+  };
+  /** Whether a lookup's adbNote says the date is outside the plan's range (A.planLimit, A.outsidePlan): not about the flight. */
+  A.isPlanNote = (note) => !!A.planLimit(note) || /^(older|further ahead) than your AeroDataBox plan/.test(note || '') || /^date not available/.test(note || '');
+  const shiftDays = (iso, days) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
+  /**
+   * Why the plan can't answer for `date`, from the limits learned for the way AeroDataBox is called
+   * (state.settings.aerodataboxLimits, per A.ADB_VIA key: plans differ), or ''. Such a date is not asked: it costs units.
+   */
+  A.outsidePlan = (settings, date, today = E.todayISO()) => {
+    const l = (settings.aerodataboxLimits || {})[A.adbVia(settings.aerodataboxVia)] || {};
+    if (l.pastDays && date < shiftDays(today, -l.pastDays)) return `older than your AeroDataBox plan allows (${l.pastDays} days)`;
+    if (l.futureDays && date > shiftDays(today, l.futureDays)) return `further ahead than your AeroDataBox plan allows (${l.futureDays} days)`;
+    return '';
+  };
+  /**
+   * After the way of calling AeroDataBox or the key changed: answers "outside the plan's range" given another way (or
+   * any way, `all`, for a new key, whose plan may differ) may be asked again, and a new key forgets the learned limits.
+   */
+  A.forgetPlanNotes = (state, all = false) => {
+    const via = A.adbVia(state.settings.aerodataboxVia);
+    if (all && state.settings.aerodataboxLimits) delete state.settings.aerodataboxLimits[via];
+    for (const c of Object.values(state.apiCache)) {
+      if (c.adbTried && A.isPlanNote(c.adbNote) && (all || c.adbVia !== via)) { delete c.adbTried; delete c.adbNote; delete c.adbVia; }
+    }
+  };
+  /**
+   * Why a flight has no times, from the adbNote of its lookup (A.lookup), as a phrase: "older than your AeroDataBox
+   * plan allows (180 days)", "AeroDataBox doesn't know this flight on that date", …
+   */
+  A.whyNoTimes = (note) => {
+    const l = A.planLimit(note);
+    if (l) return l.pastDays ? `older than your AeroDataBox plan allows (${l.pastDays} days)` : `further ahead than your AeroDataBox plan allows (${l.futureDays} days)`;
+    if (/^(older|further ahead) than/.test(note || '')) return note;
+    if (/^no such flight/.test(note || '')) return 'AeroDataBox doesn\'t know this flight on that date';
+    return note ? `AeroDataBox: ${note}` : 'AeroDataBox gave no times';
+  };
   /** fetch, with a failed request (offline, blocked, CORS: a TypeError without a status) as a 'network' failure. */
   const get = async (url, headers, why) => {
     try { return await fetch(url, { headers }); } catch { throw failure('network', why); }
@@ -142,10 +185,13 @@
    * Flight `no` departing on `date` from AeroDataBox, called the way the settings say (A.ADB_VIA): { response }
    * (adsbdb-shaped), or { note } saying why there is no route (204: no such flight; 400: e.g. a date outside the plan's
    * range). Throws for other failures: those that repeat for every flight (A.repeats: network or CORS, key rejected
-   * 401/403, quota 429) carry their reason.
+   * 401/403, quota 429) carry their reason. A date outside the plan's range (A.outsidePlan) is not asked; a 400 answer
+   * that names the range teaches it (state.settings.aerodataboxLimits, per way of calling).
    */
-  const askAeroDataBox = async (no, date, settings) => {
-    const via = A.ADB_VIA[A.adbVia(settings.aerodataboxVia)], key = settings.aerodataboxKey;
+  const askAeroDataBox = async (no, date, settings, today = E.todayISO()) => {
+    const viaKey = A.adbVia(settings.aerodataboxVia), via = A.ADB_VIA[viaKey], key = settings.aerodataboxKey;
+    const outside = A.outsidePlan(settings, date, today);
+    if (outside) return { note: outside };
     const wait = adbLast + A.adbGap - Date.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     adbLast = Date.now();
@@ -154,8 +200,12 @@
       'blocked or unreachable (network or CORS) – check the connection, or the service doesn\'t accept browser calls / the key');
     if (res.status === 204 || res.status === 404) return { note: 'no such flight on that date' };
     if (res.status === 400) {
-      const body = await res.json().catch(() => null);
-      return { note: `date not available${body && body.message ? `: ${body.message}` : ''}` };
+      const body = await res.json().catch(() => null), limit = A.planLimit(body && body.message);
+      if (limit) {
+        const all = settings.aerodataboxLimits = settings.aerodataboxLimits || {};
+        all[viaKey] = { ...all[viaKey], ...limit };
+      }
+      return { note: limit ? A.whyNoTimes(body.message) : `date not available${body && body.message ? `: ${body.message}` : ''}` };
     }
     if (res.status === 401 || res.status === 403) throw failure('auth', `key rejected (HTTP ${res.status}) – is it a key from ${via.keyFrom}?`);
     if (res.status === 429) throw failure('quota', 'quota or rate limit reached (HTTP 429)');
@@ -183,7 +233,7 @@
    */
   A.timesFromCache = (entry, flightNo, date, via, leg = 0) => {
     const fr = A.legs(entry)[leg], sc = fr && fr.schedule;
-    if (!sc || !sc.departure || !sc.departure.scheduled) return null;
+    if (!sc || !sc.departure || !sc.departure.scheduled || !sc.arrival || !sc.arrival.scheduled) return null;   // both, as S.normalizeTimes wants
     return { flightNo, date, via, provider: entry.provider, fetchedAt: entry.fetchedAt,
       dep: sc.departure, arr: sc.arrival, aircraft: sc.aircraft, reg: sc.reg };
   };
@@ -210,15 +260,15 @@
    */
   A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date() } = {}) => {
     const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
-    const cached = state.apiCache[ck];
-    const failed = (provider, err) => A.repeats(err) ? { provider, reason: err.reason, message: err.message } : undefined;
+    const cached = state.apiCache[ck], adbVia = A.adbVia(state.settings.aerodataboxVia);   // adbVia: which way gave adbNote
+    const failed =(provider, err) => A.repeats(err) ? { provider, reason: err.reason, message: err.message } : undefined;
     if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) {
       if (!(cached.status === 'ok' && A.wantsTimes(cached, key))) return { ...cached, fromCache: true };
       // a route without times: only AeroDataBox can add them, and an answer without them keeps the route
       try {
-        const { response, note } = await askAeroDataBox(no, date, state.settings);
+        const { response, note } = await askAeroDataBox(no, date, state.settings, E.todayISO(now));
         if (response) return { ...(state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response }), fromCache: false };
-        Object.assign(cached, { adbTried: true, adbNote: note });   // not asked again
+        Object.assign(cached, { adbTried: true, adbNote: note, adbVia });   // not asked again
       } catch (err) {   // e.g. the quota: asked again next time
         return { ...cached, fromCache: true, failure: failed('AeroDataBox', err) };
       }
@@ -228,9 +278,9 @@
     let adbFailure;
     if (key) {
       try {
-        const { response, note } = await askAeroDataBox(no, date, state.settings);
+        const { response, note } = await askAeroDataBox(no, date, state.settings, E.todayISO(now));
         if (response) Object.assign(entry, { provider: 'aerodatabox', status: 'ok', response });
-        else Object.assign(entry, { adbTried: true, adbNote: note });
+        else Object.assign(entry, { adbTried: true, adbNote: note, adbVia });
       } catch (err) {
         entry.adbError = String(err && err.message || err);
         adbFailure = failed('AeroDataBox', err);
@@ -276,7 +326,7 @@
     if (!key) return { entry: cached, note: 'no AeroDataBox key' };
     if (now.getTime() < A.refreshAllowedAt(cached)) return { entry: cached, note: 'refreshed less than 5 minutes ago' };
     if (cached) cached.refreshedAt = now.toISOString();   // failed requests count too
-    const { response, note } = await askAeroDataBox(no, date, state.settings);
+    const { response, note } = await askAeroDataBox(no, date, state.settings, E.todayISO(now));
     if (!response) return { entry: cached, note };
     const entry = state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response };
     return { entry, note: '' };
@@ -289,11 +339,12 @@
   A.timesPending = (state, flightNo, operatingIata, date, today = E.todayISO()) => A.timesCalls(state, flightNo, operatingIata, date, today) > 0;
   /**
    * At most how many AeroDataBox requests A.resolveRoute (not forced) makes for a flight on `date` (see A.timesPending):
-   * 0, 1, or 2 for a codeshare whose operating flight may give no route, so that its own number is asked too.
+   * 0, 1, or 2 for a codeshare whose operating flight may give no route, so that its own number is asked too. 0 for a
+   * date outside the plan's range (A.outsidePlan): it is not asked.
    */
   A.timesCalls = (state, flightNo, operatingIata, date, today = E.todayISO()) => {
     const key = state.settings.aerodataboxKey;
-    if (!key) return 0;
+    if (!key || A.outsidePlan(state.settings, date, today)) return 0;
     const asks = (no) => {
       const c = A.cached(state, no, date);
       return !c || c.status === 'error' || A.isProvisional(c, date, today, key) || (c.status === 'ok' && A.wantsTimes(c, key));

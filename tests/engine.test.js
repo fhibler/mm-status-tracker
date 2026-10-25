@@ -577,6 +577,33 @@ async function apiTests() {
   assert.strictEqual(A.lookupInfo(none, 'LH1967').adbNote, 'no such flight on that date');           // the dialog says why
   adb = () => reply(400, { message: 'date out of range' });
   assert.strictEqual((await A.lookup(s3, 'LH1969', '2028-01-01', k)).adbNote, 'date not available: date out of range');
+  // a plan's date range: learned from its 400 answer, per way of calling; older dates are then not asked (they cost units)
+  const s6 = state({ settings: { aerodataboxKey: 'own', aerodataboxVia: 'direct' } });
+  let asks6 = 0;
+  respond = (url) => {
+    if (!url.includes('aerodatabox')) return reply(404, { response: 'unknown callsign' });
+    asks6++;
+    return reply(400, { message: 'Specified date-time \'01.03.2026 00:00\' must not be earlier than 180 day(s) ago. Please consider upgrading your plan.' });
+  };
+  const old = await A.lookup(s6, 'LH10', '2026-03-01', k);
+  assert.strictEqual(`${old.adbNote}:${old.adbVia}:${s6.settings.aerodataboxLimits.direct.pastDays}:${asks6}`, 'older than your AeroDataBox plan allows (180 days):direct:180:1');
+  assert.strictEqual(`${A.outsidePlan(s6.settings, '2026-04-20', '2026-10-18')}|${A.outsidePlan(s6.settings, '2026-04-21', '2026-10-18')}`, 'older than your AeroDataBox plan allows (180 days)|');
+  assert.strictEqual((await A.lookup(s6, 'LH11', '2026-02-01', k)).adbNote, 'older than your AeroDataBox plan allows (180 days)');
+  assert.strictEqual(`${asks6}:${A.timesCalls(s6, 'LH12', null, '2026-02-01', '2026-10-18')}:${A.timesCalls(s6, 'LH12', null, '2026-10-01', '2026-10-18')}`, '1:0:1');   // not asked, not counted
+  assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(s6)).settings.aerodataboxLimits), '{"direct":{"pastDays":180}}');   // saved in the .json
+  assert.strictEqual(A.whyNoTimes('date not available: Specified date-time \'01.03.2026 00:00\' must not be earlier than 180 day(s) ago.'), 'older than your AeroDataBox plan allows (180 days)');   // notes saved before
+  assert.strictEqual(A.whyNoTimes('no such flight on that date'), 'AeroDataBox doesn\'t know this flight on that date');
+  s6.settings.aerodataboxVia = 'rapidapi';   // another way may have another plan: those dates may be asked again
+  A.forgetPlanNotes(s6);
+  assert.strictEqual(`${A.cached(s6, 'LH10', '2026-03-01').adbTried}:${A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18')}:${A.timesCalls(s6, 'LH10', null, '2026-03-01', '2026-10-18')}`, 'undefined::1');
+  s6.settings.aerodataboxVia = 'direct';
+  A.forgetPlanNotes(s6, true);   // a new key forgets what the plan allowed
+  assert.strictEqual(A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18'), '');
+  // an answer without an arrival time gives no times (a flight's times need both, as S.normalizeTimes wants)
+  respond = (url) => url.includes('aerodatabox') ? reply(200, [{ ...adbFlight, departure: { ...adbFlight.departure, scheduledTime: { utc: '2026-11-17 06:15Z', local: '2026-11-17 07:15+01:00' } } }]) : reply(404, null);
+  const noArr = await A.lookup(s6, 'LH13', '2026-11-17', k);
+  assert.strictEqual(`${noArr.provider}:${A.timesFromCache(noArr, 'LH13', '2026-11-17')}`, 'aerodatabox:null');
+  respond = viaRapid;
   adb = () => reply(200, [{ ...adbFlight, arrival: { airport: { name: 'Somewhere' } } }]);
   assert.strictEqual((await A.lookup(s3, 'LH1970', '2026-11-17', k)).adbNote, 'no route in its answer');
   adb = () => reply(429, null);

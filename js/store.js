@@ -11,7 +11,7 @@
 
   S.empty = () => ({
     format: FORMAT, version: VERSION,
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '', aerodataboxKey: '', aerodataboxVia: 'rapidapi' },
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '', aerodataboxKey: '', aerodataboxVia: 'rapidapi', aerodataboxLimits: {} },
     flights: [],
     bookings: {},      // booking code -> { fare }: one fare per booking, counted once on one of its segments (E.fareHolders)
     adjustments: [],   // manual point corrections from the account statement
@@ -193,6 +193,13 @@
     s.settings.memberNumber = S.memberNumber(set.memberNumber);
     s.settings.aerodataboxKey = S.apiKey(set.aerodataboxKey);
     s.settings.aerodataboxVia = MM.api.adbVia(set.aerodataboxVia);
+    // the date range of the plan per way of calling AeroDataBox, learned from its answers (MM.api.outsidePlan)
+    for (const [via, l] of Object.entries(isObj(set.aerodataboxLimits) ? set.aerodataboxLimits : {})) {
+      if (!MM.api.ADB_VIA[via] || !isObj(l)) continue;
+      const days = (d) => (Number.isInteger(d) && d > 0 && d <= 5000 ? d : undefined);
+      const lim = { pastDays: days(l.pastDays), futureDays: days(l.futureDays) };
+      if (lim.pastDays || lim.futureDays) s.settings.aerodataboxLimits[via] = JSON.parse(JSON.stringify(lim));
+    }
     if (isObj(set.startStatus) && MM.STATUS_ORDER.includes(set.startStatus.status)) {
       const y = +set.startStatus.year;
       s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };

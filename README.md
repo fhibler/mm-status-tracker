@@ -163,7 +163,10 @@ site to GitHub Pages.
   "↻ Refresh" all go that way. Each lookup costs 2 API units on all three, and "Refresh flight data" first asks to
   confirm how many units it may use (cached answers cost nothing). It stops at the first failure that would repeat
   for every flight (blocked or unreachable, key rejected, quota) and says why in a message that stays until closed;
-  such a failure is not saved as the flight's lookup. On RapidAPI, the free Basic plan has 400 units a month
+  such a failure is not saved as the flight's lookup. Each answer is saved as it arrives. When AeroDataBox answers
+  that a date is outside your plan (e.g. "must not be earlier than 180 day(s) ago"), the app remembers that range per
+  way of calling, doesn't ask (or count) older dates again, and says so in the flight's times line and the summary;
+  switching the way or the key lets those dates be asked again. On RapidAPI, the free Basic plan has 400 units a month
   (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
   set, "Look up route" in the dialog replaces a route from another season. Changing a flight's date looks its route
   up again for the new date (a route typed by hand stays). The key is saved with your settings, in the
