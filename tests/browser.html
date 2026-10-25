@@ -14,7 +14,8 @@
   <h1>Engine tests</h1>
   <p>Runs <code>tests/engine.test.js</code> without Node: <code>vm</code> contexts are iframes (separate realms, like Node),
     and <code>assert</code> offers the few functions the tests use. Serve the project root
-    (<code>tools/serve.ps1</code>) and open <code>/tests/browser.html</code>. CI runs the same file with Node.</p>
+    (<code>tools/serve.ps1</code>) and open <code>/tests/browser.html</code>. CI runs the same file with Node. The iframes
+    have every browser global: one the scripts newly use must also be added to <code>ctx</code> in the test file, or CI fails.</p>
   <p id="result">Running…</p>
   <pre id="log"></pre>
   <script>

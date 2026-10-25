@@ -137,8 +137,17 @@
     return { flightNo: t.flightNo, date: t.date, via: str(t.via, 8) || undefined, provider: str(t.provider, 20), fetchedAt: str(t.fetchedAt, 30),
       dep: movement(t.dep), arr: movement(t.arr), aircraft: str(t.aircraft, 60), reg: str(t.reg, 12) };
   };
+  /** A route with both airports (as looked up, or typed in), or null. */
+  const route = (r) => (isObj(r) && isObj(r.origin) && isObj(r.destination) ? r : null);
+  /** What a flight remembers about its lookup (MM.api.lookupInfo: strings and flags only), or null. */
+  const routeLookup = (lk) => (isObj(lk) && Object.values(lk).every(v => v == null || ['string', 'boolean'].includes(typeof v)) ? lk : null);
+  /** A cached lookup for the date of its key, with what reading it relies on: its time, status and routes (MM.api.legs). */
+  const cacheEntry = (k, c) => MM.api.isCacheKey(k) && isObj(c) && c.date === k.slice(-10) && typeof c.fetchedAt === 'string'
+    && ['ok', 'notfound', 'error'].includes(c.status) && MM.api.legs(c).every(route);
   const normalizeFlight = (f) => {
     const d = S.newFlight(f.date);
+    f.route = route(f.route);
+    f.routeLookup = routeLookup(f.routeLookup);
     f.times = S.normalizeTimes(f.times);
     for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
     // as the dialog saves them: trains in 2nd or 1st class; trains and buses without the flight-only fields
@@ -203,7 +212,7 @@
       const y = +set.startStatus.year;
       s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };
     }
-    s.apiCache = Object.fromEntries(Object.entries(isObj(raw.apiCache) ? raw.apiCache : {}).filter(([k, c]) => MM.api.isCacheKey(k) && isObj(c)));
+    s.apiCache = Object.fromEntries(Object.entries(isObj(raw.apiCache) ? raw.apiCache : {}).filter(([k, c]) => cacheEntry(k, c)));
     s.flights = list(raw.flights, S.newFlight).map(normalizeFlight);
     s.adjustments = list(raw.adjustments, S.newAdjustment);
     s.stays = list(raw.stays, S.newStay);

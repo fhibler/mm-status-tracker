@@ -119,6 +119,8 @@ assert.strictEqual(['2026/01/15', '2026-1-15', '2026.1.5', '20260115', '2026/02/
   '2026-01-15,2026-01-15,2026-01-05,2026-01-15,,,');
 // dates shown in the page: a real date (or a time stamp starting with one), never other text, since it goes into HTML
 assert.strictEqual(['2026-11-17', '2026-11-17T08:00:00.000Z', '<img src=x', '2026-13-01', null].map(MM.charts.fmtDate).join(','), '17 Nov 2026,17 Nov 2026,–,–,–');
+// any other text from the data goes through esc
+assert.strictEqual(MM.charts.esc(`<a href="x" title='y'>&`), '&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;&amp;');
 
 /* ---------- money fields: a comma is a decimal separator too; three digits after it group thousands ---------- */
 assert.strictEqual(['9,11', '9.11', '146,60', ' 146.6 ', '9,', ',5', '1.234,56', '1,234.56', '1.000.000', '12 345,6', '€ 7,30', "1'200.50", '1,200', '€1.000']
@@ -415,14 +417,19 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // IDs end up in HTML and selectors: unsafe and repeated ones are replaced; invalid entries are dropped
   const st = state({
     settings: { currency: 'XYZ', memberNumber: '992 000-123 456 789' },
-    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01' }, { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }, { date: '2026-02-30' }],
+    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01', route: { origin: 'FRA' }, routeLookup: { flightNo: 'LH1', date: 5 } },
+      { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }, { date: '2026-02-30' }],
     adjustments: [{ date: '2026-13' }, { date: '2026-04-01', p: 5 }], stays: [{ nights: 2 }],
-    apiCache: { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { status: 'notfound' }, LH3: { status: 'ok' } },   // LH3: saved before lookups had a date
+    apiCache: { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' },
+      LH3: { status: 'ok' },   // saved before lookups had a date
+      'LH4 2026-01-01': { date: '2026-01-02', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' }, 'LH5 2026-01-01': { date: '2026-01-01', fetchedAt: 1, status: 'notfound' },
+      'LH6 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'ok', response: { flightroute: { origin: 'FRA' } } } },
     plans: { 2025: { co2: { 'ok-1': { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }, { id: 'm', kind: 'RAIL', cls: 'First', co2Level: 'large' }, { id: 'm' }] } },   // what-if for a 2026 flight in 2025
   });
   assert.ok(/^[\w-]+$/.test(st.flights[0].id) && st.flights[0].id !== 'x"><b>');
   assert.ok(st.flights[2].id !== 'ok-1' && st.plans['2025'].mix[2].id !== 'm');
   assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.adjustments.length}:${st.stays.length}:${Object.keys(st.apiCache)}:${st.settings.currency}`, '3:ok-1:1:0:LH2 2026-01-01:EUR');
+  assert.strictEqual(`${st.flights[1].route}:${st.flights[1].routeLookup}`, 'null:null');   // a route without airports, a lookup with a number for a date
   const mix = st.plans['2025'].mix;
   assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${mix[0].count}:${mix[0].kind}`, '0:2:LHG');
   assert.strictEqual(`${mix[1].cls}:${mix[1].co2Level}`, 'Business:none');   // trains: 1st class at most, no booster
@@ -607,14 +614,14 @@ async function apiTests() {
   const notAsked = await A.refreshTimes(s6, 'LH10', '2026-03-01', { now: new Date(october.getTime() + 6 * 60000) });   // nor refreshed, and no wait starts
   assert.strictEqual(`${notAsked.note}:${asks6}:${A.cached(s6, 'LH10', '2026-03-01').refreshedAt}`, 'older than your AeroDataBox plan allows (180 days):1:undefined');
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(s6)).settings.aerodataboxLimits), '{"direct":{"pastDays":180}}');   // saved in the .json
-  assert.strictEqual(A.whyNoTimes('date not available: Specified date-time \'01.03.2026 00:00\' must not be earlier than 180 day(s) ago.'), 'older than your AeroDataBox plan allows (180 days)');   // notes saved before
   assert.strictEqual(A.whyNoTimes('no such flight on that date'), 'AeroDataBox doesn\'t know this flight on that date');
   s6.settings.aerodataboxVia = 'rapidapi';   // another way may have another plan: those dates may be asked again
   A.forgetPlanNotes(s6);
   assert.strictEqual(`${A.cached(s6, 'LH10', '2026-03-01').adbTried}:${A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18')}:${A.timesCalls(s6, 'LH10', null, '2026-03-01', '2026-10-18')}`, 'undefined::1');
   s6.settings.aerodataboxVia = 'direct';
-  A.forgetPlanNotes(s6, true);   // a new key forgets what the plan allowed
-  assert.strictEqual(A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18'), '');
+  s6.settings.aerodataboxLimits.rapidapi = { futureDays: 30 };
+  A.forgetPlanNotes(s6, true);   // a new key forgets what the plans allowed, on every way of calling
+  assert.strictEqual(`${A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18')}:${JSON.stringify(s6.settings.aerodataboxLimits)}`, ':{}');
   // a date further ahead than the plan allows is not asked until it moves into the plan's range
   const s8 = state({ settings: { aerodataboxKey: 'own' } }), nov20 = { now: new Date('2026-11-20T10:00:00Z') };
   respond = (url) => url.includes('aerodatabox') ? reply(400, { message: 'Specified date must not be later than 30 day(s) from now.' }) : reply(404, { response: 'unknown callsign' });
@@ -678,21 +685,20 @@ async function apiTests() {
   const t = A.timesFromCache(lk.entry, 'LH1966', '2026-11-17', lk.via);
   assert.strictEqual(`${calls.length}:${t.dep.scheduled.utc}:${t.dep.scheduled.local}:${t.dep.terminal}:${t.arr.revised.utc}:${t.aircraft}:${t.reg}`,
     '1:2026-11-17T06:15Z:2026-11-17T07:15+01:00:2:2026-11-17T07:31Z:Airbus A320 NEO:D-AINA');   // one request for route and times
-  assert.strictEqual(A.timesPending(s4, 'LH1966', null, '2026-11-17', '2026-10-18'), false);
   // at most how many requests a flight's times take (what "Refresh flight data" says it costs): a codeshare up to 2
   assert.strictEqual([A.timesCalls(s4, 'LH1966', null, '2026-11-17', '2026-10-18'), A.timesCalls(s4, 'LH8', null, '2026-11-17', '2026-10-18'),
     A.timesCalls(s4, 'UA8', 'LH8', '2026-11-17', '2026-10-18'), A.timesCalls(s4, 'UA8', 'LH1966', '2026-11-17', '2026-10-18')].join(), '0,1,2,0');
   // a cached route without times (adsbdb, or AeroDataBox before times were kept) asks AeroDataBox once more, and only it
   s4.apiCache['LH1966 2026-11-17'] = { ...nov, adbTried: undefined };   // adsbdb, summer route
   s4.apiCache['LH1967 2026-11-17'] = { date: '2026-11-17', fetchedAt: '2026-10-18T10:00:00.000Z', provider: 'aerodatabox', status: 'ok', response: { flightroute: { ...fr('BER').flightroute } } };
-  assert.strictEqual(`${A.timesPending(s4, 'LH1967', null, '2026-11-17', '2026-10-18')}:${A.timesPending(state(), 'LH1967', null, '2026-11-17')}`, 'true:false');   // not without a key
+  assert.strictEqual(`${A.timesCalls(s4, 'LH1967', null, '2026-11-17', '2026-10-18')}:${A.timesCalls(state(), 'LH1967', null, '2026-11-17')}`, '1:0');   // not without a key
   adb = () => reply(429, null);
   calls.length = 0;
   const kept = await A.lookup(s4, 'LH1967', '2026-11-17', k);
   assert.strictEqual(`${calls.length}:${kept.provider}:${kept.response.flightroute.destination.iata_code}:${A.wantsTimes(kept, 'secret')}`, '1:aerodatabox:BER:true');   // the route stays, asked again later
   adb = () => reply(204, null);
   await A.lookup(s4, 'LH1967', '2026-11-17', k);
-  assert.strictEqual(`${A.cached(s4, 'LH1967', '2026-11-17').adbTried}:${A.timesPending(s4, 'LH1967', null, '2026-11-17', '2026-10-18')}`, 'true:false');   // no such flight: not again
+  assert.strictEqual(`${A.cached(s4, 'LH1967', '2026-11-17').adbTried}:${A.timesCalls(s4, 'LH1967', null, '2026-11-17', '2026-10-18')}`, 'true:0');   // no such flight: not again
   adb = () => reply(200, [timed]);
   const added = await A.resolveRoute(s4, 'LH1966', null, '2026-11-17', k);
   assert.strictEqual(`${added.route.destination.iata}:${!!A.timesFromCache(added.entry)}`, 'BER:true');
@@ -725,6 +731,14 @@ async function apiTests() {
   calls.length = 0;
   const cs = await A.resolveRoute(s4, 'UA9', 'LH1966', '2026-11-17', k);
   assert.strictEqual(`${calls.length}:${A.timesFromCache(cs.entry, 'UA9', '2026-11-17', cs.via).via}`, '0:LH1966');
+
+  // what a flight keeps of a lookup: its times, and the lookup and route unless the route was typed in
+  const csf = flight({ flightNo: 'UA9', operatingFlightNo: 'LH1966', date: '2026-11-17' });
+  A.applyLookup(csf, cs);
+  assert.strictEqual(`${csf.route.via}:${csf.times.via}:${csf.routeLookup.flightNo}:${csf.routeLookup.operating}:${csf.routeLookup.via}`, 'LH1966:LH1966:UA9:LH1966:LH1966');
+  const typed = flight({ flightNo: 'UA9', operatingFlightNo: 'LH1966', date: '2026-11-17', route: { ...fraJfk, source: 'manual' } });
+  A.applyLookup(typed, cs);
+  assert.strictEqual(`${typed.route.source}:${typed.routeLookup}:${typed.times.dep.scheduled.utc}`, 'manual:null:2026-11-17T06:15Z');
 }
 
 module.exports = apiTests().then(() => console.log('engine tests passed'));

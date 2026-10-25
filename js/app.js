@@ -365,12 +365,11 @@
     const min = Math.round((Date.parse(b) - Date.parse(a)) / 60000);
     return min > 0 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : '';
   };
-  /** Whether "Refresh flight data" can get a flight's times: from the cache, or by asking AeroDataBox (A.timesPending). */
+  /** Whether "Refresh flight data" can get a flight's times: from the cache, or by asking AeroDataBox (timesCalls). */
   const timesAvailable = (f) => {
     const p = isFlight(f) && !E.flightTimes(f) && E.parseFlightNo(f.flightNo), op = E.operating(f);
     if (!p) return false;
-    const c = A.cached(state, (op && op.iata) || p.iata, f.date) || A.cached(state, p.iata, f.date);
-    return !!A.timesFromCache(c) || A.timesPending(state, p.iata, op && op.iata, f.date);
+    return [op && op.iata, p.iata].some(no => no && A.timesFromCache(A.cached(state, no, f.date))) || timesCalls(f) > 0;
   };
   /** At most how many AeroDataBox requests looking up a flight's times makes (A.timesCalls): 0 when the cache answers. */
   const timesCalls = (f) => {
@@ -379,15 +378,21 @@
   };
   /** The way AeroDataBox is called (A.ADB_VIA), and what n requests cost: "4 API units (2 per lookup on your RapidAPI plan)". */
   const adbVia = () => A.ADB_VIA[A.adbVia(state.settings.aerodataboxVia)];
-  const unitsTxt = (n) => `${n * adbVia().unitsPerCall} API units (${adbVia().unitsPerCall} per lookup on your ${adbVia().keyFrom} plan)`;
+  const unitsTxt = (n) => `${n * A.UNITS_PER_CALL} API units (${A.UNITS_PER_CALL} per lookup on your ${adbVia().keyFrom} plan)`;
   /** A failure that repeats for every flight (A.lookup's failure), as a sentence: "AeroDataBox key rejected (HTTP 401) – …?" */
   const failureTxt = (fl) => `${fl.provider} ${fl.message}${/[.?!]$/.test(fl.message) ? '' : '.'}`;
-  /** The number whose times a flight shows or would get: the operating flight that gave them, else the flight number. */
+  /**
+   * The number whose times a flight shows or would get: the one that gave its times, else the one that gave its route
+   * (the operating flight, or the flight number when the operating flight gave none), else the one asked first.
+   */
   const timesNo = (f) => {
     const t = E.flightTimes(f), lk = f.routeLookup, op = E.operating(f);
-    return (t && t.via) || (lk && lk.via) || (op && op.iata) || (E.parseFlightNo(f.flightNo) || { iata: f.flightNo }).iata;   // a number from an edited .json may not parse
+    const own = (E.parseFlightNo(f.flightNo) || { iata: f.flightNo }).iata;   // a number from an edited .json may not parse
+    if (t) return t.via || own;
+    if (lk && lk.status === 'ok') return lk.via || own;
+    return (op && op.iata) || own;
   };
-  /** Refresh button of a folded-out flight (A.refreshTimes), disabled for 5 minutes after the last request. */
+  /** Refresh button of a folded-out flight (A.refreshTimes), disabled for A.refreshGap after the last request. */
   const refreshBtn = (f) => {
     if (!isFlight(f) || !state.settings.aerodataboxKey || !E.parseFlightNo(f.flightNo)) return '';
     const wait = A.refreshAllowedAt(A.cached(state, timesNo(f), f.date)) - Date.now();
@@ -407,24 +412,20 @@
   /** Asks AeroDataBox again for a flight's times (A.refreshTimes) and keeps the leg of its route. */
   const refreshTimes = async (f, b) => {
     b.disabled = true; b.textContent = '↻ Refreshing…';
-    const no = timesNo(f);
+    const st = state, no = timesNo(f);
     let msg, ms = 2600;
     try {
-      const { entry, note } = await A.refreshTimes(state, no, f.date);
-      const via = no !== E.parseFlightNo(f.flightNo).iata ? no : undefined;
+      const { entry, note } = await A.refreshTimes(st, no, f.date);
       if (!note && entry) {
-        const leg = A.legIndex(entry, f.route);
-        f.times = A.timesFromCache(entry, f.flightNo, f.date, via, leg);
-        if (!(f.route && f.route.source === 'manual') && A.routeFromCache(entry, leg)) {
-          f.route = via ? { ...A.routeFromCache(entry, leg), via } : A.routeFromCache(entry, leg);
-          f.routeLookup = A.lookupInfo({ ...entry, fromCache: false }, E.parseFlightNo(f.flightNo).iata, via, E.operating(f) ? E.operating(f).iata : undefined);
-        }
+        const via = no !== E.parseFlightNo(f.flightNo).iata ? no : undefined, leg = A.legIndex(entry, f.route), route = A.routeFromCache(entry, leg);
+        A.applyLookup(f, { entry: { ...entry, fromCache: false }, route: route && via ? { ...route, via } : route, via, leg });
       }
       msg = note ? `AeroDataBox: ${note} – nothing changed` : f.times ? 'Times refreshed' : 'AeroDataBox has no times for this flight';
-    } catch (err) {   // a key rejected or a blocked request won't work in 5 minutes either: that message stays
-      msg = `AeroDataBox ${err.reason ? err.message : `failed (${err.message})`}${err.reason === 'auth' || err.reason === 'network' ? '' : ' – try again in 5 minutes'}`;
+    } catch (err) {   // a key rejected or a blocked request won't work after the wait either: that message stays
+      msg = `AeroDataBox ${err.reason ? err.message : `failed (${err.message})`}${err.reason === 'auth' || err.reason === 'network' ? '' : ` – try again in ${A.refreshGap / 60000} minutes`}`;
       ms = A.repeats(err) ? 0 : 6000;
     }
+    if (state !== st) return;   // the data was loaded or deleted meanwhile
     save(); render(); toast(msg, ms);
   };
   /** The folded-out row of a flight: departure and arrival (scheduled, local and UTC), flight time and aircraft. */
@@ -474,21 +475,19 @@
       `This asks AeroDataBox up to ${calls} time${calls === 1 ? '' : 's'} and costs up to ${unitsTxt(calls)}. Flights answered from the cache cost nothing. Continue?`))) return;
     if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
     timesBusy = true;
+    const st = state;   // loading or deleting the data meanwhile stops the run: its flights are gone
     let got = 0, failed = 0, done = 0, stop = null;
     const why = {};   // flights without times, per reason (A.whyNoTimes)
     try {
       for (const f of flights) {
+        if (state !== st) break;
         try {
           const p = E.parseFlightNo(f.flightNo), op = E.operating(f);
-          const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date, { route: f.route });
+          const res = await A.resolveRoute(st, p.iata, op && op.iata, f.date, { route: f.route });
           if (res.entry.failure) { stop = res.entry.failure; break; }
-          f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
-          if (f.times) { got++; expanded.add(f.id); } else if (!A.settled(res.entry, state.settings.aerodataboxKey)) failed++;
-          else { const w = A.whyNoTimes(res.entry.adbNote || A.outsidePlan(state.settings, f.date)); why[w] = (why[w] || 0) + 1; }
-          if (!(f.route && f.route.source === 'manual')) {
-            f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
-            if (res.route) f.route = res.route;
-          }
+          A.applyLookup(f, res);
+          if (f.times) { got++; expanded.add(f.id); } else if (!A.settled(res.entry, st.settings.aerodataboxKey)) failed++;
+          else { const w = A.whyNoTimes(res.entry.adbNote || A.outsidePlan(st.settings, f.date)); why[w] = (why[w] || 0) + 1; }
         } catch (err) {   // a flight that can't be done is counted, the others go on
           console.error(err);
           failed++;
@@ -502,6 +501,7 @@
       try { render(); } catch (err) { console.error(err); }
       if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = 'Refresh flight data'; }
     }
+    if (state !== st) return;
     const reasons = Object.entries(why).map(([w, n]) => `${n} × ${w}.`);
     if (flights.length === 1 && !stop) { toast(got ? 'Times looked up' : failed ? 'The lookup failed – try again later' : `No times: ${Object.keys(why)[0]}`, got ? 2600 : 6000); return; }
     const left = flights.length - done;
@@ -1063,9 +1063,10 @@
             <a href="https://api.market/store/aedbx/aerodatabox" target="_blank" rel="noopener">API.Market</a>
             or from <a href="https://rapid.aerodatabox.com/pricing" target="_blank" rel="noopener">RapidAPI</a>, and choose the
             matching way above: route lookups, "Refresh flight data" and "Refresh" all go that way. A key of one doesn't work with the
-            others. Each lookup costs 2 API units on all three; "Refresh flight data" says first how many it may use. On RapidAPI, the
-            free Basic plan has 400 units a month, so about 200 lookups. Answers are cached per flight number and date, so a
-            flight is asked again only when its date changes or its route came from another schedule season.
+            others. Each lookup costs ${A.UNITS_PER_CALL} API units on all three; "Refresh flight data" says first how many it may use. On RapidAPI, the
+            free Basic plan has 400 units a month, so about ${400 / A.UNITS_PER_CALL} lookups. Answers are cached per flight number and date, so a
+            flight is asked again only when its date changes, its lookup failed, its route came from another schedule season or
+            has no times yet, or you ask for it ("Look up route", "Refresh").
             The key is saved in this browser and in your <code>.json</code>, so loading the file on another device brings it
             along. Keep the file to yourself.</p>
         </div>
@@ -1078,8 +1079,8 @@
           </div>
           <p class="hint">Data is kept in this browser (localStorage) and can be saved / loaded as <code>.json</code>.
             The file contains your flights and fares, point corrections, hotel stays, planner scenarios, these settings and the cached route lookups
-            (${cacheN} lookup${cacheN === 1 ? '' : 's'} by flight number and date, ${cacheOk} with route) – so after loading it, only failed lookups
-            and routes from another schedule season are asked again.</p>
+            (${cacheN} lookup${cacheN === 1 ? '' : 's'} by flight number and date, ${cacheOk} with route) – so after loading it, only failed lookups,
+            routes from another schedule season and, with an AeroDataBox key, routes without times are asked again.</p>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
             <button class="btn" data-act="reset-rules">Reset rules to defaults</button>
             <button class="btn" data-act="demo">Load demo data</button>

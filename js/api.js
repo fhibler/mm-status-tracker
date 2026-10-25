@@ -15,16 +15,18 @@
    * gateway, see doc.aerodatabox.com/direct.html), via API.Market or via RapidAPI. All answer the same paths in the same
    * shape; only the host and how the key is sent differ. The direct gateway documents an X-Api-Key header, but blocks
    * the preflight a browser sends for it (403, no CORS headers), so the key goes in the apiKey query parameter there:
-   * a GET without custom headers needs no preflight. unitsPerCall: what one flight-by-number request (Tier 2) costs.
+   * a GET without custom headers needs no preflight.
    */
   A.ADB_VIA = {
-    direct: { label: 'Directly (AeroDataBox)', keyFrom: 'AeroDataBox', base: 'https://api.aerodatabox.com', unitsPerCall: 2,
+    direct: { label: 'Directly (AeroDataBox)', keyFrom: 'AeroDataBox', base: 'https://api.aerodatabox.com',
       headers: () => ({}), query: (key) => `&apiKey=${encodeURIComponent(key)}` },
-    apimarket: { label: 'Via API.Market', keyFrom: 'API.Market', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox', unitsPerCall: 2,
+    apimarket: { label: 'Via API.Market', keyFrom: 'API.Market', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox',
       headers: (key) => ({ 'x-api-market-key': key }) },
-    rapidapi: { label: 'Via RapidAPI', keyFrom: 'RapidAPI', base: 'https://aerodatabox.p.rapidapi.com', unitsPerCall: 2,
+    rapidapi: { label: 'Via RapidAPI', keyFrom: 'RapidAPI', base: 'https://aerodatabox.p.rapidapi.com',
       headers: (key) => ({ 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' }) },
   };
+  /** What one flight-by-number request (Tier 2) costs, in API units, on every way of calling. */
+  A.UNITS_PER_CALL = 2;
   /** Whether a key looks like a RapidAPI key (they contain "msh" and end in "jsn…"): the wrong one for the other ways. */
   A.isRapidApiKey = (key) => /msh.*jsn/.test(key || '');
   /** A failure that will repeat for every flight: reason 'network' (blocked or unreachable, e.g. CORS), 'auth' or 'quota'. */
@@ -35,12 +37,15 @@
    * The date range of a plan, from AeroDataBox's 400 answer ("… must not be earlier than 180 day(s) ago …"):
    * { pastDays } or { futureDays }, or null.
    */
-  A.planLimit = (msg) => {
+  const planLimit = (msg) => {
     const past = /earlier than (\d+) day/i.exec(msg || ''), future = /later than (\d+) day/i.exec(msg || '');
     return past ? { pastDays: +past[1] } : future ? { futureDays: +future[1] } : null;
   };
-  /** Whether a lookup's adbNote says the date is outside the plan's range (A.planLimit, A.outsidePlan): not about the flight. */
-  A.isPlanNote = (note) => !!A.planLimit(note) || /^(older|further ahead) than your AeroDataBox plan/.test(note || '') || /^date not available/.test(note || '');
+  /** The adbNote of a date outside a plan's range ({ pastDays } or { futureDays }, as planLimit gives them). */
+  const planNote = (l) => (l.pastDays ? `older than your AeroDataBox plan allows (${l.pastDays} days)`
+    : `further ahead than your AeroDataBox plan allows (${l.futureDays} days)`);
+  /** Whether a lookup's adbNote says the date is outside the plan's range (planNote, or a 400 without a range): not about the flight. */
+  A.isPlanNote = (note) => /^(older|further ahead) than your AeroDataBox plan|^date not available/.test(note || '');
   const shiftDays = (iso, days) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
   /**
    * Why the plan can't answer for `date`, from the limits learned for the way AeroDataBox is called
@@ -48,17 +53,17 @@
    */
   A.outsidePlan = (settings, date, today = E.todayISO()) => {
     const l = settings.aerodataboxLimits[A.adbVia(settings.aerodataboxVia)] || {};
-    if (l.pastDays && date < shiftDays(today, -l.pastDays)) return `older than your AeroDataBox plan allows (${l.pastDays} days)`;
-    if (l.futureDays && date > shiftDays(today, l.futureDays)) return `further ahead than your AeroDataBox plan allows (${l.futureDays} days)`;
+    if (l.pastDays && date < shiftDays(today, -l.pastDays)) return planNote({ pastDays: l.pastDays });
+    if (l.futureDays && date > shiftDays(today, l.futureDays)) return planNote({ futureDays: l.futureDays });
     return '';
   };
   /**
    * After the way of calling AeroDataBox or the key changed: answers "outside the plan's range" given another way (or
-   * any way, `all`, for a new key, whose plan may differ) may be asked again, and a new key forgets the learned limits.
+   * any way, `all`, for a new key, whose plan may differ) may be asked again, and a new key forgets all learned limits.
    */
   A.forgetPlanNotes = (state, all = false) => {
     const via = A.adbVia(state.settings.aerodataboxVia);
-    if (all) delete state.settings.aerodataboxLimits[via];
+    if (all) state.settings.aerodataboxLimits = {};
     for (const c of Object.values(state.apiCache)) {
       if (A.isPlanNote(c.adbNote) && (all || c.adbVia !== via)) { delete c.adbTried; delete c.adbNote; delete c.adbVia; }
     }
@@ -67,13 +72,9 @@
    * Why a flight has no times, from the adbNote of its lookup (A.lookup), as a phrase: "older than your AeroDataBox
    * plan allows (180 days)", "AeroDataBox doesn't know this flight on that date", …
    */
-  A.whyNoTimes = (note) => {
-    const l = A.planLimit(note);
-    if (l) return l.pastDays ? `older than your AeroDataBox plan allows (${l.pastDays} days)` : `further ahead than your AeroDataBox plan allows (${l.futureDays} days)`;
-    if (/^(older|further ahead) than/.test(note || '')) return note;
-    if (/^no such flight/.test(note || '')) return 'AeroDataBox doesn\'t know this flight on that date';
-    return note ? `AeroDataBox: ${note}` : 'AeroDataBox gave no times';
-  };
+  A.whyNoTimes = (note) => (/^(older|further ahead) than/.test(note || '') ? note
+    : /^no such flight/.test(note || '') ? 'AeroDataBox doesn\'t know this flight on that date'
+    : note ? `AeroDataBox: ${note}` : 'AeroDataBox gave no times');
   /** fetch, with a failed request (offline, blocked, CORS: a TypeError without a status) as a 'network' failure. */
   const get = async (url, headers, why) => {
     try { return await fetch(url, { headers }); } catch { throw failure('network', why); }
@@ -191,7 +192,16 @@
 
   /** Minimum time between AeroDataBox requests in ms: the free plan allows 1 per second. */
   A.adbGap = 1100;
-  let adbLast = 0;
+  let adbTurn = Promise.resolve();
+  /**
+   * Resolves when an AeroDataBox request may be sent: A.adbGap after the previous one was. Each wait starts when the one
+   * before it has ended, so throttled timers (a hidden tab, a busy page) only delay requests, never send two at once.
+   */
+  const nextTurn = () => {
+    const turn = adbTurn;
+    adbTurn = turn.then(() => new Promise(r => setTimeout(r, A.adbGap)));
+    return turn;
+  };
 
   /**
    * Flight `no` departing on `date` from AeroDataBox, called the way the settings say (A.ADB_VIA): { response }
@@ -204,17 +214,15 @@
     const viaKey = A.adbVia(settings.aerodataboxVia), via = A.ADB_VIA[viaKey], key = settings.aerodataboxKey;
     const outside = A.outsidePlan(settings, date, today);
     if (outside) return { note: outside };
-    const at = Math.max(Date.now(), adbLast + A.adbGap);   // the slot is taken at once, so parallel calls queue up too
-    adbLast = at;
-    if (at > Date.now()) await new Promise(r => setTimeout(r, at - Date.now()));
+    await nextTurn();
     const res = await get(`${via.base}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure${via.query ? via.query(key) : ''}`,
       { Accept: 'application/json', ...via.headers(key) },
       'blocked or unreachable (network or CORS) – check the connection, or the service doesn\'t accept browser calls / the key');
     if (res.status === 204 || res.status === 404) return { note: 'no such flight on that date' };
     if (res.status === 400) {
-      const body = await res.json().catch(() => null), limit = A.planLimit(body && body.message);
+      const body = await res.json().catch(() => null), limit = planLimit(body && body.message);
       if (limit) settings.aerodataboxLimits[viaKey] = { ...settings.aerodataboxLimits[viaKey], ...limit };
-      return { note: limit ? A.whyNoTimes(body.message) : `date not available${body && body.message ? `: ${body.message}` : ''}` };
+      return { note: limit ? planNote(limit) : `date not available${body && body.message ? `: ${body.message}` : ''}` };
     }
     if (res.status === 401 || res.status === 403) throw failure('auth', `key rejected (HTTP ${res.status}) – is it a key from ${via.keyFrom}?`);
     if (res.status === 429) throw failure('quota', 'quota or rate limit reached (HTTP 429)');
@@ -337,7 +345,7 @@
     const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
     const cached = state.apiCache[ck];
     if (!key) return { entry: cached, note: 'no AeroDataBox key' };
-    if (now.getTime() < A.refreshAllowedAt(cached)) return { entry: cached, note: 'refreshed less than 5 minutes ago' };
+    if (now.getTime() < A.refreshAllowedAt(cached)) return { entry: cached, note: `refreshed less than ${A.refreshGap / 60000} minutes ago` };
     const outside = A.outsidePlan(state.settings, date, E.todayISO(now));
     if (outside) return { entry: cached, note: outside };   // not asked, so the wait doesn't start
     if (cached) cached.refreshedAt = now.toISOString();   // failed requests count too
@@ -348,14 +356,10 @@
   };
 
   /**
-   * Whether A.resolveRoute (not forced) would ask an API for the times of a flight on `date`: an AeroDataBox key is set
-   * and the number it ends with has no final answer in the cache yet (or one that could still get times).
-   */
-  A.timesPending = (state, flightNo, operatingIata, date, today = E.todayISO()) => A.timesCalls(state, flightNo, operatingIata, date, today) > 0;
-  /**
-   * At most how many AeroDataBox requests A.resolveRoute (not forced) makes for a flight on `date` (see A.timesPending):
-   * 0, 1, or 2 for a codeshare whose operating flight may give no route, so that its own number is asked too. 0 for a
-   * date outside the plan's range (A.outsidePlan): it is not asked.
+   * At most how many AeroDataBox requests A.resolveRoute (not forced) makes for a flight on `date`: 0 without a key or
+   * when the numbers it asks have a final answer in the cache (that can't get times either), 1, or 2 for a codeshare
+   * whose operating flight may give no route, so that its own number is asked too. 0 for a date outside the plan's
+   * range (A.outsidePlan): it is not asked.
    */
   A.timesCalls = (state, flightNo, operatingIata, date, today = E.todayISO()) => {
     const key = state.settings.aerodataboxKey;
@@ -395,5 +399,17 @@
     const entry = await A.lookup(state, flightNo, date, opts);
     const leg = A.legIndex(entry, opts && opts.route);
     return { entry, route: A.routeFromCache(entry, leg), via: undefined, resolved: entry.status === 'ok' ? flightNo : null, leg };
+  };
+
+  /**
+   * Keeps what A.resolveRoute found (`res`) in flight `f`: its times, and unless the route was typed in, the lookup
+   * (f.routeLookup) and the route it gave.
+   */
+  A.applyLookup = (f, res) => {
+    f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
+    if (f.route && f.route.source === 'manual') return;
+    const op = E.operating(f);
+    f.routeLookup = A.lookupInfo(res.entry, E.parseFlightNo(f.flightNo).iata, res.via, op ? op.iata : undefined);
+    if (res.route) f.route = res.route;
   };
 })();
