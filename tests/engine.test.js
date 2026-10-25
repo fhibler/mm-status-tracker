@@ -1,4 +1,4 @@
-/* Dependency-free tests for engine, store and API: `node tests/engine.test.js` (CI), or tests/browser.html */
+/* Dependency-free tests for engine, store, API and the chart helpers: `node tests/engine.test.js` (CI), or tests/browser.html */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -9,7 +9,7 @@ let respond = () => { throw new Error('unexpected fetch'); };
 const ctx = { console, fetch: async (url, opts) => respond(url, opts) };
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js']) {
+for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js', 'charts.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), ctx, { filename: f });
 }
 const { MM } = ctx;
@@ -116,6 +116,8 @@ assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraZrh, co2Level: 'small' 
 /* ---------- date field ---------- */
 assert.strictEqual(['2026/01/15', '2026-1-15', '2026.1.5', '20260115', '2026/02/30', '2026/13/01', '15.01.2026'].map(E.parseDate).join(','),
   '2026-01-15,2026-01-15,2026-01-05,2026-01-15,,,');
+// dates shown in the page: a real date (or a time stamp starting with one), never other text, since it goes into HTML
+assert.strictEqual(['2026-11-17', '2026-11-17T08:00:00.000Z', '<img src=x', '2026-13-01', null].map(MM.charts.fmtDate).join(','), '17 Nov 2026,17 Nov 2026,–,–,–');
 
 /* ---------- money fields: a comma is a decimal separator too; three digits after it group thousands ---------- */
 assert.strictEqual(['9,11', '9.11', '146,60', ' 146.6 ', '9,', ',5', '1.234,56', '1,234.56', '1.000.000', '12 345,6', '€ 7,30', "1'200.50", '1,200', '€1.000']

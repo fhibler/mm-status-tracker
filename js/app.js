@@ -360,7 +360,7 @@
     return !m ? 'UTC' : `UTC${m[1]}${+m[2]}${m[3] !== '00' ? ':' + m[3] : ''}`;
   };
   /** Clock time of an ISO time, with its date when that is not `day` ("07:15", "00:40 · 18 Nov 2026"). */
-  const clock = (iso, day) => `${iso.slice(11, 16)}${iso.slice(0, 10) !== day ? ` <span class="muted">${C.fmtDate(iso.slice(0, 10))}</span>` : ''}`;
+  const clock = (iso, day) => `${esc(iso.slice(11, 16))}${iso.slice(0, 10) !== day ? ` <span class="muted">${C.fmtDate(iso.slice(0, 10))}</span>` : ''}`;
   /** Local and UTC time of a departure or arrival, as "07:15 local (UTC+1) · 06:15 UTC". */
   const bothTimes = (t, day) => `<b>${clock(t.local, day)}</b> <span class="muted">local (${utcOffset(t.local)})</span> · ${clock(t.utc, day)} <span class="muted">UTC</span>`;
   const movementTxt = (label, iata, m, day) => {

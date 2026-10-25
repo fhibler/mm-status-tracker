@@ -43,10 +43,10 @@
 
   const dayOfYear = (iso, year) => (Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) - Date.UTC(year, 0, 1)) / 864e5;
   const isoOfDay = (d, year) => new Date(Date.UTC(year, 0, 1) + Math.round(d) * 864e5).toISOString().slice(0, 10);
+  /** "2026-11-17" (or a time stamp that starts with it) -> "17 Nov 2026", else '–'; never the text itself, so it is safe HTML. */
   C.fmtDate = (iso) => {
-    if (!iso) return '–';
-    const [y, m, d] = iso.split('-');
-    return `${+d} ${MONTHS[+m - 1]} ${y}`;
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    return m && MONTHS[+m[2] - 1] ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : '–';
   };
 
   /**
