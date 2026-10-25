@@ -2,20 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Only the app's own scripts and styles run, and data goes only to the route APIs (MM.api; a test keeps the hosts
+       in step). No inline scripts, style attributes or event handlers: markup built in js/ uses classes. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+    connect-src https://api.adsbdb.com https://api.aerodatabox.com https://prod.api.market https://aerodatabox.p.rapidapi.com;
+    base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Miles &amp; More Status Tracker</title>
   <meta name="description" content="Track and plan your Miles & More status: Points, Qualifying Points and HON Circle Points per calendar year.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2305164d'/%3E%3Cpath d='M6 19l20-8-6 10-4-2-3 5-1-6z' fill='%23f9b000'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/app.css">
-  <script>
-    /* Resolve the theme before first paint (avoids a light/dark flash). */
-    (function () {
-      var pref = 'system';
-      try { pref = localStorage.getItem('mm-status-tracker:theme') || 'system'; } catch (e) { /* storage unavailable */ }
-      var dark = pref === 'dark' || (pref !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    })();
-  </script>
+  <script src="js/theme.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -90,7 +88,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="15" rx="2"/><path d="M4 11h16M8 18v3M16 18v3M8 15h.01M16 15h.01"/></svg>
             Bus</span></label>
         </div>
-        <p class="hint" id="transportHint" style="margin:-6px 0 0"></p>
+        <p class="hint" id="transportHint"></p>
 
         <div class="grid">
           <label><span class="label-row"><span><span data-noun>Flight</span> date</span> <span class="pill" id="dateStatus"></span></span>
@@ -185,7 +183,7 @@
         <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
       </header>
       <div class="dlg-body">
-        <p class="hint" style="margin:0">Enter the difference shown on your Miles &amp; More account statement – e.g. a retro credit, a
+        <p class="hint m0">Enter the difference shown on your Miles &amp; More account statement – e.g. a retro credit, a
           missing segment or a deduction. Use negative values to reduce.<br>
           <b>Retro credits count in the year of the flight</b>, so use the flight date, not the date it was credited.</p>
         <div class="grid">
@@ -220,7 +218,7 @@
         <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
       </header>
       <div class="dlg-body">
-        <p class="hint" style="margin:0" id="stayHint"></p>
+        <p class="hint m0" id="stayHint"></p>
         <div class="grid">
           <label>Check-out date
             <span class="date-field">
@@ -251,7 +249,7 @@
         <h2 id="askTitle"></h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
       </header>
-      <div class="dlg-body"><p id="askText" style="margin:0; max-width:460px"></p></div>
+      <div class="dlg-body"><p id="askText"></p></div>
       <footer class="dlg-foot">
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>Cancel</button>

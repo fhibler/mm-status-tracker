@@ -51,7 +51,7 @@
 
   /**
    * Cumulative progress across one calendar year (step line).
-   * opts: { year, key: 'p'|'qp'|'hon', color, label, rows (events of engine.yearSummary), thresholds:[{v,label}], today }
+   * opts: { year, key: 'p'|'qp'|'hon' (its marker in the tooltip: class c-<key>), color, label, rows (events of engine.yearSummary), thresholds:[{v,label}], today }
    */
   C.cumulative = (host, opts) => {
     host.innerHTML = '';
@@ -139,7 +139,7 @@
       cross.setAttribute('x1', X(d)); cross.setAttribute('x2', X(d)); cross.setAttribute('visibility', 'visible');
       dot.setAttribute('cx', X(d)); dot.setAttribute('cy', Y(v)); dot.setAttribute('visibility', 'visible');
       let html = `<b>${C.fmtDate(isoOfDay(d, year))}${future ? ' · forecast' : ''}</b>` +
-        `<div class="row"><span><i style="--c:${opts.color}"></i>${opts.label}</span><b>${fmt(v)}</b></div>`;
+        `<div class="row"><span><i class="c-${opts.key}"></i>${opts.label}</span><b>${fmt(v)}</b></div>`;
       for (const t of opts.thresholds) html += `<div class="row muted"><span>to ${t.label}</span><span>${v >= t.v ? '✓ reached' : fmt(t.v - v)}</span></div>`;
       for (const r of on) {
         const label = r.adj ? `Correction: ${esc(r.adj.remark)}`
@@ -155,7 +155,7 @@
 
   /**
    * Stacked vertical bars.
-   * opts: { label, categories:[label], series:[{key,label,color}], data:[{key:value,...}], format(v),
+   * opts: { label, categories:[label], series:[{key (its marker in the tooltip: class c-<key>),label,color}], data:[{key:value,...}], format(v),
    *   dim(i) (faded bar), tipTitle(i), note(i) (extra tooltip HTML) }
    */
   C.stackedBars = (host, opts) => {
@@ -196,7 +196,7 @@
       const hit = el('rect', { x: m.l + band * i, y: m.t, width: band, height: ih, fill: 'transparent' }, svg);
       hit.addEventListener('pointermove', (evt) => {
         let html = `<b>${opts.tipTitle ? opts.tipTitle(i) : c}</b>`;
-        for (const s of opts.series) html += `<div class="row"><span><i style="--c:${s.color}"></i>${s.label}</span><span>${opts.format(opts.data[i][s.key] || 0)}</span></div>`;
+        for (const s of opts.series) html += `<div class="row"><span><i class="c-${s.key}"></i>${s.label}</span><span>${opts.format(opts.data[i][s.key] || 0)}</span></div>`;
         html += `<div class="row"><span>Total</span><b>${opts.format(totals[i])}</b></div>`;
         if (opts.note) html += opts.note(i);
         C.showTip(html, evt);

@@ -174,6 +174,9 @@ site to GitHub Pages.
   set, "Look up route" in the dialog replaces a route from another season. Changing a flight's date looks its route
   up again for the new date (a route typed by hand stays). The key is saved with your settings, in the
   browser and in the `.json`, so loading the file on another device brings it along: keep the file to yourself.
+- **Security**: the page runs only its own scripts and styles, and may connect only to adsbdb and the three
+  AeroDataBox hosts (a Content-Security-Policy in `index.html`), so even text that slipped past escaping could neither
+  run code nor send your key elsewhere. It sends no referrer. Everything stays in your browser and your `.json`.
 - Continental means both airports are in the same country or in the same Miles & More zone (e.g. SEA–SFO,
   FRA–ZRH). The zones follow Miles & More: Europe includes Algeria, Egypt, Libya, Morocco and Tunisia;
   Israel, Jordan and Lebanon belong to "Middle East and Asia" (so FRA–TLV is intercontinental); Greenland

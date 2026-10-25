@@ -172,11 +172,11 @@
           <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
         <div class="card kpi"><div class="label">Points ${year} · flown</div>
           <div class="kpi-trio">
-            ${[['p', 'Points', '--s-p'], ['qp', 'QP', '--s-qp'], ['hon', 'HON', '--s-hon']].map(([k, label, color]) => `
+            ${[['p', 'Points'], ['qp', 'QP'], ['hon', 'HON']].map(([k, label]) => `
               <div>
-                <span class="k"><i style="--c:var(${color})"></i>${label}</span>
+                <span class="k"><i class="c-${k}"></i>${label}</span>
                 <b>${num(sum.actual[k])}</b>
-                <span class="fc" ${sum.forecast[k] === sum.actual[k] ? 'aria-hidden="true" style="visibility:hidden"' : ''} title="Forecast incl. planned flights">→ ${num(sum.forecast[k])}</span>
+                <span ${sum.forecast[k] === sum.actual[k] ? 'class="fc invisible" aria-hidden="true"' : 'class="fc"'} title="Forecast incl. planned flights">→ ${num(sum.forecast[k])}</span>
                 <span class="cpu" title="Cost ${year} (flown + plan) per ${PT_LABEL[k].replace(/s$/, '')} incl. planned flights">${perUnit(totalCost, sum.forecast[k], k)}</span>
               </div>`).join('')}
           </div></div>
@@ -185,7 +185,7 @@
           <div class="meta"><span class="nw">${money(sum.cost.actual.total, true)} spent</span> · <span class="nw">${money(sum.cost.plan.total, true)} planned</span></div></div>
       </div>`;
 
-    const warn = sum.unknown ? `<div class="card" style="border-color:var(--danger)"><b>${sum.unknown} segment(s) without haul information</b> earn 0 points until a route or haul is set. <button class="btn small" data-act="goto-flights">Fix in Activity</button></div>` : '';
+    const warn = sum.unknown ? `<div class="card warn-card"><b>${sum.unknown} segment(s) without haul information</b> earn 0 points until a route or haul is set. <button class="btn small" data-act="goto-flights">Fix in Activity</button></div>` : '';
 
     host.innerHTML = `
       ${kpis}
@@ -210,7 +210,7 @@
       <div class="card">
         <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">a status is valid from the day it is reached until the end of February of the year after next; without requalification it then drops one level</span></div>
         <div class="table-wrap" id="histTable"></div>
-        ${hist.length > 1 ? `<div class="chart" id="yearCost" style="margin-top:14px"></div>${costLegend}` : ''}
+        ${hist.length > 1 ? `<div class="chart mt" id="yearCost"></div>${costLegend}` : ''}
       </div>`;
 
     fitText($$('.kpi-trio b, .kpi .value.fit', host));   // a large cost total shrinks to fit its card
@@ -223,10 +223,11 @@
 
   const renderProgress = (sum, rules) => {
     const t = rules.thresholds;
-    const bar = (cur, fc, max, color) => `
-      <div class="bar" style="--c:${color}">
-        <div class="fc" style="width:${Math.min(100, (fc / max) * 100)}%"></div>
-        <div class="ac" style="width:${Math.min(100, (cur / max) * 100)}%"></div>
+    // the widths are set below, once the bars are in the page (the Content-Security-Policy blocks style attributes)
+    const bar = (cur, fc, max, k) => `
+      <div class="bar c-${k}">
+        <div class="fc" data-width="${Math.min(100, (fc / max) * 100)}"></div>
+        <div class="ac" data-width="${Math.min(100, (cur / max) * 100)}"></div>
       </div>`;
     const line = (key) => {
       // values that count towards this status (train QP / HON capped per status)
@@ -238,9 +239,9 @@
         : rf ? `Forecast: reached on ${C.fmtDate(rf)} with ${esc(sum.reached.forecastBy[key])}`
         : `Missing after plan: ${missingTxt(E.gap(sum.forecast, key, rules))}`;
       const bars = key === 'HON'
-        ? `<div class="muted">HON Circle Points ${num(a.hon)} / ${num(th.hon)}</div>${bar(a.hon, f.hon, th.hon, 'var(--s-hon)')}`
-        : `<div class="muted">Points ${num(a.p)} / ${num(th.p)}</div>${bar(a.p, f.p, th.p, 'var(--s-p)')}
-           <div class="muted">Qualifying Points ${num(a.qp)} / ${num(th.qp)}</div>${bar(a.qp, f.qp, th.qp, 'var(--s-qp)')}`;
+        ? `<div class="muted">HON Circle Points ${num(a.hon)} / ${num(th.hon)}</div>${bar(a.hon, f.hon, th.hon, 'hon')}`
+        : `<div class="muted">Points ${num(a.p)} / ${num(th.p)}</div>${bar(a.p, f.p, th.p, 'p')}
+           <div class="muted">Qualifying Points ${num(a.qp)} / ${num(th.qp)}</div>${bar(a.qp, f.qp, th.qp, 'qp')}`;
       return `<div class="prog-row">
         <div class="prog-top"><span class="name">${badge(key)}</span><span class="vals">${key === 'HON' ? `forecast ${num(f.hon)}` : `forecast ${num(f.p)} P · ${num(f.qp)} QP`}</span></div>
         ${bars}
@@ -248,6 +249,7 @@
       </div>`;
     };
     $('#progList').innerHTML = MM.STATUSES.map(line).join('');
+    for (const b of $$('[data-width]', $('#progList'))) b.style.width = `${b.dataset.width}%`;
   };
 
   const renderCumCharts = (sum, rules) => {
@@ -262,14 +264,14 @@
       <div class="card">
         <div class="card-head"><h2>${d.label}</h2><span class="sub">${num(sum.actual[d.key])} flown · ${num(sum.forecast[d.key])} forecast</span></div>
         <div class="chart" data-cum="${d.key}"></div>
-        <div class="legend"><span><i style="--c:${d.color}"></i>Flown</span><span><i class="dash" style="--c:${d.color}"></i>Forecast</span><span><i style="--c:var(--accent)"></i>Today</span></div>
+        <div class="legend"><span><i class="c-${d.key}"></i>Flown</span><span><i class="dash c-${d.key}"></i>Forecast</span><span><i class="c-today"></i>Today</span></div>
       </div>`).join('');
     for (const d of defs) C.cumulative($(`[data-cum="${d.key}"]`, host), { ...d, year, rows: sum.events, today: E.todayISO() });
   };
 
   const COST_KINDS = [['flight', 'Flight', '--c-flight'], ['upgrade', 'Upgrade', '--c-upgrade'], ['co2', 'CO₂ compensation', '--c-co2']];
   const costSeries = () => COST_KINDS.map(([key, label, color]) => ({ key, label, color: cssVar(color) }));
-  const costLegend = `<div class="legend">${COST_KINDS.map(([, label, color]) => `<span><i class="sq" style="--c:var(${color})"></i>${label}</span>`).join('')}</div>`;
+  const costLegend = `<div class="legend">${COST_KINDS.map(([key, label]) => `<span><i class="sq c-${key}"></i>${label}</span>`).join('')}</div>`;
 
   const renderCostChart = (sum) => {
     const data = C.MONTHS.map(() => ({ flight: 0, upgrade: 0, co2: 0, planned: 0, n: 0 }));
@@ -304,11 +306,11 @@
     $('#segBreakdown').innerHTML = list.length ? `
       <div class="table-wrap"><table>
         <thead><tr><th>Earning cabin</th><th>Haul</th><th class="num">Flown</th><th class="num">Planned</th><th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th class="num">Cost</th></tr></thead>
-        <tbody>${list.map(g => `<tr style="cursor:default"><td>${esc(g.cls)}</td><td>${haulTxt(g.haul)}</td><td class="num">${g.flown}</td><td class="num">${g.planned}</td>
+        <tbody>${list.map(g => `<tr class="static"><td>${esc(g.cls)}</td><td>${haulTxt(g.haul)}</td><td class="num">${g.flown}</td><td class="num">${g.planned}</td>
           <td class="num">${num(g.p)}</td><td class="num">${num(g.qp)}</td><td class="num">${num(g.hon)}</td><td class="num">${money(g.cost, true)}</td></tr>`).join('')}
-          ${sum.adjustments.length ? `<tr style="cursor:default"><td colspan="2"><i>Point corrections</i></td><td class="num" colspan="2">${sum.adjustments.length}×</td>
+          ${sum.adjustments.length ? `<tr class="static"><td colspan="2"><i>Point corrections</i></td><td class="num" colspan="2">${sum.adjustments.length}×</td>
           <td class="num">${signed(sum.adjTotal.p)}</td><td class="num">${signed(sum.adjTotal.qp)}</td><td class="num">${signed(sum.adjTotal.hon)}</td><td class="num">–</td></tr>` : ''}
-          ${sum.stays.length ? `<tr style="cursor:default"><td colspan="2"><i>Marriott Bonvoy stays</i></td><td class="num" colspan="2">${sum.stays.length}×</td>
+          ${sum.stays.length ? `<tr class="static"><td colspan="2"><i>Marriott Bonvoy stays</i></td><td class="num" colspan="2">${sum.stays.length}×</td>
           <td class="num">${num(sum.stayTotal.p)}</td><td class="num">0</td><td class="num">0</td><td class="num">–</td></tr>` : ''}</tbody>
       </table></div>
       <p class="hint">${lhg} Lufthansa Group segment(s) · ${star} Star Alliance segment(s) (Points only)</p>` : '<p class="muted">No segments in this year.</p>';
@@ -318,7 +320,7 @@
     const rows = hist.slice().reverse().map(h => {
       const total = h.cost.all.total;
       const hasPlan = h.rows.some(r => r.planned && r.counts);
-      return `<tr data-year="${h.year}" ${h.year === year ? 'style="font-weight:600"' : ''}>
+      return `<tr data-year="${h.year}" ${h.year === year ? 'class="current"' : ''}>
         <td>${h.year}</td>
         <td class="num">${h.rows.filter(r => !r.planned).length}${hasPlan ? ` <span class="muted">+${h.rows.filter(r => r.planned && r.counts).length}</span>` : ''}</td>
         ${['p', 'qp', 'hon'].map(k => `<td class="num">${num(h.actual[k])}${hasPlan ? ` <span class="muted">→ ${num(h.forecast[k])}</span>` : ''}
@@ -612,7 +614,7 @@
     const rows = sum.adjustments.map(r => `<tr data-adj-id="${esc(r.adj.id)}" class="${r.planned ? 'planned' : ''}">
         <td>${C.fmtDate(r.adj.date)}</td>
         <td class="num">${signed(r.e.p)}</td><td class="num">${signed(r.e.qp)}</td><td class="num">${signed(r.e.hon)}</td>
-        <td style="white-space:normal">${esc(r.adj.remark)}</td>
+        <td class="wrap">${esc(r.adj.remark)}</td>
       </tr>`).join('');
     const t = sum.adjTotal;
     return `<div class="card">
@@ -625,7 +627,7 @@
         <thead><tr><th>Date</th><th class="num">P</th><th class="num">QP</th><th class="num">HON</th><th>Remark</th></tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr><td>Total</td><td class="num">${signed(t.p)}</td><td class="num">${signed(t.qp)}</td><td class="num">${signed(t.hon)}</td><td></td></tr></tfoot>
-      </table></div>` : '<p class="muted" style="margin:0">No corrections in this year. Add one if your statement shows different Points, QP or HON Circle Points than calculated here.</p>'}
+      </table></div>` : '<p class="muted m0">No corrections in this year. Add one if your statement shows different Points, QP or HON Circle Points than calculated here.</p>'}
     </div>`;
   };
 
@@ -634,7 +636,7 @@
     const why = { ok: '', short: `under ${m.minNights} nights`, cap: 'yearly maximum reached', partial: 'yearly maximum reached' };
     const rows = sum.stays.map(r => `<tr data-stay-id="${esc(r.stay.id)}" class="${r.planned ? 'planned' : ''}">
         <td>${C.fmtDate(r.stay.date)}</td>
-        <td style="white-space:normal">${esc(r.stay.hotel || '–')}${r.stay.remark ? `<div class="muted">${esc(r.stay.remark)}</div>` : ''}</td>
+        <td class="wrap">${esc(r.stay.hotel || '–')}${r.stay.remark ? `<div class="muted">${esc(r.stay.remark)}</div>` : ''}</td>
         <td class="num">${num(+r.stay.nights || 0)}</td>
         <td class="num">${num(r.e.p)}${why[r.e.reason] ? `<div class="muted">${why[r.e.reason]}</div>` : ''}</td>
       </tr>`).join('');
@@ -648,7 +650,7 @@
         <thead><tr><th>Check-out</th><th>Hotel</th><th class="num">Nights</th><th class="num">Points</th></tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr><td colspan="3">Total <span class="muted">· ${num(Math.max(0, m.maxPointsPerYear - sum.stayTotal.p))} Points left this year</span></td><td class="num">${num(sum.stayTotal.p)}</td></tr></tfoot>
-      </table></div>` : '<p class="muted" style="margin:0">No Marriott Bonvoy stays in this year.</p>'}
+      </table></div>` : '<p class="muted m0">No Marriott Bonvoy stays in this year.</p>'}
     </div>`;
   };
 
@@ -746,13 +748,13 @@
 
     const co2Row = (r) => {
       const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level, locked = E.hasBooster(f);
-      return `<tr data-co2-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''}${locked ? ' locked' : ''}" style="cursor:default">
+      return `<tr data-co2-id="${esc(f.id)}" class="static${r.planned ? ' planned' : ''}${locked ? ' locked' : ''}">
         <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
         <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls || E.co2Class(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.co2Class(f))}</div>` : ''}</td>
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
-        ${locked ? `<td style="white-space:nowrap"><span class="muted">compensated · locked</span></td>
-        <td class="num" style="white-space:nowrap">${plusPts(E.co2Gain({ ...f, co2Level: 'none' }, f.co2Level, state.settings.rules))}</td><td></td>
+        ${locked ? `<td><span class="muted">compensated · locked</span></td>
+        <td class="num">${plusPts(E.co2Gain({ ...f, co2Level: 'none' }, f.co2Level, state.settings.rules))}</td><td></td>
         <td><button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button></td>`
         : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
@@ -764,8 +766,8 @@
 
     const mixRow = (r) => {
       const rail = r.kind === 'RAIL';
-      return `<tr data-mix-id="${esc(r.id)}" style="cursor:default">
-        <td class="num"><input type="number" min="0" step="1" data-mix="count" value="${r.count}" aria-label="Number of segments" class="num-input" style="width:64px"></td>
+      return `<tr data-mix-id="${esc(r.id)}" class="static">
+        <td class="num"><input type="number" min="0" step="1" data-mix="count" value="${r.count}" aria-label="Number of segments" class="num-input narrow"></td>
         <td><select data-mix="kind" aria-label="Type">${opts(Object.keys(MM.MIX_KIND), r.kind, k => MM.MIX_KIND[k])}</select></td>
         <td><select data-mix="haul" aria-label="Haul" ${rail ? 'disabled' : ''}>${opts(['continental', 'intercontinental'], r.haul, h => HAUL_LABEL[h])}</select></td>
         <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? Object.keys(MM.RAIL_CLASSES) : MM.CLASSES, r.cls)}</select></td>
@@ -789,8 +791,8 @@
             <th class="num">Adds<div class="muted">P · QP · HON</div></th><th></th></tr></thead>
           <tbody>${plan.mix.map(mixRow).join('')}</tbody>
           <tfoot><tr><td colspan="6">Total extra segments <span class="muted" data-cell="mix-n"></span></td><td class="num" data-cell="mix-sum"></td><td></td></tr></tfoot>
-        </table></div>` : '<p class="muted" style="margin:0">No extra segments yet. Start with a preset or add your own rows:</p>'}
-        <div class="preset-row">${MIX_PRESETS.map((p, i) => `<button class="btn small" data-mix-preset="${i}">+ ${esc(mixLabel(p))}</button>`).join('')}</div>
+        </table></div>` : '<p class="muted m0">No extra segments yet. Start with a preset or add your own rows:</p>'}
+        <div class="btn-row">${MIX_PRESETS.map((p, i) => `<button class="btn small" data-mix-preset="${i}">+ ${esc(mixLabel(p))}</button>`).join('')}</div>
         <p class="hint">Continental includes domestic flights (e.g. SEA–SFO). Points per segment follow your rules in Settings. Star Alliance flights earn Points only; train QP / HON count only up to the
           train limits. A round trip counts as 2 segments. The cost per segment is your estimate (fare, upgrade and booster).</p>
       </div>
@@ -816,7 +818,7 @@
         <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and the cabin paid for (continental Economy and Business, long-haul Business), '
           + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
           Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`
-        : `<p class="muted" style="margin:0">No flights with Points in ${year}. Add flights in Activity first.</p>`}
+        : `<p class="muted m0">No flights with Points in ${year}. Add flights in Activity first.</p>`}
       </div>
       <div class="card" id="gapCard"></div>`;
 
@@ -937,8 +939,8 @@
       <div class="plan-targets">${MM.STATUSES.map(target).join('')}</div>
       <div class="table-wrap"><table>
         <thead><tr><th>Step</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th><th class="num">Cost</th></tr></thead>
-        <tbody>${steps.map(([label, t, s, cost, note], i) => `<tr style="cursor:default">
-          <td>${label}${note ? `<div class="muted" style="white-space:normal">${note}</div>` : ''}</td>
+        <tbody>${steps.map(([label, t, s, cost, note], i) => `<tr class="static">
+          <td>${label}${note ? `<div class="muted wrap">${note}</div>` : ''}</td>
           <td class="num">${num(t.p)}</td><td class="num">${num(t.qp)}</td><td class="num">${num(t.hon)}</td>
           <td>${badge(s)}</td><td class="num">${signedMoney(cost, i)}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td>Scenario total</td><td class="num">${num(sc.total.p)}</td><td class="num">${num(sc.total.qp)}</td><td class="num">${num(sc.total.hon)}</td>
@@ -965,12 +967,12 @@
         <label>Cabin<select data-gap="cls">${opts(MM.CLASSES, cls)}</select></label>
         <label>CO₂ booster<select data-gap="co2Level">${opts(MM.CO2_LEVELS, co2Level, l => MM.CO2_LABEL[l])}</select></label>
       </div>
-      <div class="earn-preview" style="margin-top:12px">
+      <div class="earn-preview mt">
         <div><div class="k">Per segment (Lufthansa Group)</div><b>${num(e.p)} P · ${num(e.qp)} QP · ${num(e.hon)} HON</b></div>
         <div><div class="k">Still missing after scenario</div><b>${reached ? '–' : missingTxt(E.gap(total, target, rules))}</b></div>
-        <div><div class="k">Extra segments needed</div><b style="font-size:20px">${n === Infinity ? 'not reachable' : n === 0 ? '✓ none' : n + '×'}</b></div>
+        <div><div class="k">Extra segments needed</div><b class="big">${n === Infinity ? 'not reachable' : n === 0 ? '✓ none' : n + '×'}</b></div>
       </div>
-      ${n > 0 && n !== Infinity ? `<div style="margin-top:10px"><button class="btn small" data-gap-add>+ Add ${esc(mixLabel({ count: n, kind: 'LHG', haul, cls, co2Level }))} to the extra segments</button></div>` : ''}
+      ${n > 0 && n !== Infinity ? `<div class="mt"><button class="btn small" data-gap-add>+ Add ${esc(mixLabel({ count: n, kind: 'LHG', haul, cls, co2Level }))} to the extra segments</button></div>` : ''}
       <p class="hint">HON Circle Points are only earned in ${esc(rules.honClasses.join(' / '))}.</p>`;
     $$('[data-gap]', host).forEach(s => s.addEventListener('change', () => { gapPrefs[s.dataset.gap] = s.value; renderGap(total, st); }));
     const add = $('[data-gap-add]', host);
@@ -1012,7 +1014,7 @@
           <div class="card-head"><h2>Points per segment</h2><span class="sub">Lufthansa Group: Points = Qualifying Points</span></div>
           <div class="table-wrap"><table>
             <thead><tr><th>Cabin</th><th class="num">Continental</th><th class="num">Intercontinental</th><th>HON Points</th></tr></thead>
-            <tbody>${MM.CLASSES.map(c => `<tr style="cursor:default"><td>${c}</td>
+            <tbody>${MM.CLASSES.map(c => `<tr class="static"><td>${c}</td>
               <td class="num"><input type="number" min="0" data-rule="points.continental.${c}" value="${r.points.continental[c]}"></td>
               <td class="num"><input type="number" min="0" data-rule="points.intercontinental.${c}" value="${r.points.intercontinental[c]}"></td>
               <td><input type="checkbox" data-hon="${c}" ${r.honClasses.includes(c) ? 'checked' : ''} aria-label="HON Circle Points in ${c}"></td></tr>`).join('')}</tbody>
@@ -1024,9 +1026,9 @@
           <div class="table-wrap"><table>
             <thead><tr><th>Status</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON Points</th><th class="num" title="Max QP (FTL, SEN) or HON Circle Points (HON) that train segments may contribute">Max by train</th></tr></thead>
             <tbody>
-              <tr style="cursor:default"><td>${badge('FTL')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.p" value="${r.thresholds.FTL.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.qp" value="${r.thresholds.FTL.qp}"></td><td></td><td class="num"><input type="number" min="0" data-rule="railCaps.FTL" value="${r.railCaps.FTL}" title="QP"></td></tr>
-              <tr style="cursor:default"><td>${badge('SEN')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.p" value="${r.thresholds.SEN.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.qp" value="${r.thresholds.SEN.qp}"></td><td></td><td class="num"><input type="number" min="0" data-rule="railCaps.SEN" value="${r.railCaps.SEN}" title="QP"></td></tr>
-              <tr style="cursor:default"><td>${badge('HON')}</td><td></td><td></td><td class="num"><input type="number" min="0" data-rule="thresholds.HON.hon" value="${r.thresholds.HON.hon}"></td><td class="num"><input type="number" min="0" data-rule="railCaps.HON" value="${r.railCaps.HON}" title="HON Circle Points"></td></tr>
+              <tr class="static"><td>${badge('FTL')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.p" value="${r.thresholds.FTL.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.FTL.qp" value="${r.thresholds.FTL.qp}"></td><td></td><td class="num"><input type="number" min="0" data-rule="railCaps.FTL" value="${r.railCaps.FTL}" title="QP"></td></tr>
+              <tr class="static"><td>${badge('SEN')}</td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.p" value="${r.thresholds.SEN.p}"></td><td class="num"><input type="number" min="0" data-rule="thresholds.SEN.qp" value="${r.thresholds.SEN.qp}"></td><td></td><td class="num"><input type="number" min="0" data-rule="railCaps.SEN" value="${r.railCaps.SEN}" title="QP"></td></tr>
+              <tr class="static"><td>${badge('HON')}</td><td></td><td></td><td class="num"><input type="number" min="0" data-rule="thresholds.HON.hon" value="${r.thresholds.HON.hon}"></td><td class="num"><input type="number" min="0" data-rule="railCaps.HON" value="${r.railCaps.HON}" title="HON Circle Points"></td></tr>
             </tbody>
           </table></div>
         </div>
@@ -1034,7 +1036,7 @@
           <div class="card-head"><h2>CO₂ compensation boosters</h2><span class="sub">bonus in % of the segment's base value</span></div>
           <div class="table-wrap"><table>
             <thead><tr><th>Level</th><th class="num">Points %</th><th class="num">QP %</th><th class="num">HON %</th></tr></thead>
-            <tbody>${MM.CO2_LEVELS.filter(l => l !== 'none').map(l => `<tr style="cursor:default"><td>${MM.CO2_LABEL[l]}</td>
+            <tbody>${MM.CO2_LEVELS.filter(l => l !== 'none').map(l => `<tr class="static"><td>${MM.CO2_LABEL[l]}</td>
               ${['p', 'qp', 'hon'].map(k => `<td class="num"><input type="number" min="0" data-rule="co2.${l}.${k}" value="${r.co2[l][k]}"></td>`).join('')}</tr>`).join('')}</tbody>
           </table></div>
         </div>
@@ -1051,7 +1053,7 @@
           <div class="grid">
             <label>Call AeroDataBox<select id="adbVia">${opts(Object.keys(A.ADB_VIA), state.settings.aerodataboxVia, v => A.ADB_VIA[v].label)}</select>
               ${adbVia() !== A.ADB_VIA.rapidapi && A.isRapidApiKey(state.settings.aerodataboxKey)
-                ? `<small class="field-hint" style="color:var(--danger)">This looks like a RapidAPI key – choose Via RapidAPI or enter a key from ${adbVia().keyFrom}.</small>`
+                ? `<small class="field-hint danger">This looks like a RapidAPI key – choose Via RapidAPI or enter a key from ${adbVia().keyFrom}.</small>`
                 : `<small class="field-hint">With a key from ${adbVia().keyFrom}</small>`}</label>
             <label>AeroDataBox key<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(state.settings.aerodataboxKey)}">
               <small class="field-hint">${state.settings.aerodataboxKey ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
@@ -1081,7 +1083,7 @@
             The file contains your flights and fares, point corrections, hotel stays, planner scenarios, these settings and the cached route lookups
             (${cacheN} lookup${cacheN === 1 ? '' : 's'} by flight number and date, ${cacheOk} with route) – so after loading it, only failed lookups,
             routes from another schedule season and, with an AeroDataBox key, routes without times are asked again.</p>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+          <div class="btn-row">
             <button class="btn" data-act="reset-rules">Reset rules to defaults</button>
             <button class="btn" data-act="demo">Load demo data</button>
             <button class="btn" data-act="clear-cache">Clear API cache</button>
@@ -1217,9 +1219,9 @@
         : !key ? 'Add an AeroDataBox key in Settings to look up routes by date.'
         : lk.fetchedAt < draft.date ? 'Once that season has started, "Look up route" asks again.' : '');
       info.innerHTML = `${name(r.origin)} → ${name(r.destination)}${km ? ` · ${num(km)} km` : ''} · <span class="muted">${src}</span>` + resolved +
-        (unknown && isFlight(draft) ? '<br><b style="color:var(--danger)">Airport unknown – please choose the haul manually.</b>' : '') +
+        (unknown && isFlight(draft) ? '<br><b class="danger">Airport unknown – please choose the haul manually.</b>' : '') +
         (r.source === 'manual' || !isFlight(draft) ? ''
-          : otherSeason(draft) ? `<br><b style="color:var(--danger)">This is the route of schedule season ${esc(A.lookupSeason(lk))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${again()}`
+          : otherSeason(draft) ? `<br><b class="danger">This is the route of schedule season ${esc(A.lookupSeason(lk))}, your flight is in ${esc(E.iataSeason(draft.date))}.</b> Airlines fly some numbers on other routes per season – check your ticket and type the airports above if they differ. ${again()}`
           : r.provider === 'aerodatabox' ? ''
           : '<br><span class="muted">This is the route listed for the flight number at lookup time (adsbdb ignores the date). Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>') +
         (r.source === 'manual' || !lk ? ''
@@ -1230,7 +1232,7 @@
     } else if (lk && lk.status === 'notfound') {
       info.innerHTML = `<b>Route not found</b> for ${lk.operating ? `${esc(lk.operating)} (operating flight) or ${esc(lk.flightNo)}` : 'this flight number'} – enter the airports manually and/or choose the haul.`;
     } else if (lk && lk.status === 'error') {
-      info.innerHTML = `<b style="color:var(--danger)">Lookup failed</b> (${esc(lk.error || 'network error')}). Try again or enter the airports manually.`;
+      info.innerHTML = `<b class="danger">Lookup failed</b> (${esc(lk.error || 'network error')}). Try again or enter the airports manually.`;
     } else {
       info.textContent = state.settings.aerodataboxKey ? 'Route is looked up automatically for the flight number and date (AeroDataBox, else adsbdb.com). Results are cached in your .json.' : 'Route is looked up automatically from the flight number (adsbdb.com). Results are cached in your .json.';
     }
@@ -1287,8 +1289,8 @@
     if (r && r.via === op.iata) check = '';   // the route is the operating flight's: nothing to cross-check
     else if (opRoute && hasRoute(r)) {
       const same = opRoute.origin.iata === r.origin.iata && opRoute.destination.iata === r.destination.iata;
-      check = same ? ' · <span style="color:var(--s-hon)">✓ same route</span>'
-        : ` · <b style="color:var(--danger)">⚠ ${esc(op.iata)} is listed as ${esc(opRoute.origin.iata)}→${esc(opRoute.destination.iata)}</b>`;
+      check = same ? ' · <span class="good">✓ same route</span>'
+        : ` · <b class="danger">⚠ ${esc(op.iata)} is listed as ${esc(opRoute.origin.iata)}→${esc(opRoute.destination.iata)}</b>`;
     } else if (entry && entry.status === 'notfound') check = ` · route of ${esc(op.iata)} unknown`;
     return `<br>${head}${check}`;
   };

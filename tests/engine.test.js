@@ -459,6 +459,16 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(rich))), JSON.stringify(rich));
 }
 
+/* ---------- Content-Security-Policy (index.html): the app's own code only, data only to the route APIs ---------- */
+{
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const csp = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(read('index.html'))[1];
+  const origins = (urls) => urls.map(u => new URL(u).origin).sort().join(' ');
+  assert.strictEqual(origins(csp.match(/https:\/\/[^\s;]+/g)), origins([A.ADSBDB, ...Object.values(A.ADB_VIA).map(v => v.base)]));
+  // it blocks inline scripts, style attributes and event handler attributes: none in the page or the markup built in js/
+  for (const f of ['index.html', 'js/app.js', 'js/charts.js']) assert.ok(!/<script>|\sstyle=|\son[a-z]+=/.test(read(f)), f);
+}
+
 /* ---------- flight times: kept per flight number and date, flights sorted by departure in UTC ---------- */
 {
   const times = (flightNo, date, depUtc) => ({ flightNo, date, provider: 'aerodatabox', aircraft: 'Airbus A350-900', reg: 'D-AIXA',

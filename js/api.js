@@ -9,7 +9,8 @@
 (function () {
   const A = (MM.api = {});
   const E = MM.engine;
-  const BASE = 'https://api.adsbdb.com/v0/callsign/';
+  /** adsbdb's callsign lookup. Its host and those of A.ADB_VIA are the only ones the page may connect to (index.html). */
+  A.ADSBDB = 'https://api.adsbdb.com/v0/callsign/';
   /**
    * Ways to call AeroDataBox (state.settings.aerodataboxVia), each with a key from where it was bought: directly (its own
    * gateway, see doc.aerodatabox.com/direct.html), via API.Market or via RapidAPI. All answer the same paths in the same
@@ -310,7 +311,7 @@
     if (!entry.status) {
       try {
         for (const cs of callsigns(no)) {
-          const res = await get(BASE + encodeURIComponent(cs), { Accept: 'application/json' }, 'blocked or unreachable (network or CORS) – check the connection');
+          const res = await get(A.ADSBDB + encodeURIComponent(cs), { Accept: 'application/json' }, 'blocked or unreachable (network or CORS) – check the connection');
           if (res.status === 429) throw failure('quota', 'rate limit reached (HTTP 429) – try again later');
           if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
           const json = await res.json().catch(() => null);
