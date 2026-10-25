@@ -229,13 +229,13 @@
   /**
    * Flight times and aircraft of leg `leg` of a cache entry (A.legs), as a flight keeps them (f.times; see
    * E.flightTimes): for the flight number `flightNo` on `date`, `via` the operating flight that gave them. null when the
-   * entry has none (adsbdb knows no times).
+   * entry has none (adsbdb knows no times); arr is null when AeroDataBox gives no arrival time (e.g. a diverted flight).
    */
   A.timesFromCache = (entry, flightNo, date, via, leg = 0) => {
     const fr = A.legs(entry)[leg], sc = fr && fr.schedule;
-    if (!sc || !sc.departure || !sc.departure.scheduled || !sc.arrival || !sc.arrival.scheduled) return null;   // both, as S.normalizeTimes wants
+    if (!sc || !sc.departure || !sc.departure.scheduled) return null;
     return { flightNo, date, via, provider: entry.provider, fetchedAt: entry.fetchedAt,
-      dep: sc.departure, arr: sc.arrival, aircraft: sc.aircraft, reg: sc.reg };
+      dep: sc.departure, arr: sc.arrival && sc.arrival.scheduled ? sc.arrival : null, aircraft: sc.aircraft, reg: sc.reg };
   };
   /**
    * Whether AeroDataBox could add the times to a cache entry: a key is set, the entry is not an AeroDataBox answer that

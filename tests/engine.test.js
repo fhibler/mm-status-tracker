@@ -599,10 +599,11 @@ async function apiTests() {
   s6.settings.aerodataboxVia = 'direct';
   A.forgetPlanNotes(s6, true);   // a new key forgets what the plan allowed
   assert.strictEqual(A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18'), '');
-  // an answer without an arrival time gives no times (a flight's times need both, as S.normalizeTimes wants)
+  // an answer without an arrival time (e.g. a diverted flight, UA520 SAN–SFO) keeps the departure, with arr null, also in a saved file
   respond = (url) => url.includes('aerodatabox') ? reply(200, [{ ...adbFlight, departure: { ...adbFlight.departure, scheduledTime: { utc: '2026-11-17 06:15Z', local: '2026-11-17 07:15+01:00' } } }]) : reply(404, null);
-  const noArr = await A.lookup(s6, 'LH13', '2026-11-17', k);
-  assert.strictEqual(`${noArr.provider}:${A.timesFromCache(noArr, 'LH13', '2026-11-17')}`, 'aerodatabox:null');
+  const noArr = await A.lookup(s6, 'LH13', '2026-11-17', k), tNoArr = A.timesFromCache(noArr, 'LH13', '2026-11-17');
+  assert.strictEqual(`${noArr.provider}:${tNoArr.dep.scheduled.utc}:${tNoArr.arr}:${S.normalizeTimes(tNoArr).arr}`, 'aerodatabox:2026-11-17T06:15Z:null:null');
+  assert.strictEqual(S.normalizeTimes({ ...tNoArr, arr: { scheduled: null } }).arr, null);   // as saved before this
   respond = viaRapid;
   adb = () => reply(200, [{ ...adbFlight, arrival: { airport: { name: 'Somewhere' } } }]);
   assert.strictEqual((await A.lookup(s3, 'LH1970', '2026-11-17', k)).adbNote, 'no route in its answer');

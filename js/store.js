@@ -133,7 +133,7 @@
   };
   /** Looked-up times of a flight (MM.api.timesFromCache) with valid times, or null. */
   S.normalizeTimes = (t) => {
-    if (!isObj(t) || !E.parseFlightNo(t.flightNo) || E.parseDate(t.date) !== t.date || !movement(t.dep) || !movement(t.arr)) return null;
+    if (!isObj(t) || !E.parseFlightNo(t.flightNo) || E.parseDate(t.date) !== t.date || !movement(t.dep)) return null;
     return { flightNo: t.flightNo, date: t.date, via: str(t.via, 8) || undefined, provider: str(t.provider, 20), fetchedAt: str(t.fetchedAt, 30),
       dep: movement(t.dep), arr: movement(t.arr), aircraft: str(t.aircraft, 60), reg: str(t.reg, 12) };
   };

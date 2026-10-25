@@ -448,12 +448,13 @@
       return `<div class="times muted">${why}</div>`;
     }
     const day = f.date, r = hasRoute(f.route) ? f.route : null;   // a later leg of the number can depart the next day
-    const dur = durationTxt(t.dep.scheduled.utc, t.arr.scheduled.utc);
+    const dur = t.arr ? durationTxt(t.dep.scheduled.utc, t.arr.scheduled.utc) : '';
     const ac = [t.aircraft && esc(t.aircraft), t.reg && `<span class="muted">${esc(t.reg)}</span>`].filter(Boolean).join(' ');
     const n = A.legs(routeEntry(f)).length;
     return `<div class="times">
       ${movementTxt('Departure', r && r.origin.iata, t.dep, day)}
-      ${movementTxt('Arrival', r && r.destination.iata, t.arr, day)}
+      ${t.arr ? movementTxt('Arrival', r && r.destination.iata, t.arr, day)   // none e.g. when the flight was diverted
+        : `<div><span class="k">Arrival</span> <b>${esc(r ? r.destination.iata : '')}</b> <span class="muted">no arrival time from AeroDataBox (diverted or cancelled?)</span></div>`}
       <div>${dur ? `<span class="k">Flight time</span> ${dur} · ` : ''}<span class="k">Aircraft</span> ${ac || '<span class="muted">not known yet</span>'}
         <span class="muted">· scheduled times${t.via ? ` of ${esc(t.via)}` : ''} from AeroDataBox, looked up ${C.fmtDate((t.fetchedAt || '').slice(0, 10))}${t.fetchedAt ? `, ${esc(t.fetchedAt.slice(11, 16))} UTC` : ''}</span></div>
       ${n > 1 ? `<div class="muted">This number flies ${n} routes on that day: click the row to choose another.</div>` : ''}
