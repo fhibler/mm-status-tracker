@@ -167,7 +167,8 @@ site to GitHub Pages.
   for every flight (blocked or unreachable, key rejected, quota) and says why in a message that stays until closed;
   such a failure is not saved as the flight's lookup. Each answer is saved as it arrives. When AeroDataBox answers
   that a date is outside your plan (e.g. "must not be earlier than 180 day(s) ago"), the app remembers that range per
-  way of calling, doesn't ask (or count) older dates again, and says so in the flight's times line and the summary;
+  way of calling, doesn't ask (or count) dates outside it, and says so in the flight's times line and the summary (a
+  date too far ahead is asked once it is within the range);
   switching the way or the key lets those dates be asked again. On RapidAPI, the free Basic plan has 400 units a month
   (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
   set, "Look up route" in the dialog replaces a route from another season. Changing a flight's date looks its route

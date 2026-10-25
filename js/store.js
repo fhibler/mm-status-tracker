@@ -195,10 +195,9 @@
     s.settings.aerodataboxVia = MM.api.adbVia(set.aerodataboxVia);
     // the date range of the plan per way of calling AeroDataBox, learned from its answers (MM.api.outsidePlan)
     for (const [via, l] of Object.entries(isObj(set.aerodataboxLimits) ? set.aerodataboxLimits : {})) {
-      if (!MM.api.ADB_VIA[via] || !isObj(l)) continue;
-      const days = (d) => (Number.isInteger(d) && d > 0 && d <= 5000 ? d : undefined);
-      const lim = { pastDays: days(l.pastDays), futureDays: days(l.futureDays) };
-      if (lim.pastDays || lim.futureDays) s.settings.aerodataboxLimits[via] = JSON.parse(JSON.stringify(lim));
+      if (MM.api.adbVia(via) !== via || !isObj(l)) continue;
+      const lim = Object.fromEntries(['pastDays', 'futureDays'].map(k => [k, l[k]]).filter(([, d]) => Number.isInteger(d) && d > 0 && d <= 5000));
+      if (Object.keys(lim).length) s.settings.aerodataboxLimits[via] = lim;
     }
     if (isObj(set.startStatus) && MM.STATUS_ORDER.includes(set.startStatus.status)) {
       const y = +set.startStatus.year;

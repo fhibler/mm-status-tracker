@@ -8,6 +8,7 @@
  * provisional, and is asked again once that season has started, or when AeroDataBox can be asked. */
 (function () {
   const A = (MM.api = {});
+  const E = MM.engine;
   const BASE = 'https://api.adsbdb.com/v0/callsign/';
   /**
    * Ways to call AeroDataBox (state.settings.aerodataboxVia), each with a key from where it was bought: directly (its own
@@ -46,7 +47,7 @@
    * (state.settings.aerodataboxLimits, per A.ADB_VIA key: plans differ), or ''. Such a date is not asked: it costs units.
    */
   A.outsidePlan = (settings, date, today = E.todayISO()) => {
-    const l = (settings.aerodataboxLimits || {})[A.adbVia(settings.aerodataboxVia)] || {};
+    const l = settings.aerodataboxLimits[A.adbVia(settings.aerodataboxVia)] || {};
     if (l.pastDays && date < shiftDays(today, -l.pastDays)) return `older than your AeroDataBox plan allows (${l.pastDays} days)`;
     if (l.futureDays && date > shiftDays(today, l.futureDays)) return `further ahead than your AeroDataBox plan allows (${l.futureDays} days)`;
     return '';
@@ -57,9 +58,9 @@
    */
   A.forgetPlanNotes = (state, all = false) => {
     const via = A.adbVia(state.settings.aerodataboxVia);
-    if (all && state.settings.aerodataboxLimits) delete state.settings.aerodataboxLimits[via];
+    if (all) delete state.settings.aerodataboxLimits[via];
     for (const c of Object.values(state.apiCache)) {
-      if (c.adbTried && A.isPlanNote(c.adbNote) && (all || c.adbVia !== via)) { delete c.adbTried; delete c.adbNote; delete c.adbVia; }
+      if (A.isPlanNote(c.adbNote) && (all || c.adbVia !== via)) { delete c.adbTried; delete c.adbNote; delete c.adbVia; }
     }
   };
   /**
@@ -79,7 +80,6 @@
   };
   /** The way to call AeroDataBox of a setting: A.ADB_VIA's 'rapidapi' (keys saved before there was a choice) when unknown. */
   A.adbVia = (v) => Object.keys(A.ADB_VIA).includes(v) ? v : 'rapidapi';
-  const E = MM.engine;
 
   /** Cache key of a flight number on an ISO date. */
   A.cacheKey = (flightNo, date) => `${flightNo.toUpperCase()} ${date}`;
@@ -88,10 +88,17 @@
   /** The cached lookup of a flight number on a date, or undefined. */
   A.cached = (state, flightNo, date) => state.apiCache[A.cacheKey(flightNo, date)];
   /**
-   * Whether a lookup is a final answer about the flight: a route, or "not found" from every service asked. An error is
-   * not, nor is adsbdb's "not found" while AeroDataBox (with the AeroDataBox `key`) failed: both are asked again.
+   * Whether a lookup is a final answer about the flight: a route, or "not found" from every service there is. An error
+   * is not, nor is adsbdb's "not found" while there is an AeroDataBox `key` and AeroDataBox has not had its last word
+   * (adbTried): it failed, or was not asked yet (the key was set later). Both are asked again.
    */
-  A.settled = (entry, key) => !!entry && (entry.status === 'ok' || (entry.status === 'notfound' && !(key && entry.adbError)));
+  A.settled = (entry, key) => !!entry && (entry.status === 'ok' || (entry.status === 'notfound' && (!key || !!entry.adbTried)));
+  /**
+   * What a lookup keeps when AeroDataBox gave no route: why (adbNote; adbVia: the way it was called) and whether that is
+   * its last word on the flight on that date (adbTried: not asked again). A date further ahead than the plan allows is
+   * not: it moves into the plan's range as time passes.
+   */
+  const adbNoRoute = (note, adbVia) => ({ adbTried: !/^further ahead than/.test(note), adbNote: note, adbVia });
 
   /** adsbdb airport -> the app's airport shape. */
   const mapAirport = (a) => a && { iata: a.iata_code, name: a.name, city: a.municipality, country: a.country_iso_name, lat: a.latitude, lon: a.longitude };
@@ -125,7 +132,7 @@
   A.otherSeason = (lk, date) => !!(lk && lk.fetchedAt && date && A.lookupSeason(lk) !== E.iataSeason(date));
   /**
    * A provisional answer worth asking again: looked up in another season, and either the flight's season has started
-   * or AeroDataBox can be asked (a key is set, and AeroDataBox has not answered "no such flight" for this date yet).
+   * or AeroDataBox can be asked (a key is set, and AeroDataBox has not had its last word on this date yet: adbTried).
    */
   A.isProvisional = (lk, date, today = E.todayISO(), key = '') => A.otherSeason(lk, date)
     && (E.iataSeason(today) === E.iataSeason(date) || (!!key && !lk.adbTried));
@@ -197,19 +204,16 @@
     const viaKey = A.adbVia(settings.aerodataboxVia), via = A.ADB_VIA[viaKey], key = settings.aerodataboxKey;
     const outside = A.outsidePlan(settings, date, today);
     if (outside) return { note: outside };
-    const wait = adbLast + A.adbGap - Date.now();
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    adbLast = Date.now();
+    const at = Math.max(Date.now(), adbLast + A.adbGap);   // the slot is taken at once, so parallel calls queue up too
+    adbLast = at;
+    if (at > Date.now()) await new Promise(r => setTimeout(r, at - Date.now()));
     const res = await get(`${via.base}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure${via.query ? via.query(key) : ''}`,
       { Accept: 'application/json', ...via.headers(key) },
       'blocked or unreachable (network or CORS) – check the connection, or the service doesn\'t accept browser calls / the key');
     if (res.status === 204 || res.status === 404) return { note: 'no such flight on that date' };
     if (res.status === 400) {
       const body = await res.json().catch(() => null), limit = A.planLimit(body && body.message);
-      if (limit) {
-        const all = settings.aerodataboxLimits = settings.aerodataboxLimits || {};
-        all[viaKey] = { ...all[viaKey], ...limit };
-      }
+      if (limit) settings.aerodataboxLimits[viaKey] = { ...settings.aerodataboxLimits[viaKey], ...limit };
       return { note: limit ? A.whyNoTimes(body.message) : `date not available${body && body.message ? `: ${body.message}` : ''}` };
     }
     if (res.status === 401 || res.status === 403) throw failure('auth', `key rejected (HTTP ${res.status}) – is it a key from ${via.keyFrom}?`);
@@ -244,8 +248,8 @@
   };
   /**
    * Whether AeroDataBox could add the times to a cache entry: a key is set, the entry is not an AeroDataBox answer that
-   * already asked for them (answers saved before times were looked up did not), and AeroDataBox has not answered
-   * "no such flight" for it yet.
+   * already asked for them (answers saved before times were looked up did not), and AeroDataBox has not had its last
+   * word on it yet (adbTried, e.g. "no such flight").
    */
   A.wantsTimes = (entry, key) => {
     const fr = entry.response && entry.response.flightroute;
@@ -256,7 +260,7 @@
    * Returns the cache entry for a flight number on an ISO date. Queries only when no final answer is cached
    * (A.settled), the cached one is provisional (A.isProvisional), or `force` is set. A cached route without times
    * asks AeroDataBox for them (A.wantsTimes), and keeps its route when AeroDataBox gives none. With an AeroDataBox key (settings), asks
-   * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried, adbNote says why) or fails
+   * AeroDataBox first (provider 'aerodatabox'); when it gives no route (adbNoRoute: adbNote says why) or fails
    * (adbError), asks adsbdb. Server errors of adsbdb (anything but 200 / 404) are cached as 'error', which is not
    * final: the next lookup asks again. A failure that repeats for every flight (A.repeats: network or CORS, key rejected,
    * quota) is no answer about the flight, so an 'error' from it is not cached, and the earlier answer stays; the lookup
@@ -268,14 +272,14 @@
   A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date() } = {}) => {
     const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
     const cached = state.apiCache[ck], adbVia = A.adbVia(state.settings.aerodataboxVia);   // adbVia: which way gave adbNote
-    const failed =(provider, err) => A.repeats(err) ? { provider, reason: err.reason, message: err.message } : undefined;
+    const failed = (provider, err) => A.repeats(err) ? { provider, reason: err.reason, message: err.message } : undefined;
     if (A.settled(cached, key) && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) {
       if (!(cached.status === 'ok' && A.wantsTimes(cached, key))) return { ...cached, fromCache: true };
       // a route without times: only AeroDataBox can add them, and an answer without them keeps the route
       try {
         const { response, note } = await askAeroDataBox(no, date, state.settings, E.todayISO(now));
         if (response) return { ...(state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response }), fromCache: false };
-        Object.assign(cached, { adbTried: true, adbNote: note, adbVia });   // not asked again
+        Object.assign(cached, adbNoRoute(note, adbVia));
       } catch (err) {   // e.g. the quota: asked again next time
         return { ...cached, fromCache: true, failure: failed('AeroDataBox', err) };
       }
@@ -287,7 +291,7 @@
       try {
         const { response, note } = await askAeroDataBox(no, date, state.settings, E.todayISO(now));
         if (response) Object.assign(entry, { provider: 'aerodatabox', status: 'ok', response });
-        else Object.assign(entry, { adbTried: true, adbNote: note, adbVia });
+        else Object.assign(entry, adbNoRoute(note, adbVia));
       } catch (err) {
         entry.adbError = String(err && err.message || err);
         adbFailure = failed('AeroDataBox', err);
@@ -386,7 +390,7 @@
       const own = await A.lookup(state, flightNo, date, opts);
       const leg = A.legIndex(own, opts && opts.route);
       if (own.status === 'ok') return { entry: own, route: A.routeFromCache(own, leg), via: undefined, resolved: flightNo, leg };
-      return { entry: op.status === 'error' ? op : own, route: null, via: undefined, resolved: null, leg: 0 };
+      return { entry: op.status === 'error' && !own.failure ? op : own, route: null, via: undefined, resolved: null, leg: 0 };
     }
     const entry = await A.lookup(state, flightNo, date, opts);
     const leg = A.legIndex(entry, opts && opts.route);

@@ -506,6 +506,8 @@ async function apiTests() {
   respond = (url) => { if (url.endsWith('/LH499')) throw new Error('offline'); return reply(404, { response: 'unknown callsign' }); };
   const failed = await A.resolveRoute(st, 'UA2', 'LH499', D, at);
   assert.strictEqual(`${failed.entry.status}:${failed.route}:${failed.resolved}:${(await A.resolveRoute(st, 'UA2', null, D, at)).entry.status}`, 'error:null:null:notfound');
+  respond = (url) => (url.endsWith('/LH4') ? reply(500, null) : reply(429, null));   // a server error, then the quota
+  assert.strictEqual((await A.resolveRoute(st, 'UA4', 'LH4', D, at)).entry.failure.reason, 'quota');   // a failure that repeats is told
 
   // lookups are cached per flight date. adsbdb ignores the date, so an answer from another schedule season is
   // provisional and asked again once the flight's season has started (LH1966: MUC–OLB in summer, MUC–BER in winter).
@@ -610,6 +612,21 @@ async function apiTests() {
   s6.settings.aerodataboxVia = 'direct';
   A.forgetPlanNotes(s6, true);   // a new key forgets what the plan allowed
   assert.strictEqual(A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18'), '');
+  // a date further ahead than the plan allows is not asked until it moves into the plan's range
+  const s8 = state({ settings: { aerodataboxKey: 'own' } }), nov20 = { now: new Date('2026-11-20T10:00:00Z') };
+  respond = (url) => url.includes('aerodatabox') ? reply(400, { message: 'Specified date must not be later than 30 day(s) from now.' }) : reply(404, { response: 'unknown callsign' });
+  const ahead = await A.lookup(s8, 'LH14', '2026-12-10', { now: winter });   // 45 days after 26 Oct
+  assert.strictEqual(`${ahead.adbNote}:${s8.settings.aerodataboxLimits.rapidapi.futureDays}:${A.timesCalls(s8, 'LH14', null, '2026-12-10', '2026-10-26')}:${A.timesCalls(s8, 'LH14', null, '2026-12-10', '2026-11-20')}`,
+    'further ahead than your AeroDataBox plan allows (30 days):30:0:1');
+  respond = (url) => url.includes('aerodatabox') ? reply(200, [adbFlight]) : reply(404, null);
+  assert.strictEqual((await A.lookup(s8, 'LH14', '2026-12-10', nov20)).provider, 'aerodatabox');
+  // AeroDataBox is asked at most once per A.adbGap, also by lookups at the same time
+  const sentAt = [];
+  respond = () => { sentAt.push(Date.now()); return reply(200, [adbFlight]); };
+  A.adbGap = 40;
+  await Promise.all(['LH15', 'LH16'].map(no => A.lookup(s8, no, '2026-11-01', k)));
+  A.adbGap = 0;
+  assert.ok(sentAt.length === 2 && sentAt[1] - sentAt[0] >= 30, `${sentAt}`);
   // an answer without an arrival time (e.g. a diverted flight, UA520 SAN–SFO) keeps the departure, with arr null, also in a saved file
   respond = (url) => url.includes('aerodatabox') ? reply(200, [{ ...adbFlight, departure: { ...adbFlight.departure, scheduledTime: { utc: '2026-11-17 06:15Z', local: '2026-11-17 07:15+01:00' } } }]) : reply(404, null);
   const noArr = await A.lookup(s6, 'LH13', '2026-11-17', k), tNoArr = A.timesFromCache(noArr, 'LH13', '2026-11-17');
@@ -641,6 +658,9 @@ async function apiTests() {
   s2.settings.aerodataboxKey = 'secret';
   const withKey = await A.lookup(s2, 'LH1966', '2026-11-17', k);
   assert.strictEqual(`${withKey.fromCache}:${withKey.provider}`, 'false:aerodatabox');
+  // so is adsbdb's "not found" of the same season: AeroDataBox may know the flight
+  s2.apiCache['LH20 2026-10-20'] = { date: '2026-10-20', fetchedAt: '2026-10-01T10:00:00.000Z', status: 'notfound', response: null };
+  assert.strictEqual(`${A.timesCalls(s2, 'LH20', null, '2026-10-20', '2026-10-18')}:${(await A.lookup(s2, 'LH20', '2026-10-20', k)).provider}`, '1:aerodatabox');
 
   // times and aircraft: AeroDataBox gives them with the route (adsbdb knows none), in UTC and local time
   assert.strictEqual(`${A.isoTime('2026-11-17 06:15Z')}|${A.isoTime('2026-11-17 07:15+0100')}|${A.isoTime('2026-11-17T07:15:00-05:30')}|${A.isoTime('07:15')}`,
