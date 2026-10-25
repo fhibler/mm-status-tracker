@@ -12,15 +12,27 @@
   /**
    * Ways to call AeroDataBox (state.settings.aerodataboxVia), each with a key from where it was bought: directly (its own
    * gateway, see doc.aerodatabox.com/direct.html), via API.Market or via RapidAPI. All answer the same paths in the same
-   * shape; only the host and the key header differ.
+   * shape; only the host and how the key is sent differ. The direct gateway documents an X-Api-Key header, but blocks
+   * the preflight a browser sends for it (403, no CORS headers), so the key goes in the apiKey query parameter there:
+   * a GET without custom headers needs no preflight. unitsPerCall: what one flight-by-number request (Tier 2) costs.
    */
   A.ADB_VIA = {
-    direct: { label: 'Directly (AeroDataBox)', keyFrom: 'AeroDataBox', base: 'https://api.aerodatabox.com',
-      headers: (key) => ({ 'x-api-key': key }) },
-    apimarket: { label: 'Via API.Market', keyFrom: 'API.Market', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox',
+    direct: { label: 'Directly (AeroDataBox)', keyFrom: 'AeroDataBox', base: 'https://api.aerodatabox.com', unitsPerCall: 2,
+      headers: () => ({}), query: (key) => `&apiKey=${encodeURIComponent(key)}` },
+    apimarket: { label: 'Via API.Market', keyFrom: 'API.Market', base: 'https://prod.api.market/api/v1/aedbx/aerodatabox', unitsPerCall: 2,
       headers: (key) => ({ 'x-api-market-key': key }) },
-    rapidapi: { label: 'Via RapidAPI', keyFrom: 'RapidAPI', base: 'https://aerodatabox.p.rapidapi.com',
+    rapidapi: { label: 'Via RapidAPI', keyFrom: 'RapidAPI', base: 'https://aerodatabox.p.rapidapi.com', unitsPerCall: 2,
       headers: (key) => ({ 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' }) },
+  };
+  /** Whether a key looks like a RapidAPI key (they contain "msh" and end in "jsn…"): the wrong one for the other ways. */
+  A.isRapidApiKey = (key) => /msh.*jsn/.test(key || '');
+  /** A failure that will repeat for every flight: reason 'network' (blocked or unreachable, e.g. CORS), 'auth' or 'quota'. */
+  const failure = (reason, message) => Object.assign(new Error(message), { reason });
+  /** Whether an error repeats for every flight (see failure): it is no answer about the flight, so it is not cached. */
+  A.repeats = (err) => !!err && ['network', 'auth', 'quota'].includes(err.reason);
+  /** fetch, with a failed request (offline, blocked, CORS: a TypeError without a status) as a 'network' failure. */
+  const get = async (url, headers, why) => {
+    try { return await fetch(url, { headers }); } catch { throw failure('network', why); }
   };
   /** The way to call AeroDataBox of a setting: A.ADB_VIA's 'rapidapi' (keys saved before there was a choice) when unknown. */
   A.adbVia = (v) => Object.keys(A.ADB_VIA).includes(v) ? v : 'rapidapi';
@@ -129,24 +141,25 @@
   /**
    * Flight `no` departing on `date` from AeroDataBox, called the way the settings say (A.ADB_VIA): { response }
    * (adsbdb-shaped), or { note } saying why there is no route (204: no such flight; 400: e.g. a date outside the plan's
-   * range). Throws for other failures (wrong key 401/403, quota 429, network).
+   * range). Throws for other failures: those that repeat for every flight (A.repeats: network or CORS, key rejected
+   * 401/403, quota 429) carry their reason.
    */
   const askAeroDataBox = async (no, date, settings) => {
-    const via = A.ADB_VIA[A.adbVia(settings.aerodataboxVia)];
+    const via = A.ADB_VIA[A.adbVia(settings.aerodataboxVia)], key = settings.aerodataboxKey;
     const wait = adbLast + A.adbGap - Date.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     adbLast = Date.now();
-    const res = await fetch(`${via.base}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure`,
-      { headers: { Accept: 'application/json', ...via.headers(settings.aerodataboxKey) } });
+    const res = await get(`${via.base}/flights/number/${encodeURIComponent(no)}/${date}?dateLocalRole=Departure${via.query ? via.query(key) : ''}`,
+      { Accept: 'application/json', ...via.headers(key) },
+      'blocked or unreachable (network or CORS) – check the connection, or the service doesn\'t accept browser calls / the key');
     if (res.status === 204 || res.status === 404) return { note: 'no such flight on that date' };
     if (res.status === 400) {
       const body = await res.json().catch(() => null);
       return { note: `date not available${body && body.message ? `: ${body.message}` : ''}` };
     }
-    if (!res.ok) {
-      const why = res.status === 401 || res.status === 403 ? ' – check the key' : res.status === 429 ? ' – quota or rate limit' : '';
-      throw new Error(`HTTP ${res.status}${why}`);
-    }
+    if (res.status === 401 || res.status === 403) throw failure('auth', `key rejected (HTTP ${res.status}) – is it a key from ${via.keyFrom}?`);
+    if (res.status === 429) throw failure('quota', 'quota or rate limit reached (HTTP 429)');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const list = await res.json().catch(() => null);
     const ok = (m) => m && m.airport && m.airport.iata;
     const seen = new Set();
@@ -189,13 +202,16 @@
    * cached one is provisional (A.isProvisional), or `force` is set. A cached route without times
    * asks AeroDataBox for them (A.wantsTimes), and keeps its route when AeroDataBox gives none. With an AeroDataBox key (settings), asks
    * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried, adbNote says why) or fails
-   * (adbError), asks adsbdb. Network and server errors of adsbdb (anything but 200 / 404, e.g. 429 rate limit) are cached as 'error',
-   * which is not final: the next lookup asks again. A forced lookup that fails keeps the earlier answer in the cache.
-   * `now` (the clock) is for tests.
+   * (adbError), asks adsbdb. Server errors of adsbdb (anything but 200 / 404) are cached as 'error', which is not
+   * final: the next lookup asks again. A failure that repeats for every flight (A.repeats: network or CORS, key rejected,
+   * quota) is no answer about the flight, so an 'error' from it is not cached, and the earlier answer stays; the lookup
+   * returns it as `failure` ({ provider, reason, message }; AeroDataBox's too when adsbdb answered), so a run over many
+   * flights can stop. A forced lookup that fails keeps the earlier answer in the cache. `now` (the clock) is for tests.
    */
   A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date() } = {}) => {
     const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
     const cached = state.apiCache[ck];
+    const failed = (provider, err) => A.repeats(err) ? { provider, reason: err.reason, message: err.message } : undefined;
     if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) {
       if (!(cached.status === 'ok' && A.wantsTimes(cached, key))) return { ...cached, fromCache: true };
       // a route without times: only AeroDataBox can add them, and an answer without them keeps the route
@@ -203,10 +219,13 @@
         const { response, note } = await askAeroDataBox(no, date, state.settings);
         if (response) return { ...(state.apiCache[ck] = { date, fetchedAt: now.toISOString(), provider: 'aerodatabox', status: 'ok', response }), fromCache: false };
         Object.assign(cached, { adbTried: true, adbNote: note });   // not asked again
-      } catch { /* e.g. the quota: asked again next time */ }
+      } catch (err) {   // e.g. the quota: asked again next time
+        return { ...cached, fromCache: true, failure: failed('AeroDataBox', err) };
+      }
       return { ...cached, fromCache: true };
     }
     const entry = { date, fetchedAt: now.toISOString() };
+    let adbFailure;
     if (key) {
       try {
         const { response, note } = await askAeroDataBox(no, date, state.settings);
@@ -214,12 +233,15 @@
         else Object.assign(entry, { adbTried: true, adbNote: note });
       } catch (err) {
         entry.adbError = String(err && err.message || err);
+        adbFailure = failed('AeroDataBox', err);
       }
     }
+    let adsbdbFailure;
     if (!entry.status) {
       try {
         for (const cs of callsigns(no)) {
-          const res = await fetch(BASE + encodeURIComponent(cs), { headers: { Accept: 'application/json' } });
+          const res = await get(BASE + encodeURIComponent(cs), { Accept: 'application/json' }, 'blocked or unreachable (network or CORS) – check the connection');
+          if (res.status === 429) throw failure('quota', 'rate limit reached (HTTP 429) – try again later');
           if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
           const json = await res.json().catch(() => null);
           entry.response = json ? json.response : null;
@@ -229,10 +251,11 @@
       } catch (err) {
         entry.status = 'error';
         entry.error = String(err && err.message || err);
+        adsbdbFailure = failed('adsbdb', err);
       }
     }
-    if (entry.status !== 'error' || !cached || cached.status === 'error') state.apiCache[ck] = entry;
-    return { ...entry, fromCache: false };
+    if (entry.status !== 'error' || (!adsbdbFailure && (!cached || cached.status === 'error'))) state.apiCache[ck] = entry;
+    return { ...entry, fromCache: false, failure: adsbdbFailure || adbFailure };
   };
 
   /** Minimum time between two forced refreshes of the times of one flight number and date (A.refreshTimes), in ms. */
@@ -263,17 +286,22 @@
    * Whether A.resolveRoute (not forced) would ask an API for the times of a flight on `date`: an AeroDataBox key is set
    * and the number it ends with has no final answer in the cache yet (or one that could still get times).
    */
-  A.timesPending = (state, flightNo, operatingIata, date, today = E.todayISO()) => {
+  A.timesPending = (state, flightNo, operatingIata, date, today = E.todayISO()) => A.timesCalls(state, flightNo, operatingIata, date, today) > 0;
+  /**
+   * At most how many AeroDataBox requests A.resolveRoute (not forced) makes for a flight on `date` (see A.timesPending):
+   * 0, 1, or 2 for a codeshare whose operating flight may give no route, so that its own number is asked too.
+   */
+  A.timesCalls = (state, flightNo, operatingIata, date, today = E.todayISO()) => {
     const key = state.settings.aerodataboxKey;
-    if (!key) return false;
+    if (!key) return 0;
     const asks = (no) => {
       const c = A.cached(state, no, date);
       return !c || c.status === 'error' || A.isProvisional(c, date, today, key) || (c.status === 'ok' && A.wantsTimes(c, key));
     };
-    if (!operatingIata) return asks(flightNo);
-    if (asks(operatingIata)) return true;
-    const op = A.cached(state, operatingIata, date);
-    return op.status !== 'ok' && asks(flightNo);   // the flight number is asked only when the operating flight gives no route
+    if (!operatingIata) return asks(flightNo) ? 1 : 0;
+    const op = A.cached(state, operatingIata, date), opRoute = !!op && op.status === 'ok';
+    if (asks(operatingIata)) return !opRoute && asks(flightNo) ? 2 : 1;
+    return !opRoute && asks(flightNo) ? 1 : 0;   // the flight number is asked only when the operating flight gives no route
   };
 
   /**
@@ -283,6 +311,7 @@
    * `via` when it came from the operating flight. With several routes for the number (A.legs), `opts.route` (the
    * flight's current route) picks the leg with its airports, else the first; leg is its index. entry is the lookup to remember (see A.lookupInfo): the one that gave the
    * route, else one that failed (an error is not final, so the flight is looked up again later), else the flight number's.
+   * entry.failure (A.lookup) tells about a failure that repeats for every flight; the flight number is then not asked.
    */
   A.resolveRoute = async (state, flightNo, operatingIata, date, opts) => {
     if (operatingIata) {
@@ -291,6 +320,7 @@
         const leg = A.legIndex(op, opts && opts.route);
         return { entry: op, route: { ...A.routeFromCache(op, leg), via: operatingIata }, via: operatingIata, resolved: operatingIata, leg };
       }
+      if (op.failure) return { entry: op, route: null, via: undefined, resolved: null, leg: 0 };
       const own = await A.lookup(state, flightNo, date, opts);
       const leg = A.legIndex(own, opts && opts.route);
       if (own.status === 'ok') return { entry: own, route: A.routeFromCache(own, leg), via: undefined, resolved: flightNo, leg };

@@ -548,7 +548,25 @@ async function apiTests() {
   assert.ok(sent[1].startsWith('https://prod.api.market/') && sent[1].includes('x-api-market-key'));
   Object.assign(sd, { apiCache: {} }).settings.aerodataboxVia = 'direct';
   await A.lookup(sd, 'LH1966', '2026-11-17', k);
-  assert.strictEqual(sent[2], 'https://api.aerodatabox.com/flights/number/LH1966/2026-11-17?dateLocalRole=Departure {"Accept":"application/json","x-api-key":"mkt"}');
+  assert.strictEqual(sent[2], 'https://api.aerodatabox.com/flights/number/LH1966/2026-11-17?dateLocalRole=Departure&apiKey=mkt {"Accept":"application/json"}');   // no preflight
+  // a failure that repeats for every flight says why, and is not cached: blocked (CORS, offline), key rejected, quota
+  respond = (url) => { if (url.includes('aerodatabox')) throw new TypeError('Failed to fetch'); return reply(200, { response: fr('OLB') }); };
+  sd.apiCache = {};
+  const blocked = await A.lookup(sd, 'LH1966', '2026-11-17', k);   // adsbdb still answers
+  assert.strictEqual(`${blocked.status}:${blocked.failure.provider}:${blocked.failure.reason}:${/^blocked or unreachable \(network or CORS\)/.test(blocked.adbError)}`, 'ok:AeroDataBox:network:true');
+  respond = () => { throw new TypeError('Failed to fetch'); };
+  sd.apiCache = {};
+  const offline = await A.resolveRoute(sd, 'UA9', 'LH1966', '2026-11-17', k);
+  assert.strictEqual(`${offline.entry.status}:${offline.entry.failure.provider}:${offline.entry.failure.reason}:${Object.keys(sd.apiCache).length}`, 'error:adsbdb:network:0');   // not cached, the codeshare number not asked
+  respond = (url) => url.includes('aerodatabox') ? reply(401, null) : reply(200, { response: fr('OLB') });
+  assert.strictEqual((await A.lookup(sd, 'LH1966', '2026-11-17', k)).failure.message, 'key rejected (HTTP 401) – is it a key from AeroDataBox?');
+  assert.strictEqual(`${A.isRapidApiKey('0123456789msh0123456789abcdefp1a2b3cjsn0123456789ab')}:${A.isRapidApiKey('0123456789abcdef')}`, 'true:false');
+  respond = () => reply(429, null);
+  const s5 = state(), had = { date: D, fetchedAt: '2026-06-01T10:00:00.000Z', status: 'error', error: 'HTTP 500' };
+  s5.apiCache[A.cacheKey('LH7', D)] = had;
+  assert.strictEqual(`${(await A.lookup(s5, 'LH7', D, at)).failure.reason}:${A.cached(s5, 'LH7', D).error}`, 'quota:HTTP 500');   // the earlier answer stays
+  respond = () => reply(500, null);
+  assert.strictEqual(`${(await A.lookup(s5, 'LH7', D, at)).failure}:${A.cached(s5, 'LH7', D).error}`, 'undefined:HTTP 500');   // a server error is cached as before
   respond = viaRapid;
   // its route is for the date it was asked for: a flight moved to the summer is flagged and asked again
   assert.strictEqual(`${A.lookupSeason(byDate.entry)}:${A.isProvisional(A.lookupInfo(byDate.entry, 'LH1966'), '2026-07-10', '2026-10-18', 'secret')}`, 'W26:true');
@@ -563,7 +581,7 @@ async function apiTests() {
   assert.strictEqual((await A.lookup(s3, 'LH1970', '2026-11-17', k)).adbNote, 'no route in its answer');
   adb = () => reply(429, null);
   const quota = await A.lookup(s3, 'LH1968', '2026-11-17', k);                                     // quota: adsbdb, ask again later
-  assert.strictEqual(`${quota.status}:${quota.adbError}:${A.isProvisional(quota, '2026-11-17', '2026-10-18', 'secret')}`, 'ok:HTTP 429 – quota or rate limit:true');
+  assert.strictEqual(`${quota.status}:${quota.adbError}:${quota.failure.reason}:${A.isProvisional(quota, '2026-11-17', '2026-10-18', 'secret')}`, 'ok:quota or rate limit reached (HTTP 429):quota:true');
   // an adsbdb answer from another season is asked again as soon as a key is set
   adb = () => reply(200, [adbFlight]);
   s2.apiCache['LH1966 2026-11-17'] = nov;                                                            // the summer answer again
@@ -585,6 +603,10 @@ async function apiTests() {
   assert.strictEqual(`${calls.length}:${t.dep.scheduled.utc}:${t.dep.scheduled.local}:${t.dep.terminal}:${t.arr.revised.utc}:${t.aircraft}:${t.reg}`,
     '1:2026-11-17T06:15Z:2026-11-17T07:15+01:00:2:2026-11-17T07:31Z:Airbus A320 NEO:D-AINA');   // one request for route and times
   assert.strictEqual(A.timesPending(s4, 'LH1966', null, '2026-11-17', '2026-10-18'), false);
+  // at most how many requests a flight's times take (what "Refresh flight data" says it costs): a codeshare up to 2
+  assert.strictEqual([A.timesCalls(s4, 'LH1966', null, '2026-11-17', '2026-10-18'), A.timesCalls(s4, 'LH8', null, '2026-11-17', '2026-10-18'),
+    A.timesCalls(s4, 'UA8', 'LH8', '2026-11-17', '2026-10-18'), A.timesCalls(s4, 'UA8', 'LH1966', '2026-11-17', '2026-10-18')].join(), '0,1,2,0');
+  assert.strictEqual(A.ADB_VIA[s4.settings.aerodataboxVia].unitsPerCall, 2);
   // a cached route without times (adsbdb, or AeroDataBox before times were kept) asks AeroDataBox once more, and only it
   s4.apiCache['LH1966 2026-11-17'] = { ...nov, adbTried: undefined };   // adsbdb, summer route
   s4.apiCache['LH1967 2026-11-17'] = { date: '2026-11-17', fetchedAt: '2026-10-18T10:00:00.000Z', provider: 'aerodatabox', status: 'ok', response: { flightroute: { ...fr('BER').flightroute } } };

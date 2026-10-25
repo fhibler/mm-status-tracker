@@ -153,12 +153,18 @@ site to GitHub Pages.
 - **Routes by date (optional)**: with your own AeroDataBox key (Settings → Route lookup), the app asks AeroDataBox
   for the route on the flight date first and falls back to
   adsbdb when it doesn't know the flight or fails (e.g. quota used up). "Call AeroDataBox" there picks where the key
-  is from: **directly** from [AeroDataBox](https://doc.aerodatabox.com/direct.html) (`api.aerodatabox.com`, header
-  `x-api-key`), **via API.Market** ([AeroDataBox on API.Market](https://api.market/store/aedbx/aerodatabox),
+  is from: **directly** from [AeroDataBox](https://doc.aerodatabox.com/direct.html) (`api.aerodatabox.com`; the key
+  goes in the `apiKey` query parameter, since that gateway blocks the browser's preflight for its `X-Api-Key`
+  header), **via API.Market** ([AeroDataBox on API.Market](https://api.market/store/aedbx/aerodatabox),
   `prod.api.market`, header `x-api-market-key`) or **via RapidAPI** ([AeroDataBox on RapidAPI](https://rapid.aerodatabox.com/pricing),
-  headers `X-RapidAPI-Key` / `X-RapidAPI-Host`; the default, also for files saved before the choice existed). Route
-  lookups, "Look up times" and "Refresh" all go that way. On RapidAPI, the free Basic plan has 400 units a month,
-  and one lookup costs 2 units (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
+  headers `X-RapidAPI-Key` / `X-RapidAPI-Host`; the default, also for files saved before the choice existed). A key
+  works only the way it was bought; Settings warns when a RapidAPI key is set for another way. Route lookups,
+  **Refresh flight data** (Activity: routes, times and aircraft for the year's flights without them) and a flight's
+  "↻ Refresh" all go that way. Each lookup costs 2 API units on all three, and "Refresh flight data" first asks to
+  confirm how many units it may use (cached answers cost nothing). It stops at the first failure that would repeat
+  for every flight (blocked or unreachable, key rejected, quota) and says why in a message that stays until closed;
+  such a failure is not saved as the flight's lookup. On RapidAPI, the free Basic plan has 400 units a month
+  (about 200 lookups), at most 1 per second; it covers up to 365 days ahead. With a key
   set, "Look up route" in the dialog replaces a route from another season. Changing a flight's date looks its route
   up again for the new date (a route typed by hand stays). The key is saved with your settings, in the
   browser and in the `.json`, so loading the file on another device brings it along: keep the file to yourself.

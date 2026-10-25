@@ -256,7 +256,10 @@ legend { font-size: 12px; font-weight: 700; color: var(--ink-2); padding: 0 4px;
 .toast {
   position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 60;
   background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  max-width: min(640px, calc(100vw - 32px));
 }
+.toast-close { margin-left: 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: .75; }
+.toast-close:hover { opacity: 1; }
 
 @media (max-width: 720px) {
   .toolbar { margin-left: 0; width: 100%; }

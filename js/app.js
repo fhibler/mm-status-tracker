@@ -20,10 +20,18 @@
   /** Price model estimate of booster `level` for flight f (E.co2PriceEstimate); only when amounts are in EUR, its currency. */
   const co2Est = (f, level) => (state.settings.currency === 'EUR' ? E.co2PriceEstimate(f, level) : null);
   const co2EstTxt = (est) => `${est.quality === 'rough' ? 'rough estimate' : 'estimate'} ${money(est.cost)} · ${num(est.km)} km ${esc(est.cabin)}`;
+  /** Shows msg for ms milliseconds, or with ms 0 until closed (a result worth reading, e.g. of a run over many flights). */
   const toast = (msg, ms = 2600) => {
     const t = $('#toast');
     t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), ms);
+    if (!ms) {
+      const x = document.createElement('button');
+      Object.assign(x, { type: 'button', className: 'toast-close', textContent: '✕', title: 'Close' });
+      x.addEventListener('click', () => (t.hidden = true));
+      t.append(x);
+    }
+    clearTimeout(toast.h);
+    if (ms) toast.h = setTimeout(() => (t.hidden = true), ms);
   };
   let saveFailed = false;
   const save = () => {
@@ -364,13 +372,23 @@
     const min = Math.round((Date.parse(b) - Date.parse(a)) / 60000);
     return min > 0 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : '';
   };
-  /** Whether "Look up times" can get a flight's times: from the cache, or by asking AeroDataBox (A.timesPending). */
+  /** Whether "Refresh flight data" can get a flight's times: from the cache, or by asking AeroDataBox (A.timesPending). */
   const timesAvailable = (f) => {
     const p = isFlight(f) && !E.flightTimes(f) && E.parseFlightNo(f.flightNo), op = E.operating(f);
     if (!p) return false;
     const c = A.cached(state, (op && op.iata) || p.iata, f.date) || A.cached(state, p.iata, f.date);
     return !!A.timesFromCache(c) || A.timesPending(state, p.iata, op && op.iata, f.date);
   };
+  /** At most how many AeroDataBox requests looking up a flight's times makes (A.timesCalls): 0 when the cache answers. */
+  const timesCalls = (f) => {
+    const p = isFlight(f) && E.parseFlightNo(f.flightNo), op = E.operating(f);
+    return p ? A.timesCalls(state, p.iata, op && op.iata, f.date) : 0;
+  };
+  /** The way AeroDataBox is called (A.ADB_VIA), and what n requests cost: "4 API units (2 per lookup on your RapidAPI plan)". */
+  const adbVia = () => A.ADB_VIA[A.adbVia(state.settings.aerodataboxVia)];
+  const unitsTxt = (n) => `${n * adbVia().unitsPerCall} API units (${adbVia().unitsPerCall} per lookup on your ${adbVia().keyFrom} plan)`;
+  /** A failure that repeats for every flight (A.lookup's failure), as a sentence: "AeroDataBox key rejected (HTTP 401) – …?" */
+  const failureTxt = (fl) => `${fl.provider} ${fl.message}${/[.?!]$/.test(fl.message) ? '' : '.'}`;
   /** The number whose times a flight shows or would get: the operating flight that gave them, else the flight number. */
   const timesNo = (f) => {
     const t = E.flightTimes(f), lk = f.routeLookup, op = E.operating(f);
@@ -382,7 +400,7 @@
     const wait = A.refreshAllowedAt(A.cached(state, timesNo(f), f.date)) - Date.now();
     if (wait > 0) scheduleRefreshUnlock(wait);
     return `<button class="btn small refresh-btn" data-act="times-refresh" data-id="${esc(f.id)}" ${wait > 0 ? 'disabled' : ''}
-      title="${wait > 0 ? `Refreshed recently – possible again in ${Math.ceil(wait / 60000)} min (saves API calls)` : 'Ask AeroDataBox again for the current times, e.g. a delay or a new aircraft'}">↻ Refresh</button>`;
+      title="${wait > 0 ? `Refreshed recently – possible again in ${Math.ceil(wait / 60000)} min (saves API calls)` : `Ask AeroDataBox again for the current times, e.g. a delay or a new aircraft: one request, ${esc(unitsTxt(1))}`}">↻ Refresh</button>`;
   };
   /** Re-renders the flights view once the earliest disabled refresh button may be used again. */
   let unlockT = null, unlockAt = Infinity;
@@ -410,8 +428,10 @@
         }
       }
       msg = note ? `AeroDataBox: ${note} – nothing changed` : f.times ? 'Times refreshed' : 'AeroDataBox has no times for this flight';
-    } catch (err) {
-      msg = `AeroDataBox failed (${err.message}) – try again in 5 minutes`;
+    } catch (err) {   // a key rejected or a blocked request won't work in 5 minutes either: that message stays
+      msg = `AeroDataBox ${err.reason ? err.message : `failed (${err.message})`}${err.reason === 'auth' || err.reason === 'network' ? '' : ' – try again in 5 minutes'}`;
+      save(); render(); toast(msg, A.repeats(err) ? 0 : 6000);
+      return;
     }
     save(); render(); toast(msg);
   };
@@ -421,7 +441,8 @@
     const t = E.flightTimes(f);
     if (!t) {
       const why = !isFlight(f) ? 'Times are looked up for flights only.'
-        : timesAvailable(f) ? `Not looked up yet. <button class="btn small" data-act="times-one" data-id="${esc(f.id)}">Look up times</button>`
+        : timesAvailable(f) ? `Not looked up yet. <button class="btn small" data-act="times-one" data-id="${esc(f.id)}"
+            title="${timesCalls(f) ? `Asks AeroDataBox: up to ${esc(unitsTxt(timesCalls(f)))}` : 'From the cache: no request'}">Look up times</button>`
         : !state.settings.aerodataboxKey ? 'Departure and arrival times and the aircraft come from AeroDataBox: add your key in <a href="#" data-act="goto-settings">Settings</a>.'
         : 'AeroDataBox has no times for this flight.';
       return `<div class="times muted">${why}</div>`;
@@ -439,19 +460,27 @@
     </div>`;
   };
   /**
-   * Looks up the times of these flights (A.resolveRoute: the cache first, AeroDataBox only for those without an
-   * answer). A looked-up route is updated with the answer for the date, a route typed in stays.
+   * Looks up the routes, times and aircraft of these flights (A.resolveRoute: the cache first, AeroDataBox only for
+   * those without an answer). A looked-up route is updated with the answer for the date, a route typed in stays.
+   * With `btn` (the "Refresh flight data" button), asks first what the AeroDataBox requests cost. Stops at the first
+   * failure that would repeat for every flight (A.lookup's failure); that flight keeps what it had.
    */
-  const lookupTimes = async (flights) => {
+  const lookupTimes = async (flights, btn) => {
     if (timesBusy) return;
+    const calls = flights.reduce((n, f) => n + timesCalls(f), 0);
+    if (btn && calls && !(await ask('Refresh flight data',
+      `This asks AeroDataBox up to ${calls} time${calls === 1 ? '' : 's'} and costs up to ${unitsTxt(calls)}. Flights answered from the cache cost nothing. Continue?`))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
     timesBusy = true;
-    let got = 0;
+    let got = 0, without = 0, failed = 0, done = 0, stop = null;
     try {
       for (const f of flights) {
         const p = E.parseFlightNo(f.flightNo), op = E.operating(f);
         const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date, { route: f.route });
+        if (res.entry.failure) { stop = res.entry.failure; break; }
+        done++;
         f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
-        if (f.times) { got++; expanded.add(f.id); }
+        if (f.times) { got++; expanded.add(f.id); } else if (res.entry.status === 'error') failed++; else without++;
         if (!(f.route && f.route.source === 'manual')) {
           f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
           if (res.route) f.route = res.route;
@@ -461,7 +490,13 @@
       timesBusy = false;
       save(); render();
     }
-    toast(flights.length === 1 ? (got ? 'Times looked up' : 'AeroDataBox has no times for this flight') : `Times found for ${got} of ${flights.length} flight(s)`);
+    if (flights.length === 1 && !stop) { toast(got ? 'Times looked up' : failed ? 'The lookup failed – try again later' : 'AeroDataBox has no times for this flight'); return; }
+    const left = flights.length - done;
+    toast([`Found times for ${got} of ${flights.length} flight${flights.length === 1 ? '' : 's'}.`,
+      without && `${without} unknown to AeroDataBox or without times.`,
+      failed && `${failed} failed (asked again next time).`,
+      stop && `Stopped: ${failureTxt(stop)}`,
+      stop && left > 1 && `${left} not looked up.`].filter(Boolean).join(' '), 0);
   };
 
   const renderFlights = () => {
@@ -519,7 +554,7 @@
           <h2>Flights &amp; trains · CY ${year}</h2>
           <span class="sub">${flown.length} flown · ${planned.length} planned · flights after today are planned automatically · click a row to edit</span>
           <div class="right">
-            ${missing ? `<button class="btn" data-act="times-all" title="Departure and arrival times and the aircraft from AeroDataBox, for the flights of ${year} without them">Look up times (${missing})</button>` : ''}
+            ${missing ? `<button class="btn" data-act="times-all" title="Looks up routes, departure and arrival times and the aircraft (AeroDataBox) for the flights of ${year} without them. Asks first what it costs.">Refresh flight data (${missing})</button>` : ''}
             ${sum.rows.length ? `<button class="btn" data-act="fold-all">${sum.rows.every(r => expanded.has(r.f.id)) ? 'Collapse all' : 'Expand all'}</button>` : ''}
             <button class="btn primary" data-act="add">+ Add flight / train</button>
           </div>
@@ -612,6 +647,15 @@
     btn.textContent = label;
     setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = old; } }, 4000);
   };
+  /** Asks a question in a dialog (#askDialog); resolves true when the user confirms. */
+  const ask = (title, text, okLabel = 'Continue') => new Promise((resolve) => {
+    const d = $('#askDialog');
+    $('#askTitle').textContent = title; $('#askText').textContent = text; $('#askOk').textContent = okLabel;
+    d.returnValue = '';
+    d.addEventListener('close', () => resolve(d.returnValue === 'ok'), { once: true });
+    d.showModal();
+  });
+  $$('[data-close]', $('#askDialog')).forEach(b => b.addEventListener('click', () => $('#askDialog').close()));
   /** The Delete button of a dialog: hidden for new items, else unarmed (see confirmInline). */
   const resetDelete = (btn, hidden) => { btn.hidden = hidden; btn.textContent = 'Delete'; btn.dataset.armed = ''; };
 
@@ -988,7 +1032,12 @@
           <div class="card-head"><h2>Route lookup</h2><span class="sub">your own key, saved with your data</span></div>
           <div class="grid">
             <label>Call AeroDataBox<select id="adbVia">${opts(Object.keys(MM.api.ADB_VIA), state.settings.aerodataboxVia, v => MM.api.ADB_VIA[v].label)}</select>
-              <small class="field-hint">With a key from ${MM.api.ADB_VIA[MM.api.adbVia(state.settings.aerodataboxVia)].keyFrom}</small></label>
+              ${(() => {
+                const via = MM.api.adbVia(state.settings.aerodataboxVia), from = MM.api.ADB_VIA[via].keyFrom;
+                return via !== 'rapidapi' && MM.api.isRapidApiKey(state.settings.aerodataboxKey)
+                  ? `<small class="field-hint" style="color:var(--danger)">This looks like a RapidAPI key – choose Via RapidAPI or enter a key from ${from}.</small>`
+                  : `<small class="field-hint">With a key from ${from}</small>`;
+              })()}</label>
             <label>AeroDataBox key<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(state.settings.aerodataboxKey)}">
               <small class="field-hint">${state.settings.aerodataboxKey ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
           </div>
@@ -998,8 +1047,8 @@
             <a href="https://aerodatabox.com/pricing/" target="_blank" rel="noopener">AeroDataBox</a>, from
             <a href="https://api.market/store/aedbx/aerodatabox" target="_blank" rel="noopener">API.Market</a>
             or from <a href="https://rapid.aerodatabox.com/pricing" target="_blank" rel="noopener">RapidAPI</a>, and choose the
-            matching way above: route lookups, "Look up times" and "Refresh" all go that way. A key of one doesn't work with the
-            others. On RapidAPI, the free Basic plan has 400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached per flight number and date, so a
+            matching way above: route lookups, "Refresh flight data" and "Refresh" all go that way. A key of one doesn't work with the
+            others. Each lookup costs 2 API units on all three; "Refresh flight data" says first how many it may use. On RapidAPI, the free Basic plan has 400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached per flight number and date, so a
             flight is asked again only when its date changes or its route came from another schedule season.
             The key is saved in this browser and in your <code>.json</code>, so loading the file on another device brings it
             along. Keep the file to yourself.</p>
@@ -1155,7 +1204,7 @@
           : r.provider === 'aerodatabox' ? ''
           : '<br><span class="muted">This is the route listed for the flight number at lookup time (adsbdb ignores the date). Airlines reuse numbers – if it differs from your ticket, type the airports above.</span>') +
         (r.source === 'manual' || !lk ? ''
-          : lk.adbError ? `<br><span class="muted">AeroDataBox failed (${esc(lk.adbError)}), so adsbdb was asked.</span>`
+          : lk.adbError ? `<br><span class="muted">AeroDataBox failed: ${esc(lk.adbError)} So adsbdb was asked.</span>`
           : lk.adbNote ? `<br><span class="muted">AeroDataBox: ${esc(lk.adbNote)} (${esc(dateToField(lk.date))}), so adsbdb was asked.</span>` : '');
     } else if (lk && lk.status === 'loading') {
       info.textContent = 'Looking up route…';
@@ -1330,12 +1379,14 @@
     const parsed = E.parseFlightNo(draft.flightNo), op = E.operating(draft);
     if (!parsed) { toast('Enter a flight number like LH400'); return; }
     if (!draft.date) { if (force) toast('Enter the date first: the route is looked up for it'); return; }
-    const seq = ++lookupSeq, d = draft;
+    const seq = ++lookupSeq, d = draft, before = draft.routeLookup;
     draft.routeLookup = { status: 'loading' };
     routeInfo();
     const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force, route: draft.route });
     if (seq !== lookupSeq || stale(d)) return;
-    draft.routeLookup = A.lookupInfo(res.entry, parsed.iata, res.via, op ? op.iata : undefined);
+    const fl = res.entry.failure;   // repeats for every flight (blocked, key rejected, quota): no answer about this one
+    draft.routeLookup = fl && res.entry.status === 'error' && before && before.status !== 'loading' ? before
+      : A.lookupInfo(res.entry, parsed.iata, res.via, op ? op.iata : undefined);
     draft.times = A.timesFromCache(res.entry, draft.flightNo, draft.date, res.via, res.leg);
     if (res.route) {   // without one, a route typed by hand stays
       draft.route = res.route;
@@ -1344,7 +1395,8 @@
     }
     save();
     updatePreview();
-    if (force && !res.entry.fromCache) {
+    if (fl) toast(`${failureTxt(fl)}${res.route ? ' Route from adsbdb.' : ''}`, 8000);
+    else if (force && !res.entry.fromCache) {
       const e = res.entry, adb = e.adbError ? `AeroDataBox failed (${e.adbError})` : e.adbNote ? `AeroDataBox: ${e.adbNote}` : '';
       const of = op && res.route ? ` of ${res.resolved}` : '';   // a codeshare: which number gave the route
       toast(!res.route ? (adb ? `${adb} · no route found` : 'No route found')
@@ -1569,7 +1621,7 @@
     if (act === 'goto-flights') setView('flights');
     if (act === 'times-refresh') refreshTimes(state.flights.find(f => f.id === b.dataset.id), b);
     if (act === 'times-one') { lookupTimes([state.flights.find(f => f.id === b.dataset.id)]); }
-    if (act === 'times-all') { b.disabled = true; b.textContent = 'Looking up…'; lookupTimes(E.yearSummary(state, year).rows.map(r => r.f).filter(timesAvailable)); }
+    if (act === 'times-all') lookupTimes(E.yearSummary(state, year).rows.map(r => r.f).filter(timesAvailable), b);
     if (act === 'fold-all') {
       const ids = E.yearSummary(state, year).rows.map(r => r.f.id), all = ids.every(id => expanded.has(id));
       ids.forEach(id => (all ? expanded.delete(id) : expanded.add(id)));
