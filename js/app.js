@@ -392,7 +392,7 @@
   /** The number whose times a flight shows or would get: the operating flight that gave them, else the flight number. */
   const timesNo = (f) => {
     const t = E.flightTimes(f), lk = f.routeLookup, op = E.operating(f);
-    return (t && t.via) || (lk && lk.via) || (op && op.iata) || E.parseFlightNo(f.flightNo).iata;
+    return (t && t.via) || (lk && lk.via) || (op && op.iata) || (E.parseFlightNo(f.flightNo) || { iata: f.flightNo }).iata;   // a number from an edited .json may not parse
   };
   /** Refresh button of a folded-out flight (A.refreshTimes), disabled for 5 minutes after the last request. */
   const refreshBtn = (f) => {
@@ -491,7 +491,7 @@
           const res = await A.resolveRoute(state, p.iata, op && op.iata, f.date, { route: f.route });
           if (res.entry.failure) { stop = res.entry.failure; break; }
           f.times = A.timesFromCache(res.entry, f.flightNo, f.date, res.via, res.leg);
-          if (f.times) { got++; expanded.add(f.id); } else if (res.entry.status === 'error') failed++;
+          if (f.times) { got++; expanded.add(f.id); } else if (!A.settled(res.entry, state.settings.aerodataboxKey)) failed++;
           else { const w = A.whyNoTimes(res.entry.adbNote || A.outsidePlan(state.settings, f.date)); why[w] = (why[w] || 0) + 1; }
           if (!(f.route && f.route.source === 'manual')) {
             f.routeLookup = A.lookupInfo(res.entry, p.iata, res.via, op ? op.iata : undefined);
@@ -1413,9 +1413,12 @@
     const res = await A.resolveRoute(state, parsed.iata, op && op.iata, draft.date, { force, route: draft.route });
     if (seq !== lookupSeq || stale(d)) return;
     const fl = res.entry.failure;   // repeats for every flight (blocked, key rejected, quota): no answer about this one
-    draft.routeLookup = fl && res.entry.status === 'error' && before && before.status !== 'loading' ? before
+    draft.routeLookup = fl && !res.route && before && before.status !== 'loading' ? before
       : A.lookupInfo(res.entry, parsed.iata, res.via, op ? op.iata : undefined);
-    draft.times = A.timesFromCache(res.entry, draft.flightNo, draft.date, res.via, res.leg);
+    // a lookup that failed without a route (e.g. offline) keeps the times the flight had
+    if (res.route || !(fl || !A.settled(res.entry, state.settings.aerodataboxKey))) {
+      draft.times = A.timesFromCache(res.entry, draft.flightNo, draft.date, res.via, res.leg);
+    }
     if (res.route) {   // without one, a route typed by hand stays
       draft.route = res.route;
       form.origin.value = res.route.origin.iata || '';
@@ -1423,7 +1426,8 @@
     }
     save();
     updatePreview();
-    if (fl) toast(`${failureTxt(fl)}${res.route ? ' Route from adsbdb.' : ''}`, 8000);
+    if (fl) toast(`${failureTxt(fl)}${!res.route ? '' : res.entry.fromCache ? ' The saved route stays.' : ' Route from adsbdb.'}`, 8000);
+    else if (res.entry.adbFailed) toast(`AeroDataBox failed (${res.entry.adbFailed}) – the saved route stays`, 6000);
     else if (force && !res.entry.fromCache) {
       const e = res.entry, adb = e.adbError ? `AeroDataBox failed (${e.adbError})` : e.adbNote ? `AeroDataBox: ${e.adbNote}` : '';
       const of = op && res.route ? ` of ${res.resolved}` : '';   // a codeshare: which number gave the route

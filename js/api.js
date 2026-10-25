@@ -87,6 +87,11 @@
   A.isCacheKey = (k) => /^[A-Z0-9]{2,3}\d{1,4}[A-Z]? \d{4}-\d{2}-\d{2}$/.test(k);
   /** The cached lookup of a flight number on a date, or undefined. */
   A.cached = (state, flightNo, date) => state.apiCache[A.cacheKey(flightNo, date)];
+  /**
+   * Whether a lookup is a final answer about the flight: a route, or "not found" from every service asked. An error is
+   * not, nor is adsbdb's "not found" while AeroDataBox (with the AeroDataBox `key`) failed: both are asked again.
+   */
+  A.settled = (entry, key) => !!entry && (entry.status === 'ok' || (entry.status === 'notfound' && !(key && entry.adbError)));
 
   /** adsbdb airport -> the app's airport shape. */
   const mapAirport = (a) => a && { iata: a.iata_code, name: a.name, city: a.municipality, country: a.country_iso_name, lat: a.latitude, lon: a.longitude };
@@ -248,21 +253,23 @@
   };
 
   /**
-   * Returns the cache entry for a flight number on an ISO date. Queries only when no cached answer exists, the
-   * cached one is provisional (A.isProvisional), or `force` is set. A cached route without times
+   * Returns the cache entry for a flight number on an ISO date. Queries only when no final answer is cached
+   * (A.settled), the cached one is provisional (A.isProvisional), or `force` is set. A cached route without times
    * asks AeroDataBox for them (A.wantsTimes), and keeps its route when AeroDataBox gives none. With an AeroDataBox key (settings), asks
    * AeroDataBox first (provider 'aerodatabox'); when it knows no such flight (adbTried, adbNote says why) or fails
    * (adbError), asks adsbdb. Server errors of adsbdb (anything but 200 / 404) are cached as 'error', which is not
    * final: the next lookup asks again. A failure that repeats for every flight (A.repeats: network or CORS, key rejected,
    * quota) is no answer about the flight, so an 'error' from it is not cached, and the earlier answer stays; the lookup
    * returns it as `failure` ({ provider, reason, message }; AeroDataBox's too when adsbdb answered), so a run over many
-   * flights can stop. A forced lookup that fails keeps the earlier answer in the cache. `now` (the clock) is for tests.
+   * flights can stop. A forced lookup that fails keeps the earlier answer in the cache, and one where AeroDataBox fails
+   * returns its earlier answer (date-exact, unlike adsbdb's) without asking adsbdb, with `adbFailed` saying why.
+   * `now` (the clock) is for tests.
    */
   A.lookup = async (state, iataFlightNo, date, { force = false, now = new Date() } = {}) => {
     const no = iataFlightNo.toUpperCase(), key = state.settings.aerodataboxKey, ck = A.cacheKey(no, date);
     const cached = state.apiCache[ck], adbVia = A.adbVia(state.settings.aerodataboxVia);   // adbVia: which way gave adbNote
     const failed =(provider, err) => A.repeats(err) ? { provider, reason: err.reason, message: err.message } : undefined;
-    if (cached && cached.status !== 'error' && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) {
+    if (A.settled(cached, key) && !force && !A.isProvisional(cached, date, E.todayISO(now), key)) {
       if (!(cached.status === 'ok' && A.wantsTimes(cached, key))) return { ...cached, fromCache: true };
       // a route without times: only AeroDataBox can add them, and an answer without them keeps the route
       try {
@@ -284,6 +291,7 @@
       } catch (err) {
         entry.adbError = String(err && err.message || err);
         adbFailure = failed('AeroDataBox', err);
+        if (cached && cached.status === 'ok' && cached.provider === 'aerodatabox') return { ...cached, fromCache: true, failure: adbFailure, adbFailed: entry.adbError };
       }
     }
     let adsbdbFailure;
@@ -304,7 +312,8 @@
         adsbdbFailure = failed('adsbdb', err);
       }
     }
-    if (entry.status !== 'error' || (!adsbdbFailure && (!cached || cached.status === 'error'))) state.apiCache[ck] = entry;
+    // a final answer is cached; one that isn't (A.settled) only over another that isn't, and never an error that repeats
+    if (A.settled(entry, key) || (!adsbdbFailure && !A.settled(cached, key))) state.apiCache[ck] = entry;
     return { ...entry, fromCache: false, failure: adsbdbFailure || adbFailure };
   };
 
@@ -325,6 +334,8 @@
     const cached = state.apiCache[ck];
     if (!key) return { entry: cached, note: 'no AeroDataBox key' };
     if (now.getTime() < A.refreshAllowedAt(cached)) return { entry: cached, note: 'refreshed less than 5 minutes ago' };
+    const outside = A.outsidePlan(state.settings, date, E.todayISO(now));
+    if (outside) return { entry: cached, note: outside };   // not asked, so the wait doesn't start
     if (cached) cached.refreshedAt = now.toISOString();   // failed requests count too
     const { response, note } = await askAeroDataBox(no, date, state.settings, E.todayISO(now));
     if (!response) return { entry: cached, note };
@@ -347,7 +358,7 @@
     if (!key || A.outsidePlan(state.settings, date, today)) return 0;
     const asks = (no) => {
       const c = A.cached(state, no, date);
-      return !c || c.status === 'error' || A.isProvisional(c, date, today, key) || (c.status === 'ok' && A.wantsTimes(c, key));
+      return !A.settled(c, key) || A.isProvisional(c, date, today, key) || (c.status === 'ok' && A.wantsTimes(c, key));
     };
     if (!operatingIata) return asks(flightNo) ? 1 : 0;
     const op = A.cached(state, operatingIata, date), opRoute = !!op && op.status === 'ok';

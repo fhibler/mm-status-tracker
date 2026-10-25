@@ -599,6 +599,8 @@ async function apiTests() {
   assert.strictEqual(`${A.outsidePlan(s6.settings, '2026-04-20', '2026-10-18')}|${A.outsidePlan(s6.settings, '2026-04-21', '2026-10-18')}`, 'older than your AeroDataBox plan allows (180 days)|');
   assert.strictEqual((await A.lookup(s6, 'LH11', '2026-02-01', k)).adbNote, 'older than your AeroDataBox plan allows (180 days)');
   assert.strictEqual(`${asks6}:${A.timesCalls(s6, 'LH12', null, '2026-02-01', '2026-10-18')}:${A.timesCalls(s6, 'LH12', null, '2026-10-01', '2026-10-18')}`, '1:0:1');   // not asked, not counted
+  const notAsked = await A.refreshTimes(s6, 'LH10', '2026-03-01', { now: new Date(october.getTime() + 6 * 60000) });   // nor refreshed, and no wait starts
+  assert.strictEqual(`${notAsked.note}:${asks6}:${A.cached(s6, 'LH10', '2026-03-01').refreshedAt}`, 'older than your AeroDataBox plan allows (180 days):1:undefined');
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(s6)).settings.aerodataboxLimits), '{"direct":{"pastDays":180}}');   // saved in the .json
   assert.strictEqual(A.whyNoTimes('date not available: Specified date-time \'01.03.2026 00:00\' must not be earlier than 180 day(s) ago.'), 'older than your AeroDataBox plan allows (180 days)');   // notes saved before
   assert.strictEqual(A.whyNoTimes('no such flight on that date'), 'AeroDataBox doesn\'t know this flight on that date');
@@ -619,6 +621,20 @@ async function apiTests() {
   adb = () => reply(429, null);
   const quota = await A.lookup(s3, 'LH1968', '2026-11-17', k);                                     // quota: adsbdb, ask again later
   assert.strictEqual(`${quota.status}:${quota.adbError}:${quota.failure.reason}:${A.isProvisional(quota, '2026-11-17', '2026-10-18', 'secret')}`, 'ok:quota or rate limit reached (HTTP 429):quota:true');
+  // AeroDataBox failed and adsbdb doesn't know the flight: no final answer, so it is asked (and counted) again
+  respond = (url) => { calls.push(url); return url.includes('aerodatabox') ? reply(429, null) : reply(404, { response: 'unknown callsign' }); };
+  const lost = await A.lookup(s3, 'LH1971', '2026-11-17', k);
+  assert.strictEqual(`${lost.status}:${lost.failure.reason}:${A.settled(lost, 'secret')}:${A.settled(lost, '')}:${A.timesCalls(s3, 'LH1971', null, '2026-11-17', '2026-10-18')}`, 'notfound:quota:false:true:1');
+  respond = viaRapid;
+  adb = () => reply(200, [adbFlight]);
+  assert.strictEqual((await A.lookup(s3, 'LH1971', '2026-11-17', k)).provider, 'aerodatabox');
+  // a forced lookup while AeroDataBox fails keeps its date-exact answer, without asking adsbdb
+  respond = (url) => { calls.push(url); return url.includes('aerodatabox') ? reply(429, null) : reply(404, { response: 'unknown callsign' }); };
+  calls.length = 0;
+  const keptAdb = await A.lookup(s3, 'LH1971', '2026-11-17', { ...k, force: true });
+  assert.strictEqual(`${keptAdb.provider}:${keptAdb.fromCache}:${keptAdb.failure.reason}:${keptAdb.adbFailed}:${calls.length}:${A.cached(s3, 'LH1971', '2026-11-17').provider}`,
+    'aerodatabox:true:quota:quota or rate limit reached (HTTP 429):1:aerodatabox');
+  respond = viaRapid;
   // an adsbdb answer from another season is asked again as soon as a key is set
   adb = () => reply(200, [adbFlight]);
   s2.apiCache['LH1966 2026-11-17'] = nov;                                                            // the summer answer again
