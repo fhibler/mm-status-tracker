@@ -625,6 +625,9 @@ async function apiTests() {
   assert.strictEqual(`${notAsked.note}:${asks6}:${A.cached(s6, 'LH10', '2026-03-01').refreshedAt}`, 'older than your AeroDataBox plan allows (180 days):1:undefined');
   assert.strictEqual(JSON.stringify(S.parse(JSON.stringify(s6)).settings.aerodataboxLimits), '{"direct":{"pastDays":180}}');   // saved in the .json
   assert.strictEqual(A.whyNoTimes('no such flight on that date'), 'AeroDataBox doesn\'t know this flight on that date');
+  // a note saved with AeroDataBox's own words (never asked again) says it the same way; other notes lose their full stop
+  assert.strictEqual(A.whyNoTimes('date not available: Specified date-time \'01.03.2026 00:00\' must not be earlier than 180 day(s) ago. Please consider upgrading your plan.'), 'older than your AeroDataBox plan allows (180 days)');
+  assert.strictEqual(A.whyNoTimes('date not available: Server busy.'), 'AeroDataBox: date not available: Server busy');
   s6.settings.aerodataboxVia = 'rapidapi';   // another way may have another plan: those dates may be asked again
   A.forgetPlanNotes(s6);
   assert.strictEqual(`${A.cached(s6, 'LH10', '2026-03-01').adbTried}:${A.outsidePlan(s6.settings, '2026-02-01', '2026-10-18')}:${A.timesCalls(s6, 'LH10', null, '2026-03-01', '2026-10-18')}`, 'undefined::1');

@@ -70,12 +70,17 @@
     }
   };
   /**
-   * Why a flight has no times, from the adbNote of its lookup (A.lookup), as a phrase: "older than your AeroDataBox
-   * plan allows (180 days)", "AeroDataBox doesn't know this flight on that date", …
+   * Why a flight has no times, from the adbNote of its lookup (A.lookup), as a phrase without a full stop: "older than
+   * your AeroDataBox plan allows (180 days)", "AeroDataBox doesn't know this flight on that date", … A note that still
+   * holds AeroDataBox's own words about the plan (saved before planNote, with adbTried, so never asked again) says it too.
    */
-  A.whyNoTimes = (note) => (/^(older|further ahead) than/.test(note || '') ? note
-    : /^no such flight/.test(note || '') ? 'AeroDataBox doesn\'t know this flight on that date'
-    : note ? `AeroDataBox: ${note}` : 'AeroDataBox gave no times');
+  A.whyNoTimes = (note) => {
+    const limit = planLimit(note);
+    return limit ? planNote(limit)
+      : /^(older|further ahead) than/.test(note || '') ? note
+      : /^no such flight/.test(note || '') ? 'AeroDataBox doesn\'t know this flight on that date'
+      : note ? `AeroDataBox: ${note.replace(/[.\s]+$/, '')}` : 'AeroDataBox gave no times';
+  };
   /** fetch, with a failed request (offline, blocked, CORS: a TypeError without a status) as a 'network' failure. */
   const get = async (url, headers, why) => {
     try { return await fetch(url, { headers }); } catch { throw failure('network', why); }
