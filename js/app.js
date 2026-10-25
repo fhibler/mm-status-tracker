@@ -757,7 +757,7 @@
       return `<tr data-co2-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''}${locked ? ' locked' : ''}" style="cursor:default">
         <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
-        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.flownClass(f))}</div>` : ''}</td>
+        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls || E.co2Class(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.co2Class(f))}</div>` : ''}</td>
         <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
         ${locked ? `<td style="white-space:nowrap"><span class="muted">compensated · locked</span></td>
         <td class="num" style="white-space:nowrap">${plusPts(E.co2Gain({ ...f, co2Level: 'none' }, f.co2Level, state.settings.rules))}</td><td></td>
@@ -821,7 +821,7 @@
           <tbody>${co2Rows.map(co2Row).join('')}</tbody>
           <tfoot><tr><td colspan="5">Total of the what-ifs</td><td class="num" data-cell="co2-sum"></td><td class="num" data-cell="co2-cost"></td><td></td></tr></tfoot>
         </table></div>
-        <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and cabin flown (continental Economy and Business, long-haul Business and First), '
+        <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and the cabin paid for (continental Economy and Business, long-haul Business), '
           + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
           Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`
         : `<p class="muted" style="margin:0">No flights with Points in ${year}. Add flights in Activity first.</p>`}

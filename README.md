@@ -37,12 +37,14 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     more segments of one type would close the gap.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
-  to 16 flights seen in Oct 2026 (all four packages each). The packages are 5 / 20 / 50 / 80 % SAF and priced as
-  fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×). Medium for Business grows with
-  √distance on continental flights and per km on long-haul; other cabins are a factor on Business by the cabin flown
-  (an upgrade is priced in the upgraded cabin): continental Economy 0.695×, long-haul First 1.307× (one sample, rough).
-  It is within about 1 % on all samples; distances outside the samples are rough; long-haul Economy and Premium
-  Economy have no estimate yet. Only used when the currency is EUR. Details and the samples:
+  to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are
+  5 / 20 / 50 / 80 % SAF and priced as fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×).
+  Medium for Business grows with √distance on continental flights and per km on long-haul; other cabins are a factor
+  on Business by the cabin paid for (a fixed-price or bid upgrade is priced in the upgraded cabin, a voucher, miles or
+  operational upgrade as booked): continental Economy 0.695×. The aircraft makes no difference. It is within about 1 %
+  on all samples except MUC→SFO (one way 1.31× the model, not modelled);
+  distances outside the samples are rough; long-haul Economy, Premium Economy and First have no estimate yet. Only
+  used when the currency is EUR. Details and the samples:
   [docs/CO2-PRICE-MODEL.md](docs/CO2-PRICE-MODEL.md).
 - **Starting status** (Settings): the status you already hold and the year it was earned (from your
   statement), so the first tracked year shows the right "status held", validity and downgrade.
