@@ -4,9 +4,10 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
-// The app's scripts run in their own context (like a browser page). fetch is stubbed per test via `respond`.
+// The app's scripts run in their own context (like a browser page), which has only the language's globals:
+// the browser ones they use are passed in. fetch is stubbed per test via `respond`.
 let respond = () => { throw new Error('unexpected fetch'); };
-const ctx = { console, fetch: async (url, opts) => respond(url, opts) };
+const ctx = { console, setTimeout, fetch: async (url, opts) => respond(url, opts) };
 ctx.window = ctx;
 vm.createContext(ctx);
 for (const f of ['data.js', 'airports.js', 'engine.js', 'api.js', 'store.js', 'charts.js']) {
