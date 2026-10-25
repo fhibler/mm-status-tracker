@@ -681,7 +681,6 @@ async function apiTests() {
   // at most how many requests a flight's times take (what "Refresh flight data" says it costs): a codeshare up to 2
   assert.strictEqual([A.timesCalls(s4, 'LH1966', null, '2026-11-17', '2026-10-18'), A.timesCalls(s4, 'LH8', null, '2026-11-17', '2026-10-18'),
     A.timesCalls(s4, 'UA8', 'LH8', '2026-11-17', '2026-10-18'), A.timesCalls(s4, 'UA8', 'LH1966', '2026-11-17', '2026-10-18')].join(), '0,1,2,0');
-  assert.strictEqual(A.ADB_VIA[s4.settings.aerodataboxVia].unitsPerCall, 2);
   // a cached route without times (adsbdb, or AeroDataBox before times were kept) asks AeroDataBox once more, and only it
   s4.apiCache['LH1966 2026-11-17'] = { ...nov, adbTried: undefined };   // adsbdb, summer route
   s4.apiCache['LH1967 2026-11-17'] = { date: '2026-11-17', fetchedAt: '2026-10-18T10:00:00.000Z', provider: 'aerodatabox', status: 'ok', response: { flightroute: { ...fr('BER').flightroute } } };

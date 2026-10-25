@@ -287,6 +287,25 @@
     return { p, qp: 0, hon: 0, reason: p === m.pointsPerStay ? 'ok' : p === 0 ? 'cap' : 'partial' };
   };
 
+  /** Empty totals { p, qp, hon, qpRail, honRail } (rail values are part of qp / hon, see E.effective). */
+  const noPoints = () => ({ p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 });
+  /** Adds n × earning e (E.earn) to totals t. */
+  const addEarn = (t, e, n = 1) => {
+    t.p += n * e.p; t.qp += n * e.qp; t.hon += n * e.hon;
+    if (e.rail) { t.qpRail += n * e.qp; t.honRail += n * e.hon; }
+  };
+  /**
+   * Notes `value` in out[status] for each status that totals t reach and out has no entry for yet. A negative
+   * correction can take a status away again; then its entry is dropped, so `out` always matches the status at the end.
+   */
+  const noteReached = (t, out, value, rules) => {
+    const s = E.status(t, rules);
+    for (const k of MM.STATUSES) {
+      if (E.rank(s) < E.rank(k)) delete out[k];
+      else if (!out[k]) out[k] = value;
+    }
+  };
+
   /**
    * Walks one calendar year in date order (flights, manual corrections and Marriott stays; on the same day in
    * that order, flights by departure time: E.byDeparture). rows: flights; adjustments: corrections; stays: hotel stays;
@@ -306,27 +325,14 @@
       ...state.adjustments.filter(inYear).map(a => ({ kind: 'adj', a, date: a.date })),
       ...state.stays.filter(inYear).map(s => ({ kind: 'stay', s, date: s.date })),
     ].sort((x, y) => x.date.localeCompare(y.date) || ORDER[x.kind] - ORDER[y.kind] || (x.f ? E.byDeparture(x.f, y.f) : 0));
-    const zero = () => ({ p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 });
     const noCost = () => ({ flight: 0, upgrade: 0, co2: 0, total: 0 });
-    const act = zero(), all = zero();
+    const act = noPoints(), all = noPoints();
     const cost = { actual: noCost(), plan: noCost(), all: noCost() };
     const reached = { actual: {}, forecast: {}, forecastBy: {} };
     const adjTotal = { p: 0, qp: 0, hon: 0 }, stayTotal = { p: 0 };
     const rows = [], adjustments = [], stays = [], events = [];
     let unknown = 0;
     const holders = E.fareHolders(state, today);
-    const add = (t, e) => { t.p += e.p; t.qp += e.qp; t.hon += e.hon; if (e.rail) { t.qpRail += e.qp; t.honRail += e.hon; } };
-    /**
-     * Notes the date on which totals t reach each status and, for the forecast, the item that did it. A negative
-     * correction can take a status away again; then the date is cleared, so it always matches the status at year end.
-     */
-    const markReached = (t, dates, date, by) => {
-      const s = E.status(t, rules);
-      for (const k of MM.STATUSES) {
-        if (E.rank(s) < E.rank(k)) { delete dates[k]; if (by) delete reached.forecastBy[k]; }
-        else if (!dates[k]) { dates[k] = date; if (by) reached.forecastBy[k] = by; }
-      }
-    };
     for (const it of items) {
       const isAdj = it.kind === 'adj', isStay = it.kind === 'stay';
       const date = it.date;
@@ -336,13 +342,14 @@
       const c = isAdj || isStay ? noCost() : E.cost(it.f, E.segmentFare(state, it.f, holders));
       if (it.kind === 'flight' && counts && e.unknown && e.group !== 'NONE') unknown++;
       if (counts) {
-        add(all, e);
+        addEarn(all, e);
         for (const k of Object.keys(c)) { (planned ? cost.plan : cost.actual)[k] += c[k]; cost.all[k] += c[k]; }
-        markReached(all, reached.forecast, date, isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : it.f.flightNo);
+        noteReached(all, reached.forecast, date, rules);
+        noteReached(all, reached.forecastBy, isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : it.f.flightNo, rules);
       }
       if (!planned) {
-        add(act, e);
-        markReached(act, reached.actual, date);
+        addEarn(act, e);
+        noteReached(act, reached.actual, date, rules);
       }
       const base = { date, e, c, planned, counts };
       const row = isAdj ? { ...base, adj: it.a } : isStay ? { ...base, stay: it.s } : { ...base, f: it.f };
@@ -480,8 +487,7 @@
     let mixCost = 0;
     const mix = plan.mix.map(row => {
       const n = row.count, e = E.mixRowEarn(row, rules), cost = n * row.cost;
-      total.p += n * e.p; total.qp += n * e.qp; total.hon += n * e.hon;
-      if (e.rail) { total.qpRail += n * e.qp; total.honRail += n * e.hon; }
+      addEarn(total, e, n);
       mixCost += cost;
       return { row, n, e, sum: { p: n * e.p, qp: n * e.qp, hon: n * e.hon }, cost };
     });
@@ -525,7 +531,6 @@
       }
     }
     return { ...state, flights };
-
   };
 
   /**
@@ -535,18 +540,11 @@
    * away again. Statuses not reached have no entry.
    */
   E.planReached = (withCo2, mix, year, rules) => {
-    const t = { p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 }, out = {};
-    const add = (e, date, step) => {
-      t.p += e.p; t.qp += e.qp; t.hon += e.hon;
-      if (e.rail) { t.qpRail += e.qp; t.honRail += e.hon; }
-      const s = E.status(t, rules);
-      for (const k of MM.STATUSES) {
-        if (E.rank(s) < E.rank(k)) delete out[k];
-        else if (!out[k]) out[k] = { date, step };
-      }
-    };
-    for (const ev of withCo2.events) if (ev.counts) add(ev.e, ev.date, 'co2');
-    for (const m of mix) add({ ...m.sum, rail: m.e.rail }, `${year}-12-31`, 'mix');
+    const t = noPoints(), out = {};
+    for (const ev of withCo2.events) {
+      if (ev.counts) { addEarn(t, ev.e); noteReached(t, out, { date: ev.date, step: 'co2' }, rules); }
+    }
+    for (const m of mix) { addEarn(t, m.e, m.n); noteReached(t, out, { date: `${year}-12-31`, step: 'mix' }, rules); }
     return out;
   };
 })();

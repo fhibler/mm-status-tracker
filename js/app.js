@@ -205,17 +205,12 @@
       <div class="card">
         <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">faded = planned</span></div>
         <div class="chart" id="costChart"></div>
-        <div class="legend">
-          <span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span>
-          <span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span>
-          <span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span>
-        </div>
+        ${costLegend}
       </div>
       <div class="card">
         <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">a status is valid from the day it is reached until the end of February of the year after next; without requalification it then drops one level</span></div>
         <div class="table-wrap" id="histTable"></div>
-        ${hist.length > 1 ? `<div class="chart" id="yearCost" style="margin-top:14px"></div>
-          <div class="legend"><span><i class="sq" style="--c:var(--c-flight)"></i>Flight</span><span><i class="sq" style="--c:var(--c-upgrade)"></i>Upgrade</span><span><i class="sq" style="--c:var(--c-co2)"></i>CO₂ compensation</span></div>` : ''}
+        ${hist.length > 1 ? `<div class="chart" id="yearCost" style="margin-top:14px"></div>${costLegend}` : ''}
       </div>`;
 
     fitText($$('.kpi-trio b, .kpi .value.fit', host));   // a large cost total shrinks to fit its card
@@ -272,11 +267,9 @@
     for (const d of defs) C.cumulative($(`[data-cum="${d.key}"]`, host), { ...d, year, rows: sum.events, today: E.todayISO() });
   };
 
-  const costSeries = () => [
-    { key: 'flight', label: 'Flight', color: cssVar('--c-flight') },
-    { key: 'upgrade', label: 'Upgrade', color: cssVar('--c-upgrade') },
-    { key: 'co2', label: 'CO₂ compensation', color: cssVar('--c-co2') },
-  ];
+  const COST_KINDS = [['flight', 'Flight', '--c-flight'], ['upgrade', 'Upgrade', '--c-upgrade'], ['co2', 'CO₂ compensation', '--c-co2']];
+  const costSeries = () => COST_KINDS.map(([key, label, color]) => ({ key, label, color: cssVar(color) }));
+  const costLegend = `<div class="legend">${COST_KINDS.map(([, label, color]) => `<span><i class="sq" style="--c:var(${color})"></i>${label}</span>`).join('')}</div>`;
 
   const renderCostChart = (sum) => {
     const data = C.MONTHS.map(() => ({ flight: 0, upgrade: 0, co2: 0, planned: 0, n: 0 }));
@@ -415,7 +408,7 @@
   const refreshTimes = async (f, b) => {
     b.disabled = true; b.textContent = '↻ Refreshing…';
     const no = timesNo(f);
-    let msg;
+    let msg, ms = 2600;
     try {
       const { entry, note } = await A.refreshTimes(state, no, f.date);
       const via = no !== E.parseFlightNo(f.flightNo).iata ? no : undefined;
@@ -430,10 +423,9 @@
       msg = note ? `AeroDataBox: ${note} – nothing changed` : f.times ? 'Times refreshed' : 'AeroDataBox has no times for this flight';
     } catch (err) {   // a key rejected or a blocked request won't work in 5 minutes either: that message stays
       msg = `AeroDataBox ${err.reason ? err.message : `failed (${err.message})`}${err.reason === 'auth' || err.reason === 'network' ? '' : ' – try again in 5 minutes'}`;
-      save(); render(); toast(msg, A.repeats(err) ? 0 : 6000);
-      return;
+      ms = A.repeats(err) ? 0 : 6000;
     }
-    save(); render(); toast(msg);
+    save(); render(); toast(msg, ms);
   };
   /** The folded-out row of a flight: departure and arrival (scheduled, local and UTC), flight time and aircraft. */
   const timesDetail = (f) => `<div class="detail">${timesInfo(f)}${E.flightTimes(f) || !timesAvailable(f) ? refreshBtn(f) : ''}</div>`;
@@ -1057,13 +1049,10 @@
         <div class="card">
           <div class="card-head"><h2>Route lookup</h2><span class="sub">your own key, saved with your data</span></div>
           <div class="grid">
-            <label>Call AeroDataBox<select id="adbVia">${opts(Object.keys(MM.api.ADB_VIA), state.settings.aerodataboxVia, v => MM.api.ADB_VIA[v].label)}</select>
-              ${(() => {
-                const via = MM.api.adbVia(state.settings.aerodataboxVia), from = MM.api.ADB_VIA[via].keyFrom;
-                return via !== 'rapidapi' && MM.api.isRapidApiKey(state.settings.aerodataboxKey)
-                  ? `<small class="field-hint" style="color:var(--danger)">This looks like a RapidAPI key – choose Via RapidAPI or enter a key from ${from}.</small>`
-                  : `<small class="field-hint">With a key from ${from}</small>`;
-              })()}</label>
+            <label>Call AeroDataBox<select id="adbVia">${opts(Object.keys(A.ADB_VIA), state.settings.aerodataboxVia, v => A.ADB_VIA[v].label)}</select>
+              ${adbVia() !== A.ADB_VIA.rapidapi && A.isRapidApiKey(state.settings.aerodataboxKey)
+                ? `<small class="field-hint" style="color:var(--danger)">This looks like a RapidAPI key – choose Via RapidAPI or enter a key from ${adbVia().keyFrom}.</small>`
+                : `<small class="field-hint">With a key from ${adbVia().keyFrom}</small>`}</label>
             <label>AeroDataBox key<input id="adbKey" type="password" autocomplete="off" spellcheck="false" placeholder="not set: adsbdb.com only" value="${esc(state.settings.aerodataboxKey)}">
               <small class="field-hint">${state.settings.aerodataboxKey ? 'Set: routes are looked up for the flight date.' : 'Optional.'}</small></label>
           </div>
@@ -1074,7 +1063,8 @@
             <a href="https://api.market/store/aedbx/aerodatabox" target="_blank" rel="noopener">API.Market</a>
             or from <a href="https://rapid.aerodatabox.com/pricing" target="_blank" rel="noopener">RapidAPI</a>, and choose the
             matching way above: route lookups, "Refresh flight data" and "Refresh" all go that way. A key of one doesn't work with the
-            others. Each lookup costs 2 API units on all three; "Refresh flight data" says first how many it may use. On RapidAPI, the free Basic plan has 400 units a month; one lookup costs 2, so about 200 lookups. Answers are cached per flight number and date, so a
+            others. Each lookup costs 2 API units on all three; "Refresh flight data" says first how many it may use. On RapidAPI, the
+            free Basic plan has 400 units a month, so about 200 lookups. Answers are cached per flight number and date, so a
             flight is asked again only when its date changes or its route came from another schedule season.
             The key is saved in this browser and in your <code>.json</code>, so loading the file on another device brings it
             along. Keep the file to yourself.</p>
@@ -1113,13 +1103,13 @@
     }));
     $('#currency', host).addEventListener('change', (e) => { state.settings.currency = e.target.value; save(); toast('Currency updated'); });
     $('#adbVia', host).addEventListener('change', (e) => {
-      state.settings.aerodataboxVia = MM.api.adbVia(e.target.value);
-      MM.api.forgetPlanNotes(state);   // another plan: dates another way couldn't answer may be asked
-      save(); render(); toast(`AeroDataBox: ${MM.api.ADB_VIA[state.settings.aerodataboxVia].label}`);
+      state.settings.aerodataboxVia = A.adbVia(e.target.value);
+      A.forgetPlanNotes(state);   // another plan: dates another way couldn't answer may be asked
+      save(); render(); toast(`AeroDataBox: ${A.ADB_VIA[state.settings.aerodataboxVia].label}`);
     });
     $('#adbKey', host).addEventListener('change', (e) => {
       state.settings.aerodataboxKey = S.apiKey(e.target.value);
-      MM.api.forgetPlanNotes(state, true);   // a new key may be another plan
+      A.forgetPlanNotes(state, true);   // a new key may be another plan
       save(); render(); toast(state.settings.aerodataboxKey ? 'AeroDataBox key saved' : 'AeroDataBox key removed');
     });
     const member = $('#memberNumber', host);

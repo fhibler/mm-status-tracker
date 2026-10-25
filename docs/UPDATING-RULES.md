@@ -18,7 +18,7 @@ meilenoptimieren.com, reisetopia.de) only to find hints or dates, never as the f
 | Star Alliance members (Points-only group) | https://www.staralliance.com/en/member-airlines |
 | CO₂ boosters (Small/Medium/Large/X-Large) | Supplied by the user. Check the Miles & More CO₂ compensation offer if it is reachable. |
 | Airport table | OurAirports `airports.csv`, built in CI by `tools/build-airports.ps1` |
-| Flight routes | adsbdb.com API, and AeroDataBox via RapidAPI with the user's key (`js/api.js`) |
+| Flight routes | adsbdb.com API, and AeroDataBox (directly, via API.Market or via RapidAPI) with the user's key (`js/api.js`) |
 
 The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 
