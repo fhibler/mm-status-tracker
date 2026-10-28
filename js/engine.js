@@ -159,9 +159,11 @@
   E.canBoost = (f) => f.transport === 'flight' && E.earningGroup(f) !== 'NONE';
   /** Flights for which the planner offers upgrade what-ifs: like E.canBoost, not upgraded yet (an upgraded flight is
       locked there; change its upgrade in the flight dialog) and booked below First. */
-  E.canUpgrade = (f) => E.canBoost(f) && !E.isUpgraded(f) && MM.CLASSES.indexOf(f.bookedClass) < MM.CLASSES.length - 1;
-  /** Cabins a flight can be upgraded to in the planner: the ones above its booked class. */
-  E.upgradeClasses = (f) => MM.CLASSES.slice(MM.CLASSES.indexOf(f.bookedClass) + 1);
+  E.canUpgrade = (f) => E.canBoost(f) && !E.isUpgraded(f) && E.upgradeClasses(f).length > 0;
+  /** Cabins a flight of this haul and earning group can have: Lufthansa Group continental flights only Economy and Business. */
+  E.cabins = (haul, group) => (haul === 'continental' && group === 'LHG' ? MM.CONTINENTAL_CLASSES : MM.CLASSES);
+  /** Cabins a flight can be upgraded to in the planner: the ones above its booked class that it has (see E.cabins). */
+  E.upgradeClasses = (f) => E.cabins(E.haul(f), E.earningGroup(f)).filter(c => MM.CLASSES.indexOf(c) > MM.CLASSES.indexOf(f.bookedClass));
   /** Upgrade type of a planner what-if: a paid upgrade, which earns in the upgraded cabin (see E.upgradeEarns). */
   E.WHATIF_UPGRADE = 'fixed-online';
 

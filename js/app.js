@@ -795,7 +795,7 @@
         <td class="num"><input type="number" min="0" step="1" data-mix="count" value="${r.count}" aria-label="Number of segments" class="num-input narrow"></td>
         <td><select data-mix="kind" aria-label="Type">${opts(Object.keys(MM.MIX_KIND), r.kind, k => MM.MIX_KIND[k])}</select></td>
         <td><select data-mix="haul" aria-label="Haul" ${rail ? 'disabled' : ''}>${opts(['continental', 'intercontinental'], r.haul, h => HAUL_LABEL[h])}</select></td>
-        <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? Object.keys(MM.RAIL_CLASSES) : MM.CLASSES, r.cls)}</select></td>
+        <td><select data-mix="cls" aria-label="Cabin">${opts(rail ? Object.keys(MM.RAIL_CLASSES) : E.cabins(r.haul, r.kind), r.cls)}</select></td>
         <td><select data-mix="co2Level" aria-label="CO₂ booster" ${rail ? 'disabled' : ''}>${opts(MM.CO2_LEVELS, r.co2Level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num"><input inputmode="decimal" autocomplete="off" data-mix="cost" value="${r.cost || ''}" placeholder="0" aria-label="Cost per segment" class="num-input"></td>
         <td class="num" data-cell="sum"></td>
@@ -818,7 +818,7 @@
           <tfoot><tr><td colspan="6">Total extra segments <span class="muted" data-cell="mix-n"></span></td><td class="num" data-cell="mix-sum"></td><td></td></tr></tfoot>
         </table></div>` : '<p class="muted m0">No extra segments yet. Start with a preset or add your own rows:</p>'}
         <div class="btn-row">${MIX_PRESETS.map((p, i) => `<button class="btn small" data-mix-preset="${i}">+ ${esc(mixLabel(p))}</button>`).join('')}</div>
-        <p class="hint">Continental includes domestic flights (e.g. SEA–SFO). Points per segment follow your rules in Settings. Star Alliance flights earn Points only; train QP / HON count only up to the
+        <p class="hint">Continental includes domestic flights (e.g. SEA–SFO); Lufthansa Group flies those in Economy and Business only. Points per segment follow your rules in Settings. Star Alliance flights earn Points only; train QP / HON count only up to the
           train limits. A round trip counts as 2 segments. The cost per segment is your estimate (fare, upgrade and booster).</p>
       </div>
       <div class="card">
@@ -926,7 +926,7 @@
         const k = inp.dataset.mix;
         inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
           row[k] = k === 'count' ? Math.max(0, Math.round(+inp.value || 0)) : k === 'cost' ? E.parseAmount(inp.value) : inp.value;
-          if (k === 'kind') {   // trains: continental, Economy or Business, no booster
+          if (k === 'kind' || k === 'haul') {   // trains: continental, Economy or Business, no booster; LHG continental: Economy or Business
             S.fitMixRow(row);
             save(); renderPlanner(); return;
           }
@@ -1027,6 +1027,7 @@
   /** "Fill the gap": how many more segments of one type close the remaining gap after the scenario (status st). */
   const gapPrefs = { target: null, haul: 'intercontinental', cls: 'Business', co2Level: 'none' };
   const renderGap = (total, st) => {
+    if (!E.cabins(gapPrefs.haul, 'LHG').includes(gapPrefs.cls)) gapPrefs.cls = gapPrefs.cls === 'First' ? 'Business' : 'Economy';   // continental: Economy or Business
     const host = $('#gapCard'), rules = state.settings.rules, { haul, cls, co2Level } = gapPrefs;
     const target = gapPrefs.target || MM.STATUSES.find(k => E.rank(st) < E.rank(k)) || 'HON';
     const reached = E.rank(st) >= E.rank(target);   // also when the status comes from the statement
@@ -1037,7 +1038,7 @@
       <div class="grid">
         <label>Target status<select data-gap="target">${opts(MM.STATUSES, target, k => MM.STATUS_LABEL[k])}</select></label>
         <label>Haul<select data-gap="haul">${opts(['continental', 'intercontinental'], haul, h => HAUL_LABEL[h])}</select></label>
-        <label>Cabin<select data-gap="cls">${opts(MM.CLASSES, cls)}</select></label>
+        <label>Cabin<select data-gap="cls">${opts(E.cabins(haul, 'LHG'), cls)}</select></label>
         <label>CO₂ booster<select data-gap="co2Level">${opts(MM.CO2_LEVELS, co2Level, l => MM.CO2_LABEL[l])}</select></label>
       </div>
       <div class="earn-preview mt">

@@ -403,6 +403,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     const flown = E.whatIfFlight(u, up, undefined, '2026-07-05');
     assert.strictEqual(`${flown.upgradeClass}:${flown.co2Level}`, 'Premium Economy:medium');
     // the steps add only their own share: upgrades, then boosters on top (on the upgraded cabin), then extra segments
+    // Lufthansa Group continental flights only have Economy and Business
+    const cont = lhBiz({ route: fraZrh, bookedClass: 'Economy', upgradeClass: 'Economy' });
+    assert.strictEqual(`${E.upgradeClasses(cont)}|${E.canUpgrade({ ...cont, bookedClass: 'Business', upgradeClass: 'Business' })}|${E.upgradeClasses({ ...cont, flightNo: 'TG920' })}`,
+      'Business|false|Premium Economy,Business,First');   // a Star Alliance flight keeps every cabin
+    assert.strictEqual(['First', 'Premium Economy', 'Business'].map(cls => S.fitMixRow(S.newMixRow({ kind: 'LHG', haul: 'continental', cls })).cls).join(), 'Business,Economy,Business');
+    assert.strictEqual(S.fitMixRow(S.newMixRow({ kind: 'LHG', haul: 'intercontinental', cls: 'First' })).cls, 'First');
     const sc = E.planScenario(us, 2026, up, TODAY);
     const v0 = '200,200,200';   // v: Business (bid)
     assert.strictEqual(pts(sc.base.forecast), `${80 + 200},${80 + 200},200`);

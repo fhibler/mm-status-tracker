@@ -33,11 +33,16 @@
 
   /** One row of a planned mix of extra segments (see MM.engine.planScenario); cost = estimated cost per segment. */
   S.newMixRow = (o) => ({ id: S.uid(), count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 0, ...o });
-  /** Makes a train row of the mix valid (continental, a train class, no booster); changes the row and returns it. */
+  /**
+   * Makes a row of the mix valid: trains are continental, in a train class, without booster; Lufthansa Group continental
+   * flights in Economy or Business (see E.cabins; First becomes Business, Premium Economy Economy). Changes the row and returns it.
+   */
   S.fitMixRow = (row) => {
     if (row.kind === 'RAIL') {
       row.haul = 'continental'; row.co2Level = 'none';
       if (!(row.cls in MM.RAIL_CLASSES)) row.cls = 'Business';
+    } else if (!E.cabins(row.haul, row.kind).includes(row.cls)) {
+      row.cls = row.cls === 'First' ? 'Business' : 'Economy';
     }
     return row;
   };

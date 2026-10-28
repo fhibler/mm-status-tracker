@@ -4,6 +4,8 @@ window.MM = window.MM || {};
 MM.CLASSES = ['Economy', 'Premium Economy', 'Business', 'First'];
 /* Trains offer Economy (2nd class) and Business (1st class) only. */
 MM.RAIL_CLASSES = { 'Economy': 'Economy (2nd class)', 'Business': 'Business (1st class)' };
+/* Lufthansa Group continental flights have Economy and Business only (no Premium Economy or First). */
+MM.CONTINENTAL_CLASSES = ['Economy', 'Business'];
 MM.CLASS_SHORT ={ 'Economy': 'Y', 'Premium Economy': 'W', 'Business': 'C', 'First': 'F' };
 
 /* Earning groups (as listed on miles-and-more.com, "Points system" and "Partners", checked 2026-10-16):
