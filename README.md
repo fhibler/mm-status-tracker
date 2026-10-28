@@ -30,7 +30,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
     Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment.
   - **Upgrades & CO₂ compensation**, one table of your existing and planned flights:
-    - **Upgrade**: try a paid upgrade (fixed price or bid) to any cabin above the booked one and type in its price
+    - **Upgrade** (planned flights only, a flown one can't be upgraded any more): try a paid upgrade (fixed price or
+      bid) to any cabin above the booked one and type in its price
       (it is never estimated). The flight then earns in the upgraded cabin, and a booster on it earns and is priced
       there too. Flights that are already upgraded are locked; change their upgrade in the flight dialog.
     - **CO₂ booster**: try a booster on any flight and see the extra Points, or set one for all flown, planned or all
@@ -38,10 +39,12 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
       the lufthansa.com price (see below), else with the average you paid.
     - Each row shows what its what-ifs add and cost, and the cost per added QP. "Apply" saves the upgrade and the
       booster to the flight.
-  - The result compares each path on top of your forecast: upgrades only, boosters only, both, extra segments only,
-    and everything together, with Points, QP, HON, status, what is still missing for the next status, the extra cost
-    and the cost per extra QP (HON Circle Points when HON Circle is next). It also shows when each status is reached
-    and how many more segments of one type would close the gap.
+  - The result builds the year step by step: flown so far, + planned flights (your forecast), + upgrades, + CO₂
+    boosters (on top of the upgrades, so a booster on an upgraded flight earns in the upgraded cabin, and the part that
+    is only there thanks to the upgrade is named), + extra segments. Each step shows only what it adds, so the Points
+    and costs add up to the total, plus the status after it, what is still missing for the next status, and its cost
+    per QP (HON Circle Points when HON Circle is next). It also shows when each status is reached and how many more
+    segments of one type would close the gap.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
   to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are

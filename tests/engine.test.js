@@ -358,7 +358,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     ],
   };
   const sc = E.planScenario(st, 2026, plan, TODAY);
-  assert.strictEqual(`${pts(sc.base.forecast)}:${pts(sc.withCo2.forecast)}:${sc.cost.co2Extra}`, '300,300,240:300,300,240:0');
+  assert.strictEqual(`${pts(sc.base.forecast)}:${pts(sc.withWhatIfs.forecast)}:${sc.cost.co2}`, '300,300,240:300,300,240:0');
   // + 2 × 40 continental Business, 4 × 96 Premium Economy intercontinental (80 + 20 %, no HON), 3 × 60 Star Alliance (Points only)
   assert.strictEqual(pts(sc.total), `${300 + 80 + 384 + 180},${300 + 80 + 384},${240 + 80}`);
   assert.strictEqual(`${sc.cost.mix}:${sc.status.total}`, '4200:FTL');
@@ -379,7 +379,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     const f = S.removeBooster(lk, 'a');
     assert.strictEqual(`${f.co2Level}:${f.co2Cost}:${E.hasBooster(f)}:${lh.co2Level}`, 'none:0:false:large');
     const un = E.planScenario(lk, 2026, { co2: { a: { level: 'large', cost: 40 } }, mix: [] }, TODAY);
-    assert.strictEqual(`${pts(un.base.forecast)}:${pts(un.withCo2.forecast)}:${un.cost.co2Extra}`, '200,200,200:300,300,240:40');
+    assert.strictEqual(`${pts(un.base.forecast)}:${pts(un.withWhatIfs.forecast)}:${un.cost.co2}`, '200,200,200:300,300,240:40');
     // saving a booster to the flight (Apply, or the flight dialog) locks it again and drops its what-ifs
     lk.plans['2026'].co2.a = { level: 'small', cost: 10 };
     S.saveFlight(lk, { ...f, co2Level: 'large', co2Cost: 40 }, 0);
@@ -396,17 +396,23 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
       co2: { u: { level: 'medium', cost: 100 } },
       mix: [{ count: 1, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none', cost: 250 }],
     };
-    const wf = E.whatIfFlight(u, up);
-    assert.strictEqual(`${wf.upgradeClass}:${wf.upgradeType}:${wf.upgradeCost}:${wf.co2Level}:${E.co2Class(wf)}:${E.whatIfFlight(v, up) === v}`, 'Business:fixed-online:500:medium:Business:true');
-    assert.strictEqual(E.whatIfFlight(u, { ...up, upgrade: { u: { cls: 'Economy', cost: 1 } } }, { upgrade: true }), u);   // not above the booked cabin
+    const wf = E.whatIfFlight(u, up, undefined, TODAY);
+    assert.strictEqual(`${wf.upgradeClass}:${wf.upgradeType}:${wf.upgradeCost}:${wf.co2Level}:${E.co2Class(wf)}:${E.whatIfFlight(v, up, undefined, TODAY) === v}`, 'Business:fixed-online:500:medium:Business:true');
+    assert.strictEqual(E.whatIfFlight(u, { ...up, upgrade: { u: { cls: 'Economy', cost: 1 } } }, { upgrade: true }, TODAY), u);   // not above the booked cabin
+    // a flown flight can't be upgraded any more, but its CO₂ can still be compensated
+    const flown = E.whatIfFlight(u, up, undefined, '2026-07-05');
+    assert.strictEqual(`${flown.upgradeClass}:${flown.co2Level}`, 'Premium Economy:medium');
+    // the steps add only their own share: upgrades, then boosters on top (on the upgraded cabin), then extra segments
     const sc = E.planScenario(us, 2026, up, TODAY);
     const v0 = '200,200,200';   // v: Business (bid)
     assert.strictEqual(pts(sc.base.forecast), `${80 + 200},${80 + 200},200`);
-    assert.strictEqual([sc.withUpgrades, sc.withCo2, sc.withWhatIfs].map(x => pts(x.forecast)).join(' | '),
-      ['400,400,400', '296,296,200', '440,440,440'].join(' | '));   // the booster adds 20 % of the upgraded cabin's points
-    assert.strictEqual(`${pts(sc.mixOnly)}:${pts(sc.total)}:${sc.status.mixOnly}:${sc.status.withWhatIfs}`, '320,320,240:480,480,480:NONE:NONE');
-    assert.strictEqual(`${sc.cost.upgradeExtra}:${sc.cost.co2Extra}:${sc.cost.whatIfExtra}:${sc.cost.mix}:${sc.cost.total}`, `500:100:600:250:${300 + 600 + 250}`);
+    assert.strictEqual([sc.withUpgrades, sc.withWhatIfs].map(x => pts(x.forecast)).join(' | '), '400,400,400 | 440,440,440');
+    const a = sc.adds;   // the booster adds 20 % of Business (40 · 40 · 40), of which 24 · 24 · 40 only thanks to the upgrade
+    assert.strictEqual([a.upgrades, a.co2, a.co2OnUpgrades, a.mix, a.total].map(pts).join(' | '), '120,120,200 | 40,40,40 | 24,24,40 | 40,40,40 | 200,200,280');
+    assert.strictEqual(`${pts(sc.total)}:${sc.status.withWhatIfs}:${sc.status.total}`, '480,480,480:NONE:NONE');
+    assert.strictEqual(`${sc.cost.upgrades}:${sc.cost.co2}:${sc.cost.mix}:${sc.cost.extra}:${sc.cost.total}`, `500:100:250:850:${300 + 850}`);
     assert.strictEqual(v0, pts(E.earn(v, rules)));
+    assert.strictEqual(pts(E.planScenario(us, 2026, up, '2026-07-05').adds.upgrades), '0,0,0');   // flown by then
     // the dashboard's "incl. Planner" view applies the upgrades too
     const wu = E.yearSummary(E.withPlans(state({ flights: [u, v], plans: { 2026: up } }), TODAY), 2026, TODAY);
     assert.strictEqual(`${pts(wu.forecast)}:${wu.cost.all.total}`, `${pts(sc.total)}:${sc.cost.total}`);
@@ -422,7 +428,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // the dashboard's "incl. Planner" view: the same totals, cost and status as the scenario, as planned items
   const sp = state({ ...st, plans: { 2026: plan, 2025: { co2: {}, mix: [plan.mix[0]] } } });
   const wp = E.yearSummary(E.withPlans(sp, TODAY), 2026, TODAY);
-  assert.strictEqual(`${pts(wp.forecast)}:${pts(wp.actual)}:${wp.cost.all.total}:${wp.statusForecast}`, `${pts(sc.total)}:${pts(sc.withCo2.actual)}:${sc.cost.total}:FTL`);
+  assert.strictEqual(`${pts(wp.forecast)}:${pts(wp.actual)}:${wp.cost.all.total}:${wp.statusForecast}`, `${pts(sc.total)}:${pts(sc.withWhatIfs.actual)}:${sc.cost.total}:FTL`);
   assert.strictEqual(`${wp.rows.filter(x => x.planned).length}:${wp.reached.forecastBy.FTL}`, '9:Planner');
   assert.strictEqual(E.yearSummary(E.withPlans(sp, TODAY), 2025, TODAY).rows.length, 1);   // no extra segments in an ended year
   assert.strictEqual(`${sp.flights.length}:${sp.flights.find(f => f.id === 'a').co2Level}`, '2:large');   // the state itself is unchanged

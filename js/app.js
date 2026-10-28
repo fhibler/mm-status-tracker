@@ -746,6 +746,8 @@
     const cost = E.cost(w, 0).total - E.cost(f, 0).total;
     return { add, cost, any: w !== f };
   };
+  /** What a booked (locked) booster adds, in the cabin of the upgrade what-if. */
+  const lockedAdds = (f, plan) => `adds ${plusPts(E.co2Gain({ ...upgradedFlight(f, plan), co2Level: 'none' }, f.co2Level, state.settings.rules))}`;
   const addsCell = (f, plan) => {
     const { add, cost, any } = whatIfAdds(f, plan);
     if (!any) return '<span class="muted">–</span>';
@@ -763,17 +765,17 @@
 
     const wiRow = (r) => {
       const f = r.f, o = plan.co2[f.id], u = plan.upgrade[f.id], level = o ? o.level : f.co2Level;
-      const locked = E.hasBooster(f), canUp = E.canUpgrade(f), upType = MM.UPGRADE_TYPES[f.upgradeType];
+      const locked = E.hasBooster(f), canUp = r.planned && E.canUpgrade(f), upType = MM.UPGRADE_TYPES[f.upgradeType];
       const upCell = canUp
         ? `<td><select data-upg-cls aria-label="Upgrade for ${esc(f.flightNo)}"><option value="">No upgrade</option>${opts(E.upgradeClasses(f), u ? u.cls : '')}</select></td>
         <td class="num"><input inputmode="decimal" autocomplete="off" data-upg-cost value="${u ? u.cost || '' : ''}" placeholder="your price" aria-label="Upgrade cost" class="num-input" ${u ? '' : 'disabled'}></td>`
         : E.isUpgraded(f)
           ? `<td>${esc(E.flownClass(f))}<div class="muted">${upType ? esc(upType.label) + ' · ' : ''}upgraded · locked</div></td><td class="num">${money(f.upgradeCost)}</td>`
-          : '<td><span class="muted">–</span></td><td></td>';
+          : `<td><span class="muted">${r.planned ? '–' : 'flown · too late'}</span></td><td></td>`;
       const co2Cell = locked
         ? `<td>${esc(MM.CO2_LABEL[f.co2Level])} <button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button>
           <div class="muted">compensated · locked</div></td>
-        <td class="num">${money(f.co2Cost)}<div class="muted">adds ${plusPts(E.co2Gain({ ...upgradedFlight(f, plan), co2Level: 'none' }, f.co2Level, state.settings.rules))}</div></td>`
+        <td class="num">${money(f.co2Cost)}<div class="muted" data-cell="co2-locked">${lockedAdds(f, plan)}</div></td>`
         : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : ''}" aria-label="Booster cost" class="num-input">
           <div class="muted" data-cell="co2-est">${co2EstCell(upgradedFlight(f, plan), level)}</div></td>`;
@@ -838,7 +840,7 @@
           <tbody>${wiRows.map(wiRow).join('')}</tbody>
           <tfoot><tr><td colspan="4">Total of the what-ifs</td><td class="num" data-cell="upg-cost"></td><td></td><td class="num" data-cell="co2-cost"></td><td class="num" data-cell="wi-sum"></td><td></td></tr></tfoot>
         </table></div>
-        <p class="hint">An upgrade here is a paid upgrade (fixed price or bid), so the flight earns in the upgraded cabin and a booster on it is priced and earns there too.
+        <p class="hint">Upgrades can only be tried on planned flights; a booster can still be added to a flown one. An upgrade here is a paid upgrade (fixed price or bid), so the flight earns in the upgraded cabin and a booster on it is priced and earns there too.
           Enter the upgrade price you were offered; it is not estimated. Upgrades with miles or vouchers earn as booked, so they add no points.
           ${eur ? 'Booster costs are prefilled with an estimate of the lufthansa.com price by distance and the cabin paid for (continental Economy and Business, long-haul Business), '
           + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Booster costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
@@ -853,6 +855,8 @@
       $('[data-wi-apply]', tr).hidden = !plan.co2[f.id] && !plan.upgrade[f.id];
       const est = $('[data-cell="co2-est"]', tr), sel = $('[data-co2-level]', tr);
       if (est) est.innerHTML = co2EstCell(upgradedFlight(f, plan), sel.value);
+      const booked = $('[data-cell="co2-locked"]', tr);
+      if (booked) booked.textContent = lockedAdds(f, plan);
     };
     const setCo2 = (f, level, cost) => {
       if (level === f.co2Level && E.parseAmount(cost) === (+f.co2Cost || 0)) delete plan.co2[f.id];
@@ -891,7 +895,7 @@
         const o = plan.co2[f.id], u = plan.upgrade[f.id];
         if (!o && !u) return;
         const done = [];
-        if (u && E.canUpgrade(f)) { f.upgradeClass = u.cls; f.upgradeType = E.WHATIF_UPGRADE; f.upgradeCost = u.cost; done.push(`upgrade to ${u.cls}`); }
+        if (u && E.isPlanned(f) && E.canUpgrade(f)) { f.upgradeClass = u.cls; f.upgradeType = E.WHATIF_UPGRADE; f.upgradeCost = u.cost; done.push(`upgrade to ${u.cls}`); }
         if (o && !E.hasBooster(f)) { f.co2Level = o.level; f.co2Cost = o.level === 'none' ? 0 : o.cost; done.push(`booster ${MM.CO2_LABEL[f.co2Level]}`); }
         delete plan.co2[f.id]; delete plan.upgrade[f.id];
         save(); renderPlanner(); toast(`${f.flightNo}: ${done.join(' and ')} saved to the flight`);
@@ -958,34 +962,33 @@
     // upgrade and CO₂ what-ifs
     const f0 = sc.base.forecast, f1 = sc.withWhatIfs.forecast, diff = (t) => ({ p: t.p - f0.p, qp: t.qp - f0.qp, hon: t.hon - f0.hon });
     const signedCost = (v) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`;
-    set('[data-cell="wi-sum"]', `${plusPts(diff(f1))}<div class="cpu">${signedCost(sc.cost.whatIfExtra)}</div>`);
-    set('[data-cell="upg-cost"]', signedCost(sc.cost.upgradeExtra));
-    set('[data-cell="co2-cost"]', signedCost(sc.cost.co2Extra));
+    set('[data-cell="wi-sum"]', `${plusPts(diff(f1))}<div class="cpu">${signedCost(sc.cost.upgrades + sc.cost.co2)}</div>`);
+    set('[data-cell="upg-cost"]', signedCost(sc.cost.upgrades));
+    set('[data-cell="co2-cost"]', signedCost(sc.cost.co2));
 
-    // result card: every path on top of your forecast, so they can be compared
+    // result card: one step after the other, each adding only its own share, so the steps add up to the total
     const counted = (o) => Object.keys(o).filter(id => sc.base.rows.some(r => r.f.id === id && r.counts));
-    const upIds = counted(plan.upgrade).filter(id => E.canUpgrade(state.flights.find(f => f.id === id)));
+    const upIds = counted(plan.upgrade).filter(id => { const f = state.flights.find(x => x.id === id); return E.isPlanned(f) && E.canUpgrade(f); });
     const nUpg = upIds.length, nCo2 = counted(plan.co2).length;
     const flightsTxt = (n) => `${n} flight${n === 1 ? '' : 's'}`;
     const noPrice = upIds.filter(id => !plan.upgrade[id].cost).length;
-    const cmp = MM.STATUSES.find(k => E.rank(sc.status.forecast) < E.rank(k));   // the next status the paths go for
+    const cmp = MM.STATUSES.find(k => E.rank(sc.status.forecast) < E.rank(k));   // the next status the steps go for
     const unit = cmp === 'HON' ? 'hon' : 'qp';
-    const paths = [
-      { label: '+ upgrades', t: sc.withUpgrades.forecast, s: sc.status.withUpgrades, cost: sc.cost.upgradeExtra, show: true,
-        note: nUpg ? `${flightsTxt(nUpg)}${noPrice ? ` · <span class="pill warn">${noPrice} without a price</span>` : ''}` : 'none yet: pick a cabin under Try upgrade' },
-      { label: '+ CO₂ boosters', t: sc.withCo2.forecast, s: sc.status.withCo2, cost: sc.cost.co2Extra, show: true, note: nCo2 ? flightsTxt(nCo2) : 'none' },
-      { label: '+ upgrades & CO₂ boosters', t: sc.withWhatIfs.forecast, s: sc.status.withWhatIfs, cost: sc.cost.whatIfExtra, show: nUpg > 0 && nCo2 > 0,
-        note: 'a booster earns more on an upgraded flight' },
-      { label: '+ extra segments', t: sc.mixOnly, s: sc.status.mixOnly, cost: sc.cost.mix, show: true,
+    const zero = { p: 0, qp: 0, hon: 0 }, a = sc.adds, onUp = a.co2OnUpgrades;
+    const steps = [
+      { label: 'Flown so far', t: sc.base.actual, add: sc.base.actual, s: sc.status.actual, cost: sc.base.cost.actual.total, note: '' },
+      { label: '+ planned flights', t: f0, add: { p: f0.p - sc.base.actual.p, qp: f0.qp - sc.base.actual.qp, hon: f0.hon - sc.base.actual.hon }, s: sc.status.forecast, cost: sc.base.cost.plan.total, note: '= your forecast', bold: true },
+      { label: '+ upgrades', t: sc.withUpgrades.forecast, add: a.upgrades, s: sc.status.withUpgrades, cost: sc.cost.upgrades, what: true,
+        note: nUpg ? `${flightsTxt(nUpg)}${noPrice ? ` · <span class="pill warn">${noPrice} without a price</span>` : ''}` : 'none: pick a cabin under Try upgrade (planned flights)' },
+      { label: '+ CO₂ boosters', t: sc.withWhatIfs.forecast, add: a.co2, s: sc.status.withWhatIfs, cost: sc.cost.co2, what: true,
+        note: nCo2 ? `${flightsTxt(nCo2)}${onUp.p || onUp.hon ? ` · incl. ${plusPts(onUp)} because the flight is upgraded` : ''}` : 'none' },
+      { label: '+ extra segments', t: sc.total, add: a.mix, s: sc.status.total, cost: sc.cost.mix, what: true,
         note: plan.mix.length ? plan.mix.map(r => esc(mixLabel(r))).join(', ') : 'none' },
-    ].filter(x => x.show);
+    ];
     const missCell = (t, st) => (!cmp ? '<span class="muted">–</span>' : E.rank(st) >= E.rank(cmp) ? '✓ reached' : esc(missingTxt(E.gap(t, cmp, rules))));
-    const ptsCells = (t, rel) => ['p', 'qp', 'hon'].map(k => `<td class="num">${num(t[k])}${rel && t[k] !== f0[k] ? `<div class="muted">${signed(t[k] - f0[k])}</div>` : ''}</td>`).join('');
-    const extraCells = (t, cost) => {
-      const gain = t[unit] - f0[unit];
-      return `<td class="num">${cost ? `${cost < 0 ? '−' : '+'}${money(Math.abs(cost), true)}` : '<span class="muted">–</span>'}</td>
-        <td class="num">${gain > 0 && cost > 0 ? `<span class="cpu">${perUnit(cost, gain, unit)}</span>` : '<span class="muted">–</span>'}</td>`;
-    };
+    const ptsCells = (t, add, first) => ['p', 'qp', 'hon'].map(k => `<td class="num">${num(t[k])}${!first && add[k] ? `<div class="muted">${signed(add[k])}</div>` : ''}</td>`).join('');
+    const costCells = (cost, add, what) => `<td class="num">${cost ? `${what && cost > 0 ? '+' : cost < 0 ? '−' : ''}${money(Math.abs(cost), true)}` : '<span class="muted">–</span>'}</td>
+      <td class="num">${add[unit] > 0 && cost > 0 ? `<span class="cpu">${perUnit(cost, add[unit], unit)}</span>` : '<span class="muted">–</span>'}</td>`;
     const target = (key) => {
       const ok = E.rank(sc.status.total) >= E.rank(key);
       // reached.forecast includes flown segments, so check what was already flown first
@@ -997,26 +1000,25 @@
         : est ? `✓ with the extra segments by ${C.fmtDate(est.date)}` : '✓ reached with this scenario';
       return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? how : `missing ${missingTxt(E.gap(sc.total, key, rules))}`}</span></div>`;
     };
-    const allExtra = sc.cost.whatIfExtra + sc.cost.mix;
     set('#planResult', `
-      <div class="card-head"><h2>Scenario · CY ${year}</h2><span class="sub">compare each path to your forecast, then all of them together · saved in your .json</span></div>
+      <div class="card-head"><h2>Scenario · CY ${year}</h2><span class="sub">step by step on top of what you have flown · each step adds only its own share · saved in your .json</span></div>
       <div class="plan-targets">${MM.STATUSES.map(target).join('')}</div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Path</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th>
-          <th>${cmp ? `Missing for ${esc(MM.STATUS_LABEL[cmp])}` : 'Missing'}</th><th class="num">Cost</th><th class="num">Cost per extra ${UNIT_LABEL[unit]}</th></tr></thead>
-        <tbody>
-          <tr class="static"><td>Flown so far</td>${ptsCells(sc.base.actual)}<td>${badge(sc.status.actual)}</td><td>${missCell(sc.base.actual, sc.status.actual)}</td>
-            <td class="num">${money(sc.base.cost.actual.total, true)}</td><td class="num"><span class="cpu">${perUnit(sc.base.cost.actual.total, sc.base.actual[unit], unit)}</span></td></tr>
-          <tr class="static"><td><b>Your forecast</b><div class="muted wrap">flown + planned flights · the paths below add to it</div></td>${ptsCells(f0)}<td>${badge(sc.status.forecast)}</td>
-            <td>${missCell(f0, sc.status.forecast)}</td><td class="num">${money(sc.cost.base, true)}</td><td class="num"><span class="cpu">${perUnit(sc.cost.base, f0[unit], unit)}</span></td></tr>
-          ${paths.map(x => `<tr class="static"><td>${x.label}<div class="muted wrap">${x.note}</div></td>${ptsCells(x.t, true)}<td>${badge(x.s)}</td>
-            <td>${missCell(x.t, x.s)}</td>${extraCells(x.t, x.cost)}</tr>`).join('')}
-        </tbody>
-        <tfoot><tr><td>Everything<div class="muted">what-ifs + extra segments · ${money(sc.cost.total, true)} in ${year}</div></td>${ptsCells(sc.total, true)}<td>${badge(sc.status.total)}</td>
-          <td>${missCell(sc.total, sc.status.total)}</td>${extraCells(sc.total, allExtra)}</tr></tfoot>
+        <thead><tr><th>Step</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th>
+          <th>${cmp ? `Missing for ${esc(MM.STATUS_LABEL[cmp])}` : 'Missing'}</th><th class="num">Cost of the step</th><th class="num">Cost per ${UNIT_LABEL[unit]}</th></tr></thead>
+        <tbody>${steps.map((x, i) => `<tr class="static">
+          <td>${x.bold ? `<b>${x.label}</b>` : x.label}${x.note ? `<div class="muted wrap">${x.note}</div>` : ''}</td>
+          ${ptsCells(x.t, x.add, i === 0)}<td>${badge(x.s)}</td><td>${missCell(x.t, x.s)}</td>${costCells(x.cost, x.add, x.what)}</tr>`).join('')}</tbody>
+        <tfoot>
+          <tr><td>Scenario total<div class="muted">${money(sc.cost.total, true)} in ${year}</div></td>${ptsCells(sc.total, zero, true)}<td>${badge(sc.status.total)}</td>
+            <td>${missCell(sc.total, sc.status.total)}</td><td class="num">${money(sc.cost.total, true)}</td>
+            <td class="num"><span class="cpu">${perUnit(sc.cost.total, sc.total[unit], unit)}</span></td></tr>
+          <tr><td>What-ifs and extra segments<div class="muted">what the planner adds to your forecast</div></td>${ptsCells(a.total, zero, true)}<td></td><td></td>${costCells(sc.cost.extra, a.total, true)}</tr>
+        </tfoot>
       </table></div>
-      <p class="hint">Cost per extra ${UNIT_LABEL[unit]} is what a path adds in cost divided by the ${PT_LABEL[unit]} it adds${cmp ? `, the points ${esc(MM.STATUS_LABEL[cmp])} needs` : ''}: the lower, the cheaper the way to the status.
-        Upgrades without a price count as free here.</p>`);
+      <p class="hint">The grey numbers are what a step adds; the costs of the steps add up to the total. Boosters count on top of the upgrades, so a booster on an upgraded
+        flight earns its share of the upgraded cabin. Cost per ${UNIT_LABEL[unit]} is a step's cost divided by the ${PT_LABEL[unit]} it adds${cmp ? `, the points ${esc(MM.STATUS_LABEL[cmp])} needs` : ''}:
+        the lower, the cheaper that way to the status. Upgrades without a price count as free here.</p>`);
 
     renderGap(sc.total, sc.status.total);
     enhanceTables();

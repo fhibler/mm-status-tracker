@@ -477,13 +477,14 @@
 
   /**
    * Flight f with the planner's what-ifs of `plan` (one year's scenario) applied: an upgrade (plan.upgrade[id] =
-   * { cls, cost }, a paid upgrade, see E.WHATIF_UPGRADE) for a flight that can take one (E.canUpgrade), and a CO₂
-   * booster (plan.co2[id] = { level, cost }) for a flight without one. parts picks which of the two apply. The booster
-   * is priced and earns in the upgraded cabin. Returns f itself when nothing applies.
+   * { cls, cost }, a paid upgrade, see E.WHATIF_UPGRADE) for a planned flight that can take one (E.canUpgrade: a
+   * flown flight can't be upgraded any more, while CO₂ can still be compensated afterwards), and a CO₂ booster
+   * (plan.co2[id] = { level, cost }) for a flight without one. parts picks which of the two apply. The booster is
+   * priced and earns in the upgraded cabin. Returns f itself when nothing applies.
    */
-  E.whatIfFlight = (f, plan, parts = { upgrade: true, co2: true }) => {
+  E.whatIfFlight = (f, plan, parts = { upgrade: true, co2: true }, today = E.todayISO()) => {
     const u = parts.upgrade && (plan.upgrade || {})[f.id], c = parts.co2 && (plan.co2 || {})[f.id];
-    const up = u && E.canUpgrade(f) && E.upgradeClasses(f).includes(u.cls), boost = c && !E.hasBooster(f);
+    const up = u && E.isPlanned(f, today) && E.canUpgrade(f) && E.upgradeClasses(f).includes(u.cls), boost = c && !E.hasBooster(f);
     if (!up && !boost) return f;
     return {
       ...f,
@@ -493,45 +494,52 @@
   };
 
   /**
-   * What-if scenario for a calendar year, on top of the forecast (flown + planned flights, corrections, stays):
-   *  1. plan.upgrade = { flightId: { cls, cost } } – an upgrade per existing or planned flight that isn't upgraded
-   *     (an upgraded flight is locked, so a what-if for it is ignored), cost as typed in (never estimated)
+   * What-if scenario for a calendar year, on top of the forecast (flown + planned flights, corrections, stays), built
+   * in steps that each add only their own share, so the steps add up to the total:
+   *  1. plan.upgrade = { flightId: { cls, cost } } – an upgrade per planned flight that isn't upgraded (an upgraded
+   *     flight is locked and a flown one can't be upgraded any more, so a what-if for it is ignored), cost as typed in
+   *     (never estimated)
    *  2. plan.co2 = { flightId: { level, cost } } – a CO₂ booster per existing or planned flight without one (a flight
-   *     with a booster is locked, so a what-if for it is ignored)
+   *     with a booster is locked, so a what-if for it is ignored), on top of the upgrades: a booster on an upgraded
+   *     flight earns its share of the upgraded cabin's points (co2OnUpgrades: the part of step 2 that is only there
+   *     thanks to step 1)
    *  3. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in)
-   * Returns the year summary of each path the what-ifs open, so they can be compared: base (the forecast), withUpgrades
-   * (upgrades only), withCo2 (boosters only), withWhatIfs (both), mixOnly (the forecast plus the extra segments) and
-   * total (both what-ifs plus the extra segments), their extra cost over the forecast, the status each reaches (a
-   * starting status from the statement counts in every one, see E.yearSummary) and when each status of the whole
-   * scenario is reached (see E.planReached).
+   * Returns the year summary after each step (base = the forecast, withUpgrades, withWhatIfs = upgrades and boosters),
+   * the totals with the extra segments, what each step adds and costs, the status after each step (a starting status
+   * from the statement counts in every one, see E.yearSummary) and when each status of the whole scenario is reached
+   * (see E.planReached).
    */
   E.planScenario = (state, year, plan, today = E.todayISO()) => {
     const rules = state.settings.rules;
-    const summary = (parts) => E.yearSummary({ ...state, flights: state.flights.map(f => E.whatIfFlight(f, plan, parts)) }, year, today);
+    const summary = (parts) => E.yearSummary({ ...state, flights: state.flights.map(f => E.whatIfFlight(f, plan, parts, today)) }, year, today);
     const base = E.yearSummary(state, year, today);
     const withUpgrades = summary({ upgrade: true });
-    const withCo2 = summary({ co2: true });
     const withWhatIfs = summary({ upgrade: true, co2: true });
-    const total = { ...withWhatIfs.forecast }, mixOnly = { ...base.forecast };
+    const co2Alone = summary({ co2: true });   // only for co2OnUpgrades
+    const total = { ...withWhatIfs.forecast };
     let mixCost = 0;
     const mix = plan.mix.map(row => {
       const n = row.count, e = E.mixRowEarn(row, rules), cost = n * row.cost;
-      addEarn(total, e, n); addEarn(mixOnly, e, n);
+      addEarn(total, e, n);
       mixCost += cost;
       return { row, n, e, sum: { p: n * e.p, qp: n * e.qp, hon: n * e.hon }, cost };
     });
     const costOf = (s) => s.cost.all.total;
-    const extra = (s) => costOf(s) - costOf(base);
-    const statusOf = (t) => best(E.status(t, rules), E.statementStatus(state, year));
+    const diff = (a, b) => ({ p: a.p - b.p, qp: a.qp - b.qp, hon: a.hon - b.hon });
+    const co2Step = diff(withWhatIfs.forecast, withUpgrades.forecast), co2Own = diff(co2Alone.forecast, base.forecast);
     return {
-      base, withUpgrades, withCo2, withWhatIfs, mix, mixOnly, total, reached: E.planReached(withWhatIfs, mix, year, rules),
+      base, withUpgrades, withWhatIfs, mix, total, reached: E.planReached(withWhatIfs, mix, year, rules),
+      adds: {
+        upgrades: diff(withUpgrades.forecast, base.forecast), co2: co2Step, co2OnUpgrades: diff(co2Step, co2Own),
+        mix: diff(total, withWhatIfs.forecast), total: diff(total, base.forecast),
+      },
       cost: {
-        base: costOf(base), upgradeExtra: extra(withUpgrades), co2Extra: extra(withCo2), whatIfExtra: extra(withWhatIfs),
-        mix: mixCost, total: costOf(withWhatIfs) + mixCost,
+        base: costOf(base), upgrades: costOf(withUpgrades) - costOf(base), co2: costOf(withWhatIfs) - costOf(withUpgrades),
+        mix: mixCost, extra: costOf(withWhatIfs) - costOf(base) + mixCost, total: costOf(withWhatIfs) + mixCost,
       },
       status: {
         actual: base.statusActual, forecast: base.statusForecast, withUpgrades: withUpgrades.statusForecast,
-        withCo2: withCo2.statusForecast, withWhatIfs: withWhatIfs.statusForecast, mixOnly: statusOf(mixOnly), total: statusOf(total),
+        withWhatIfs: withWhatIfs.statusForecast, total: best(E.status(total, rules), E.statementStatus(state, year)),
       },
     };
   };
@@ -546,7 +554,7 @@
   E.withPlans = (state, today = E.todayISO()) => {
     const flights = state.flights.map(f => {
       const plan = state.plans[f.date.slice(0, 4)];
-      return plan ? E.whatIfFlight(f, plan) : f;
+      return plan ? E.whatIfFlight(f, plan, undefined, today) : f;
     });
     for (const [y, plan] of Object.entries(state.plans)) {
       const date = `${y}-12-31`;
