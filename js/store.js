@@ -16,7 +16,7 @@
     bookings: {},      // booking code -> { fare }: one fare per booking, counted once on one of its segments (E.fareHolders)
     adjustments: [],   // manual point corrections from the account statement
     stays: [],         // Marriott Bonvoy hotel stays (Points only, capped per year)
-    plans: {},         // planner scenarios per calendar year: { "2026": { co2: { flightId: { level, cost } }, mix: [row] } }
+    plans: {},         // planner scenarios per calendar year: { "2026": { co2: { flightId: { level, cost } }, upgrade: { flightId: { cls, cost } }, mix: [row] } }
     apiCache: {},
   });
 
@@ -81,15 +81,27 @@
     return f;
   };
 
+  /** An empty planner scenario for one calendar year (see MM.engine.planScenario). */
+  S.newPlan = () => ({ co2: {}, upgrade: {}, mix: [] });
+
   /**
-   * Drops bookings without segments and CO₂ what-ifs for flights that no longer exist, moved to another year, no
-   * longer take a booster (see E.canBoost) or have one (locked), since the planner neither shows nor resets those.
+   * Drops bookings without segments, CO₂ what-ifs for flights that no longer exist, moved to another year, no
+   * longer take a booster (see E.canBoost) or have one (locked), and upgrade what-ifs for flights that no longer exist,
+   * moved, can't take one (see E.canUpgrade: e.g. upgraded, which locks them) or whose cabin isn't above the booked
+   * one any more, since the planner neither shows nor resets those.
    */
   const prune = (state) => {
     const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
     for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
     const yearOf = new Map(state.flights.filter(f => E.canBoost(f) && !E.hasBooster(f)).map(f => [f.id, f.date.slice(0, 4)]));
     for (const [y, p] of Object.entries(state.plans)) for (const id of Object.keys(p.co2)) if (yearOf.get(id) !== y) delete p.co2[id];
+    const upgradable = new Map(state.flights.filter(E.canUpgrade).map(f => [f.id, f]));
+    for (const [y, p] of Object.entries(state.plans)) {
+      for (const [id, o] of Object.entries(p.upgrade || {})) {
+        const f = upgradable.get(id);
+        if (!f || f.date.slice(0, 4) !== y || !E.upgradeClasses(f).includes(o.cls)) delete p.upgrade[id];
+      }
+    }
     return state;
   };
 
@@ -179,6 +191,10 @@
       for (const [id, o] of Object.entries(isObj(p.co2) ? p.co2 : {})) {
         if (isObj(o) && MM.CO2_LEVELS.includes(o.level)) co2[id] = { level: o.level, cost: Math.max(0, +o.cost || 0) };
       }
+      const upgrade = {};
+      for (const [id, o] of Object.entries(isObj(p.upgrade) ? p.upgrade : {})) {
+        if (isObj(o) && MM.CLASSES.includes(o.cls)) upgrade[id] = { cls: o.cls, cost: Math.max(0, +o.cost || 0) };
+      }
       const safeId = safeIds();
       const mix = (Array.isArray(p.mix) ? p.mix : []).filter(isObj).map(r => S.fitMixRow(S.newMixRow({
         id: safeId(r.id), count: Math.max(0, Math.round(+r.count || 0)),
@@ -188,7 +204,7 @@
         co2Level: MM.CO2_LEVELS.includes(r.co2Level) ? r.co2Level : 'none',
         cost: Math.max(0, +r.cost || 0),
       })));
-      out[y] = { co2, mix };
+      out[y] = { co2, upgrade, mix };
     }
     return out;
   };

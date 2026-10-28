@@ -60,7 +60,7 @@
   /** Anything that "Load demo data" would replace. */
   const hasData = () => state.flights.length || state.adjustments.length || state.stays.length
     || JSON.stringify(state.settings) !== JSON.stringify(S.empty().settings)   // starting status, rules, number, currency
-    || Object.values(state.plans).some(p => p.mix.length || Object.keys(p.co2).length);
+    || Object.values(state.plans).some(p => p.mix.length || Object.keys(p.co2).length || Object.keys(p.upgrade).length);
   /** Date for a new item in the selected year: today in the current year, else mid-January (future) or mid-June (past). */
   const newItemDate = () => {
     const today = E.todayISO(), y = +today.slice(0, 4);
@@ -713,9 +713,9 @@
   };
 
   /* ================= planner view ================= */
-  /* Scenario per calendar year (saved in the .json): CO₂ what-ifs for existing and planned flights, plus a mix of
-     extra segments. Inputs only update the plan and the computed cells; adding / removing rows re-renders the view. */
-  const planFor = (y) => state.plans[y] || (state.plans[y] = { co2: {}, mix: [] });
+  /* Scenario per calendar year (saved in the .json): upgrade and CO₂ what-ifs for existing and planned flights, plus a
+     mix of extra segments. Inputs only update the plan and the computed cells; adding / removing rows re-renders the view. */
+  const planFor = (y) => state.plans[y] || (state.plans[y] = S.newPlan());
   const MIX_PRESETS = [
     { count: 2, kind: 'LHG', haul: 'continental', cls: 'Business', co2Level: 'none' },
     { count: 4, kind: 'LHG', haul: 'intercontinental', cls: 'Premium Economy', co2Level: 'medium' },
@@ -737,30 +737,53 @@
   };
   let co2OnlyHon = false, co2BulkLevel = 'medium';   // bulk booster controls: only flights that earn HON Circle Points; level
   const co2EstCell = (f, level) => { const est = level !== 'none' && co2Est(f, level); return est ? co2EstTxt(est) : ''; };
+  /** Flight f with only the upgrade what-if of the plan: the booster is priced in its cabin. */
+  const upgradedFlight = (f, plan) => E.whatIfFlight(f, plan, { upgrade: true });
+  /** What the plan's what-ifs for flight f add (P · QP · HON) and cost, and the cost per added QP (HON for HON-only gains). */
+  const whatIfAdds = (f, plan) => {
+    const rules = state.settings.rules, w = E.whatIfFlight(f, plan), a = E.earn(f, rules), b = E.earn(w, rules);
+    const add = { p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon };
+    const cost = E.cost(w, 0).total - E.cost(f, 0).total;
+    return { add, cost, any: w !== f };
+  };
+  const addsCell = (f, plan) => {
+    const { add, cost, any } = whatIfAdds(f, plan);
+    if (!any) return '<span class="muted">–</span>';
+    const k = add.qp > 0 ? 'qp' : 'hon';
+    return `${plusPts(add)}<div class="cpu">${money(cost, true)}${cost > 0 ? ` · ${perUnit(cost, add[k], k)}` : ''}</div>`;
+  };
 
   const renderPlanner = () => {
     const host = $('#view-planner');
     const plan = planFor(year);
     const sum = E.yearSummary(state, year);
-    const co2Rows = sum.rows.filter(r => E.canBoost(r.f));
+    const wiRows = sum.rows.filter(r => E.canBoost(r.f));
     const hasAvg = MM.CO2_LEVELS.some(l => l !== 'none' && (E.co2CostEstimate(state, l, 'continental') || E.co2CostEstimate(state, l, 'intercontinental')));
     const eur = state.settings.currency === 'EUR';
 
-    const co2Row = (r) => {
-      const f = r.f, o = plan.co2[f.id], level = o ? o.level : f.co2Level, locked = E.hasBooster(f);
-      return `<tr data-co2-id="${esc(f.id)}" class="static${r.planned ? ' planned' : ''}${locked ? ' locked' : ''}">
+    const wiRow = (r) => {
+      const f = r.f, o = plan.co2[f.id], u = plan.upgrade[f.id], level = o ? o.level : f.co2Level;
+      const locked = E.hasBooster(f), canUp = E.canUpgrade(f), upType = MM.UPGRADE_TYPES[f.upgradeType];
+      const upCell = canUp
+        ? `<td><select data-upg-cls aria-label="Upgrade for ${esc(f.flightNo)}"><option value="">No upgrade</option>${opts(E.upgradeClasses(f), u ? u.cls : '')}</select></td>
+        <td class="num"><input inputmode="decimal" autocomplete="off" data-upg-cost value="${u ? u.cost || '' : ''}" placeholder="your price" aria-label="Upgrade cost" class="num-input" ${u ? '' : 'disabled'}></td>`
+        : E.isUpgraded(f)
+          ? `<td>${esc(E.flownClass(f))}<div class="muted">${upType ? esc(upType.label) + ' · ' : ''}upgraded · locked</div></td><td class="num">${money(f.upgradeCost)}</td>`
+          : '<td><span class="muted">–</span></td><td></td>';
+      const co2Cell = locked
+        ? `<td>${esc(MM.CO2_LABEL[f.co2Level])} <button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button>
+          <div class="muted">compensated · locked</div></td>
+        <td class="num">${money(f.co2Cost)}<div class="muted">adds ${plusPts(E.co2Gain({ ...upgradedFlight(f, plan), co2Level: 'none' }, f.co2Level, state.settings.rules))}</div></td>`
+        : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
+        <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : ''}" aria-label="Booster cost" class="num-input">
+          <div class="muted" data-cell="co2-est">${co2EstCell(upgradedFlight(f, plan), level)}</div></td>`;
+      return `<tr data-wi-id="${esc(f.id)}" class="static${r.planned ? ' planned' : ''}">
         <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
-        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(r.e.cls)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.flownClass(f) !== r.e.cls || E.co2Class(f) !== r.e.cls ? `<div class="muted">flown ${esc(E.flownClass(f))} · CO₂ priced as ${esc(E.co2Class(f))}</div>` : ''}</td>
-        <td>${f.co2Level !== 'none' ? `${esc(MM.CO2_LABEL[f.co2Level])}<div class="muted">${money(f.co2Cost)}</div>` : '<span class="muted">–</span>'}</td>
-        ${locked ? `<td><span class="muted">compensated · locked</span></td>
-        <td class="num">${plusPts(E.co2Gain({ ...f, co2Level: 'none' }, f.co2Level, state.settings.rules))}</td><td></td>
-        <td><button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button></td>`
-        : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
-        <td class="num" data-cell="delta">${plusPts(E.co2Gain(f, level, state.settings.rules))}</td>
-        <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : ''}" aria-label="Booster cost" class="num-input">
-          <div class="muted" data-cell="co2-est">${co2EstCell(f, level)}</div></td>
-        <td><button class="btn small" data-co2-apply ${o ? '' : 'hidden'} title="Save this booster and cost to the flight">Apply</button></td>`}
+        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(f.bookedClass)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.earningClass(f) !== f.bookedClass ? `<div class="muted">earns ${esc(r.e.cls)}</div>` : ''}</td>
+        ${upCell}${co2Cell}
+        <td class="num" data-cell="delta">${addsCell(f, plan)}</td>
+        <td><button class="btn small" data-wi-apply ${o || u ? '' : 'hidden'} title="Save this upgrade and booster with their costs to the flight">Apply</button></td>
       </tr>`;
     };
 
@@ -798,58 +821,80 @@
       </div>
       <div class="card">
         <div class="card-head">
-          <h2>CO₂ compensation · existing and planned flights · CY ${year}</h2>
-          <span class="sub">try a booster per flight and see what it adds · Apply saves it to the flight, which locks it until you remove the compensation (✕)</span>
-          ${co2Rows.length ? `<div class="right">
+          <h2>Upgrades & CO₂ compensation · existing and planned flights · CY ${year}</h2>
+          <span class="sub">try an upgrade and a booster per flight and see what they add · Apply saves them to the flight, which locks it until you change the upgrade in Activity or remove the compensation (✕)</span>
+          ${wiRows.length ? `<div class="right">
             <select id="co2Bulk" aria-label="Booster to set">${opts(MM.CO2_LEVELS.filter(l => l !== 'none'), co2BulkLevel, l => MM.CO2_LABEL[l])}</select>
             <button class="btn small" data-co2-bulk="flown">Set for flown</button>
             <button class="btn small" data-co2-bulk="planned">Set for planned</button>
             <button class="btn small" data-co2-bulk="all">Set for all</button>
             <label class="check" title="Set the booster only on flights that earn HON Circle Points"><input type="checkbox" id="co2OnlyHon" ${co2OnlyHon ? 'checked' : ''}> Only HON</label>
-            <button class="btn small" data-co2-bulk="reset">Reset</button>
+            <button class="btn small" data-co2-bulk="reset" title="Clear every upgrade and booster what-if of ${year}">Reset</button>
           </div>` : ''}
         </div>
-        ${co2Rows.length ? `<div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Flight</th><th>Haul · cabin</th><th>Booked booster</th><th>Try booster</th>
-            <th class="num">Adds<div class="muted">P · QP · HON</div></th><th class="num">Booster cost</th><th></th></tr></thead>
-          <tbody>${co2Rows.map(co2Row).join('')}</tbody>
-          <tfoot><tr><td colspan="5">Total of the what-ifs</td><td class="num" data-cell="co2-sum"></td><td class="num" data-cell="co2-cost"></td><td></td></tr></tfoot>
+        ${wiRows.length ? `<div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Flight</th><th>Haul · booked</th><th>Try upgrade</th><th class="num">Upgrade cost</th><th>Try booster</th><th class="num">Booster cost</th>
+            <th class="num">Adds<div class="muted">P · QP · HON · cost</div></th><th></th></tr></thead>
+          <tbody>${wiRows.map(wiRow).join('')}</tbody>
+          <tfoot><tr><td colspan="4">Total of the what-ifs</td><td class="num" data-cell="upg-cost"></td><td></td><td class="num" data-cell="co2-cost"></td><td class="num" data-cell="wi-sum"></td><td></td></tr></tfoot>
         </table></div>
-        <p class="hint">${eur ? 'Costs are prefilled with an estimate of the lufthansa.com price by distance and the cabin paid for (continental Economy and Business, long-haul Business), '
-          + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
+        <p class="hint">An upgrade here is a paid upgrade (fixed price or bid), so the flight earns in the upgraded cabin and a booster on it is priced and earns there too.
+          Enter the upgrade price you were offered; it is not estimated. Upgrades with miles or vouchers earn as booked, so they add no points.
+          ${eur ? 'Booster costs are prefilled with an estimate of the lufthansa.com price by distance and the cabin paid for (continental Economy and Business, long-haul Business), '
+          + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Booster costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
           Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`
         : `<p class="muted m0">No flights with Points in ${year}. Add flights in Activity first.</p>`}
       </div>
       <div class="card" id="gapCard"></div>`;
 
-    /* --- CO₂ what-ifs --- */
-    const setOverride = (tr, f, level, cost) => {
+    /* --- upgrade and CO₂ what-ifs --- */
+    const refreshRow = (tr, f) => {
+      $('[data-cell="delta"]', tr).innerHTML = addsCell(f, plan);
+      $('[data-wi-apply]', tr).hidden = !plan.co2[f.id] && !plan.upgrade[f.id];
+      const est = $('[data-cell="co2-est"]', tr), sel = $('[data-co2-level]', tr);
+      if (est) est.innerHTML = co2EstCell(upgradedFlight(f, plan), sel.value);
+    };
+    const setCo2 = (f, level, cost) => {
       if (level === f.co2Level && E.parseAmount(cost) === (+f.co2Cost || 0)) delete plan.co2[f.id];
       else plan.co2[f.id] = { level, cost: E.parseAmount(cost) };
-      $('[data-cell="delta"]', tr).textContent = plusPts(E.co2Gain(f, level, state.settings.rules));
-      $('[data-co2-apply]', tr).hidden = !plan.co2[f.id];
-      $('[data-cell="co2-est"]', tr).innerHTML = co2EstCell(f, level);
     };
-    $$('tr[data-co2-id]', host).forEach(tr => {
-      const f = state.flights.find(x => x.id === tr.dataset.co2Id);
+    $$('tr[data-wi-id]', host).forEach(tr => {
+      const f = state.flights.find(x => x.id === tr.dataset.wiId);
       const remove = $('[data-co2-remove]', tr);
-      if (remove) {   // compensated: locked, the only action is removing the compensation (after a second click)
+      if (remove) {   // compensated: the booster is locked, the only action on it is removing the compensation (after a second click)
         remove.addEventListener('click', () => confirmInline(remove, 'Remove?', () => {
           const level = f.co2Level;
           S.removeBooster(state, f.id);
           save(); renderPlanner(); toast(`${f.flightNo}: ${MM.CO2_LABEL[level]} removed from the flight`);
         }));
-        return;
       }
       const sel = $('[data-co2-level]', tr), cost = $('[data-co2-cost]', tr);
-      sel.addEventListener('change', () => { cost.value = co2CostFor(f, sel.value) || ''; setOverride(tr, f, sel.value, cost.value); planChanged(); });
-      cost.addEventListener('input', () => { setOverride(tr, f, sel.value, cost.value); planChanged(); });
-      $('[data-co2-apply]', tr).addEventListener('click', () => {
-        const o = plan.co2[f.id];
-        if (!o) return;
-        f.co2Level = o.level; f.co2Cost = o.level === 'none' ? 0 : o.cost;
-        delete plan.co2[f.id];
-        save(); renderPlanner(); toast(`${f.flightNo}: booster ${MM.CO2_LABEL[f.co2Level]} saved to the flight`);
+      if (sel) {
+        sel.addEventListener('change', () => { cost.value = co2CostFor(upgradedFlight(f, plan), sel.value) || ''; setCo2(f, sel.value, cost.value); refreshRow(tr, f); planChanged(); });
+        cost.addEventListener('input', () => { setCo2(f, sel.value, cost.value); refreshRow(tr, f); planChanged(); });
+      }
+      const upSel = $('[data-upg-cls]', tr), upCost = $('[data-upg-cost]', tr);
+      if (upSel) {
+        const setUpgrade = () => {
+          // a booster cost that was the estimate for the old cabin follows the new one
+          const before = sel && sel.value !== 'none' && E.parseAmount(cost.value) === co2CostFor(upgradedFlight(f, plan), sel.value);
+          if (upSel.value) plan.upgrade[f.id] = { cls: upSel.value, cost: E.parseAmount(upCost.value) };
+          else delete plan.upgrade[f.id];
+          upCost.disabled = !upSel.value;
+          if (before) { cost.value = co2CostFor(upgradedFlight(f, plan), sel.value) || ''; setCo2(f, sel.value, cost.value); }
+          refreshRow(tr, f); planChanged();
+        };
+        upSel.addEventListener('change', () => { setUpgrade(); if (upSel.value && !upCost.value) upCost.focus(); });
+        upCost.addEventListener('input', setUpgrade);
+      }
+      $('[data-wi-apply]', tr).addEventListener('click', () => {
+        const o = plan.co2[f.id], u = plan.upgrade[f.id];
+        if (!o && !u) return;
+        const done = [];
+        if (u && E.canUpgrade(f)) { f.upgradeClass = u.cls; f.upgradeType = E.WHATIF_UPGRADE; f.upgradeCost = u.cost; done.push(`upgrade to ${u.cls}`); }
+        if (o && !E.hasBooster(f)) { f.co2Level = o.level; f.co2Cost = o.level === 'none' ? 0 : o.cost; done.push(`booster ${MM.CO2_LABEL[f.co2Level]}`); }
+        delete plan.co2[f.id]; delete plan.upgrade[f.id];
+        save(); renderPlanner(); toast(`${f.flightNo}: ${done.join(' and ')} saved to the flight`);
       });
     });
     const onlyHon = $('#co2OnlyHon', host);
@@ -858,13 +903,14 @@
     if (bulk) bulk.addEventListener('change', () => { co2BulkLevel = bulk.value; });
     $$('[data-co2-bulk]', host).forEach(b => b.addEventListener('click', () => {
       const mode = b.dataset.co2Bulk, level = co2BulkLevel;
-      if (mode === 'reset') plan.co2 = {};
-      for (const r of co2Rows) {
+      if (mode === 'reset') { plan.co2 = {}; plan.upgrade = {}; }
+      for (const r of wiRows) {
         if (E.hasBooster(r.f)) continue;   // compensated flights are locked
         if (mode !== 'all' && !(mode === 'planned' && r.planned) && !(mode === 'flown' && !r.planned)) continue;
-        if (co2OnlyHon && !E.earn({ ...r.f, co2Level: 'none' }, state.settings.rules).hon) continue;
+        const up = upgradedFlight(r.f, plan);   // with its upgrade what-if: HON Circle Points and the booster's price follow the cabin
+        if (co2OnlyHon && !E.earn({ ...up, co2Level: 'none' }, state.settings.rules).hon) continue;
         if (level === r.f.co2Level) delete plan.co2[r.f.id];
-        else plan.co2[r.f.id] = { level, cost: co2CostFor(r.f, level) };
+        else plan.co2[r.f.id] = { level, cost: co2CostFor(up, level) };
       }
       save(); renderPlanner();
     }));
@@ -909,19 +955,37 @@
     const nSeg = sc.mix.reduce((a, m) => a + m.n, 0);
     set('[data-cell="mix-n"]', `· ${nSeg} segment${nSeg === 1 ? '' : 's'}`);
     set('[data-cell="mix-sum"]', `<b>${pts(mixSum)}</b><div class="muted">${money(sc.cost.mix, true)}</div>`);
-    // CO₂ what-ifs
-    const f0 = sc.base.forecast, f1 = sc.withCo2.forecast;
-    set('[data-cell="co2-sum"]', plusPts({ p: f1.p - f0.p, qp: f1.qp - f0.qp, hon: f1.hon - f0.hon }));
-    set('[data-cell="co2-cost"]', `${sc.cost.co2Extra < 0 ? '−' : '+'}${money(Math.abs(sc.cost.co2Extra))}`);
+    // upgrade and CO₂ what-ifs
+    const f0 = sc.base.forecast, f1 = sc.withWhatIfs.forecast, diff = (t) => ({ p: t.p - f0.p, qp: t.qp - f0.qp, hon: t.hon - f0.hon });
+    const signedCost = (v) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`;
+    set('[data-cell="wi-sum"]', `${plusPts(diff(f1))}<div class="cpu">${signedCost(sc.cost.whatIfExtra)}</div>`);
+    set('[data-cell="upg-cost"]', signedCost(sc.cost.upgradeExtra));
+    set('[data-cell="co2-cost"]', signedCost(sc.cost.co2Extra));
 
-    // result card
-    const nCo2 = Object.keys(plan.co2).filter(id => sc.base.rows.some(r => r.f.id === id && r.counts)).length;
-    const steps = [
-      ['Flown so far', sc.base.actual, sc.status.actual, sc.base.cost.actual.total, ''],
-      ['+ planned flights', sc.base.forecast, sc.status.forecast, sc.base.cost.plan.total, 'your forecast'],
-      ['+ CO₂ what-ifs', sc.withCo2.forecast, sc.status.withCo2, sc.cost.co2Extra, nCo2 ? `${nCo2} flight${nCo2 === 1 ? '' : 's'}` : 'none'],
-      ['+ extra segments', sc.total, sc.status.total, sc.cost.mix, plan.mix.length ? plan.mix.map(r => esc(mixLabel(r))).join(', ') : 'none'],
-    ];
+    // result card: every path on top of your forecast, so they can be compared
+    const counted = (o) => Object.keys(o).filter(id => sc.base.rows.some(r => r.f.id === id && r.counts));
+    const upIds = counted(plan.upgrade).filter(id => E.canUpgrade(state.flights.find(f => f.id === id)));
+    const nUpg = upIds.length, nCo2 = counted(plan.co2).length;
+    const flightsTxt = (n) => `${n} flight${n === 1 ? '' : 's'}`;
+    const noPrice = upIds.filter(id => !plan.upgrade[id].cost).length;
+    const cmp = MM.STATUSES.find(k => E.rank(sc.status.forecast) < E.rank(k));   // the next status the paths go for
+    const unit = cmp === 'HON' ? 'hon' : 'qp';
+    const paths = [
+      { label: '+ upgrades', t: sc.withUpgrades.forecast, s: sc.status.withUpgrades, cost: sc.cost.upgradeExtra, show: true,
+        note: nUpg ? `${flightsTxt(nUpg)}${noPrice ? ` · <span class="pill warn">${noPrice} without a price</span>` : ''}` : 'none yet: pick a cabin under Try upgrade' },
+      { label: '+ CO₂ boosters', t: sc.withCo2.forecast, s: sc.status.withCo2, cost: sc.cost.co2Extra, show: true, note: nCo2 ? flightsTxt(nCo2) : 'none' },
+      { label: '+ upgrades & CO₂ boosters', t: sc.withWhatIfs.forecast, s: sc.status.withWhatIfs, cost: sc.cost.whatIfExtra, show: nUpg > 0 && nCo2 > 0,
+        note: 'a booster earns more on an upgraded flight' },
+      { label: '+ extra segments', t: sc.mixOnly, s: sc.status.mixOnly, cost: sc.cost.mix, show: true,
+        note: plan.mix.length ? plan.mix.map(r => esc(mixLabel(r))).join(', ') : 'none' },
+    ].filter(x => x.show);
+    const missCell = (t, st) => (!cmp ? '<span class="muted">–</span>' : E.rank(st) >= E.rank(cmp) ? '✓ reached' : esc(missingTxt(E.gap(t, cmp, rules))));
+    const ptsCells = (t, rel) => ['p', 'qp', 'hon'].map(k => `<td class="num">${num(t[k])}${rel && t[k] !== f0[k] ? `<div class="muted">${signed(t[k] - f0[k])}</div>` : ''}</td>`).join('');
+    const extraCells = (t, cost) => {
+      const gain = t[unit] - f0[unit];
+      return `<td class="num">${cost ? `${cost < 0 ? '−' : '+'}${money(Math.abs(cost), true)}` : '<span class="muted">–</span>'}</td>
+        <td class="num">${gain > 0 && cost > 0 ? `<span class="cpu">${perUnit(cost, gain, unit)}</span>` : '<span class="muted">–</span>'}</td>`;
+    };
     const target = (key) => {
       const ok = E.rank(sc.status.total) >= E.rank(key);
       // reached.forecast includes flown segments, so check what was already flown first
@@ -929,23 +993,30 @@
       const how = done ? `✓ reached on ${C.fmtDate(done)}`
         : sc.base.fromStatement && E.rank(sc.status.actual) >= E.rank(key) ? '✓ earned as per your statement'
         : fc ? `✓ with your planned flights on ${C.fmtDate(fc)}`
-        : est && est.step === 'co2' ? `✓ with the CO₂ what-ifs on ${C.fmtDate(est.date)}`
+        : est && est.step === 'whatif' ? `✓ with the upgrade / CO₂ what-ifs on ${C.fmtDate(est.date)}`
         : est ? `✓ with the extra segments by ${C.fmtDate(est.date)}` : '✓ reached with this scenario';
       return `<div class="plan-target ${ok ? 'ok' : ''}">${badge(key)}<span>${ok ? how : `missing ${missingTxt(E.gap(sc.total, key, rules))}`}</span></div>`;
     };
-    const signedMoney = (v, i) => (i > 0 && v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v), true);
+    const allExtra = sc.cost.whatIfExtra + sc.cost.mix;
     set('#planResult', `
-      <div class="card-head"><h2>Scenario · CY ${year}</h2><span class="sub">your forecast plus the extra segments and CO₂ what-ifs below · saved in your .json</span></div>
+      <div class="card-head"><h2>Scenario · CY ${year}</h2><span class="sub">compare each path to your forecast, then all of them together · saved in your .json</span></div>
       <div class="plan-targets">${MM.STATUSES.map(target).join('')}</div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Step</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th><th class="num">Cost</th></tr></thead>
-        <tbody>${steps.map(([label, t, s, cost, note], i) => `<tr class="static">
-          <td>${label}${note ? `<div class="muted wrap">${note}</div>` : ''}</td>
-          <td class="num">${num(t.p)}</td><td class="num">${num(t.qp)}</td><td class="num">${num(t.hon)}</td>
-          <td>${badge(s)}</td><td class="num">${signedMoney(cost, i)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>Scenario total</td><td class="num">${num(sc.total.p)}</td><td class="num">${num(sc.total.qp)}</td><td class="num">${num(sc.total.hon)}</td>
-          <td>${badge(sc.status.total)}</td><td class="num">${money(sc.cost.total, true)}<div class="cpu">${perUnit(sc.cost.total, sc.total.qp, 'qp')}</div></td></tr></tfoot>
-      </table></div>`);
+        <thead><tr><th>Path</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th>
+          <th>${cmp ? `Missing for ${esc(MM.STATUS_LABEL[cmp])}` : 'Missing'}</th><th class="num">Cost</th><th class="num">Cost per extra ${UNIT_LABEL[unit]}</th></tr></thead>
+        <tbody>
+          <tr class="static"><td>Flown so far</td>${ptsCells(sc.base.actual)}<td>${badge(sc.status.actual)}</td><td>${missCell(sc.base.actual, sc.status.actual)}</td>
+            <td class="num">${money(sc.base.cost.actual.total, true)}</td><td class="num"><span class="cpu">${perUnit(sc.base.cost.actual.total, sc.base.actual[unit], unit)}</span></td></tr>
+          <tr class="static"><td><b>Your forecast</b><div class="muted wrap">flown + planned flights · the paths below add to it</div></td>${ptsCells(f0)}<td>${badge(sc.status.forecast)}</td>
+            <td>${missCell(f0, sc.status.forecast)}</td><td class="num">${money(sc.cost.base, true)}</td><td class="num"><span class="cpu">${perUnit(sc.cost.base, f0[unit], unit)}</span></td></tr>
+          ${paths.map(x => `<tr class="static"><td>${x.label}<div class="muted wrap">${x.note}</div></td>${ptsCells(x.t, true)}<td>${badge(x.s)}</td>
+            <td>${missCell(x.t, x.s)}</td>${extraCells(x.t, x.cost)}</tr>`).join('')}
+        </tbody>
+        <tfoot><tr><td>Everything<div class="muted">what-ifs + extra segments · ${money(sc.cost.total, true)} in ${year}</div></td>${ptsCells(sc.total, true)}<td>${badge(sc.status.total)}</td>
+          <td>${missCell(sc.total, sc.status.total)}</td>${extraCells(sc.total, allExtra)}</tr></tfoot>
+      </table></div>
+      <p class="hint">Cost per extra ${UNIT_LABEL[unit]} is what a path adds in cost divided by the ${PT_LABEL[unit]} it adds${cmp ? `, the points ${esc(MM.STATUS_LABEL[cmp])} needs` : ''}: the lower, the cheaper the way to the status.
+        Upgrades without a price count as free here.</p>`);
 
     renderGap(sc.total, sc.status.total);
     enhanceTables();
