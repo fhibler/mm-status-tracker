@@ -771,7 +771,7 @@
         <td class="num"><input inputmode="decimal" autocomplete="off" data-upg-cost value="${u ? u.cost || '' : ''}" placeholder="your price" aria-label="Upgrade cost" class="num-input" ${u ? '' : 'disabled'}></td>`
         : E.isUpgraded(f)
           ? `<td>${esc(E.flownClass(f))}<div class="muted">${upType ? esc(upType.label) + ' · ' : ''}upgraded · locked</div></td><td class="num">${money(f.upgradeCost)}</td>`
-          : `<td><span class="muted">${r.planned ? '–' : 'flown · too late'}</span></td><td></td>`;
+          : `<td><span class="muted">${r.planned ? '–' : 'flown'}</span></td><td></td>`;
       const co2Cell = locked
         ? `<td>${esc(MM.CO2_LABEL[f.co2Level])} <button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button>
           <div class="muted">compensated · locked</div></td>
