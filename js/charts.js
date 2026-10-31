@@ -144,7 +144,7 @@
       for (const r of on) {
         const label = r.adj ? `Correction: ${esc(r.adj.remark)}`
           : r.stay ? `Marriott: ${esc(r.stay.hotel || 'hotel stay')}`
-          : `${esc(r.f.flightNo)} ${r.f.route && r.f.route.origin && r.f.route.destination ? esc(r.f.route.origin.iata + '→' + r.f.route.destination.iata) : ''}`;
+          : `${r.booster ? 'CO₂ booster ' : ''}${esc(r.f.flightNo)} ${r.f.route && r.f.route.origin && r.f.route.destination ? esc(r.f.route.origin.iata + '→' + r.f.route.destination.iata) : ''}`;
         html += `<div class="row muted"><span>${label}</span><span>${r.e[k] < 0 ? '' : '+'}${fmt(r.e[k])}</span></div>`;
       }
       C.showTip(html, evt);

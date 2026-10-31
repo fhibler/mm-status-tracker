@@ -275,11 +275,12 @@
 
   const renderCostChart = (sum) => {
     const data = C.MONTHS.map(() => ({ flight: 0, upgrade: 0, co2: 0, planned: 0, n: 0 }));
-    for (const r of sum.rows) {
-      if (!r.counts) continue;
+    for (const r of sum.events) {
+      if (!r.f || !r.counts) continue;   // segments and the planned boosters of flown ones
       const mIdx = +r.date.slice(5, 7) - 1;
       const d = data[mIdx];
-      d.flight += r.c.flight; d.upgrade += r.c.upgrade; d.co2 += r.c.co2; d.n++;
+      d.flight += r.c.flight; d.upgrade += r.c.upgrade; d.co2 += r.c.co2;
+      if (!r.booster) d.n++;
       if (r.planned) d.planned += r.c.total;
     }
     C.stackedBars($('#costChart'), {

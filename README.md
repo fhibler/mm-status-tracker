@@ -47,6 +47,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     and costs add up to the total, plus the status after it, what is still missing for the next status, and its cost
     per QP (HON Circle Points when HON Circle is next). It also shows when each status is reached and how many more
     segments of one type would close the gap.
+  - The dashboard's "incl. Planner" button counts the scenario as planned: a booster what-if on a flown flight adds to
+    the forecast and the planned cost, while what you have flown and spent stays as it is.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
   to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are

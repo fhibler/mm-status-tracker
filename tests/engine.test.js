@@ -436,6 +436,10 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
       assert.strictEqual(`${pts(w.forecast)}:${w.cost.all.total}`, `${pts(s.total)}:${s.cost.total}`);
     }
     assert.strictEqual(pts(E.planScenario(us, 2026, up, '2026-07-05').adds.upgrades), '0,0,0');
+    // the booster what-if of a flown flight is planned: what was flown and spent stays as it was
+    const fl = E.yearSummary(E.withPlans(state({ flights: [u, v], plans: { 2026: up } }), '2026-07-05'), 2026, '2026-07-05');
+    assert.strictEqual(`${pts(fl.actual)}:${fl.cost.actual.total}:${pts(fl.forecast)}:${fl.cost.plan.total}:${fl.rows.length}:${fl.events.filter(x => x.planned).map(x => (x.booster ? 'booster' : x.f.flightNo))}`,
+      '280,280,200:300:336,336,240:350:3:booster,Planner');
     // loading drops what-ifs for locked flights and cabins that aren't above the booked one; upgrading the flight drops its what-if
     const lu = state({ flights: [u, v], plans: { 2026: { upgrade: { u: { cls: 'First', cost: '700' }, v: { cls: 'First', cost: 1 }, x: { cls: 'Bogus' } } } } });
     assert.strictEqual(JSON.stringify(lu.plans['2026'].upgrade), '{"u":{"cls":"First","cost":700}}');

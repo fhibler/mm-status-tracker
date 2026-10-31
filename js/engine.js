@@ -300,6 +300,8 @@
 
   /** Empty totals { p, qp, hon, qpRail, honRail } (rail values are part of qp / hon, see E.effective). */
   const noPoints = () => ({ p: 0, qp: 0, hon: 0, qpRail: 0, honRail: 0 });
+  /** Points b minus points a (P · QP · HON). */
+  const diff = (b, a) => ({ p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon });
   /** Adds n × earning e (E.earn) to totals t. */
   const addEarn = (t, e, n = 1) => {
     t.p += n * e.p; t.qp += n * e.qp; t.hon += n * e.hon;
@@ -326,6 +328,8 @@
    * are planned. A starting status from the statement earned in this year raises statusActual / statusForecast
    * (fromStatement: it is higher than the status earned with the tracked items); it has no date in `reached`.
    * unknown: flights in the forecast that would earn but have no haul.
+   * A flown flight with a planner CO₂ what-if (f.asFlown = the flight as flown, see planned) counts as flown, and its
+   * booster as a planned event on the same date (events only: { …, f, booster: true }, e and c = what it adds).
    */
   E.yearSummary = (state, year, today = E.todayISO()) => {
     const rules = state.settings.rules;
@@ -344,30 +348,40 @@
     const rows = [], adjustments = [], stays = [], events = [];
     let unknown = 0;
     const holders = E.fareHolders(state, today);
+    /** Counts an event in the forecast (if it counts) and, unless it is planned, in what was flown; `by` names it. */
+    const count = (ev, by) => {
+      if (ev.counts) {
+        addEarn(all, ev.e);
+        for (const k of Object.keys(ev.c)) { (ev.planned ? cost.plan : cost.actual)[k] += ev.c[k]; cost.all[k] += ev.c[k]; }
+        noteReached(all, reached.forecast, ev.date, rules);
+        noteReached(all, reached.forecastBy, by, rules);
+      }
+      if (!ev.planned) {
+        addEarn(act, ev.e);
+        noteReached(act, reached.actual, ev.date, rules);
+      }
+      events.push(ev);
+    };
     for (const it of items) {
       const isAdj = it.kind === 'adj', isStay = it.kind === 'stay';
       const date = it.date;
       const planned = E.isPlanned(it, today);
       const counts = isAdj || isStay || !planned || it.f.includeInPlan !== false;
-      const e = isAdj ? E.adjustmentEarn(it.a) : isStay ? E.stayEarn(it.s, rules, stayTotal.p) : E.earn(it.f, rules);
-      const c = isAdj || isStay ? noCost() : E.cost(it.f, E.segmentFare(state, it.f, holders));
-      if (it.kind === 'flight' && counts && e.unknown && e.group !== 'NONE') unknown++;
-      if (counts) {
-        addEarn(all, e);
-        for (const k of Object.keys(c)) { (planned ? cost.plan : cost.actual)[k] += c[k]; cost.all[k] += c[k]; }
-        noteReached(all, reached.forecast, date, rules);
-        noteReached(all, reached.forecastBy, isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : it.f.flightNo, rules);
-      }
-      if (!planned) {
-        addEarn(act, e);
-        noteReached(act, reached.actual, date, rules);
-      }
+      const f = isAdj || isStay ? null : it.f.asFlown || it.f, fare = f && E.segmentFare(state, f, holders);
+      const e = isAdj ? E.adjustmentEarn(it.a) : isStay ? E.stayEarn(it.s, rules, stayTotal.p) : E.earn(f, rules);
+      const c = f ? E.cost(f, fare) : noCost();
+      if (f && counts && e.unknown && e.group !== 'NONE') unknown++;
       const base = { date, e, c, planned, counts };
-      const row = isAdj ? { ...base, adj: it.a } : isStay ? { ...base, stay: it.s } : { ...base, f: it.f };
+      const row = isAdj ? { ...base, adj: it.a } : isStay ? { ...base, stay: it.s } : { ...base, f };
       if (isAdj) { adjustments.push(row); adjTotal.p += e.p; adjTotal.qp += e.qp; adjTotal.hon += e.hon; }
       else if (isStay) { stays.push(row); stayTotal.p += e.p; }
       else rows.push(row);
-      events.push(row);
+      count(row, isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : f.flightNo);
+      if (f && f !== it.f) {   // the planned CO₂ booster of a flown flight (see planned)
+        const ew = E.earn(it.f, rules), cw = E.cost(it.f, fare);
+        const booster = { date, e: { ...ew, ...diff(ew, e) }, c: Object.fromEntries(Object.keys(cw).map(k => [k, cw[k] - c[k]])), planned: true, counts: true, f: it.f, booster: true };
+        count(booster, it.f.flightNo);
+      }
     }
     const stmt = E.statementStatus(state, year), earned = E.status(act, rules);
     return {
@@ -443,9 +457,6 @@
     return { n, e };
   };
 
-  /** Points b minus points a (P · QP · HON). */
-  const diff = (b, a) => ({ p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon });
-
   /** Points a flight gains (or loses) with CO₂ booster `level` instead of its own. */
   E.co2Gain = (f, level, rules) => diff(E.earn({ ...f, co2Level: level }, rules), E.earn(f, rules));
 
@@ -513,6 +524,15 @@
     };
   };
 
+  /**
+   * Flight f with the plan's what-ifs (E.whatIfFlight) as a scenario counts it: a flown flight remembers how it was
+   * flown (asFlown), since its what-if (a CO₂ booster) is only planned (see E.yearSummary).
+   */
+  const planned = (f, plan, parts, today) => {
+    const w = E.whatIfFlight(f, plan, parts, today);
+    return w === f || E.isPlanned(f, today) ? w : { ...w, asFlown: f };
+  };
+
   /** What the plan's what-ifs for flight f add to its earning (P · QP · HON) and cost, or null when none applies. */
   E.whatIfGain = (f, plan, rules, today = E.todayISO()) => {
     const w = E.whatIfFlight(f, plan, undefined, today);
@@ -541,7 +561,7 @@
    */
   E.planScenario = (state, year, plan, today = E.todayISO()) => {
     const rules = state.settings.rules;
-    const summary = (parts) => E.yearSummary({ ...state, flights: state.flights.map(f => E.whatIfFlight(f, plan, parts, today)) }, year, today);
+    const summary = (parts) => E.yearSummary({ ...state, flights: state.flights.map(f => planned(f, plan, parts, today)) }, year, today);
     const base = E.yearSummary(state, year, today);
     const withUpgrades = summary({ upgrade: true });
     const withWhatIfs = summary({ upgrade: true, co2: true });
@@ -580,7 +600,8 @@
 
   /**
    * The state with every year's planner scenario applied, for the dashboard's "incl. Planner" view: the upgrade and
-   * CO₂ what-ifs apply to flights that take them (see E.whatIfFlight; locked ones keep theirs), and each extra segment
+   * CO₂ what-ifs apply to flights that take them (see E.whatIfFlight; locked ones keep theirs; on a flown flight the
+   * booster is planned, see E.yearSummary), and each extra segment
    * of the mix becomes a planned flight on 31 Dec of its year (see E.mixCounts), flightNo 'Planner', cost = its cost
    * per segment.
    * Its totals match E.planScenario. The state itself is not changed.
@@ -588,7 +609,7 @@
   E.withPlans = (state, today = E.todayISO()) => {
     const flights = state.flights.map(f => {
       const plan = state.plans[f.date.slice(0, 4)];
-      return plan ? E.whatIfFlight(f, plan, undefined, today) : f;
+      return plan ? planned(f, plan, undefined, today) : f;
     });
     for (const [y, plan] of Object.entries(state.plans)) {
       const date = `${y}-12-31`;
