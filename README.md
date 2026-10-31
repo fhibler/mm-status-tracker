@@ -30,7 +30,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   HON Circle in HON Circle Points per calendar year), with the date each one was or will be unlocked, what's still missing,
   and when each ladder applies. A milestone counts only while you hold its status: the status held in the year before
   (until the end of February; or the higher one your planned flights earn in that year), the one carried in (from
-  March) or one earned during the year (from that day). The ladders of other statuses don't add up. Follows the "Planner" switch like the dashboard.
+  March) or one earned during the year (from that day). The ladders of other statuses don't add up: the ladder of
+  a status below the highest one you hold in the year is marked "not eligible", and the ladder of a higher status
+  shows what's missing to reach it, since its milestones apply once you do. Follows the "Planner" switch like the dashboard.
 - **Planner tab**: build a what-if scenario per calendar year on top of your forecast, saved in the `.json`:
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
     Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment. They have
@@ -45,8 +47,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
       bought afterwards) and see the extra Points, or set one for all flown, planned or all
       flights at once (optionally only those that earn HON Circle Points). The cost is prefilled with an estimate of
       the lufthansa.com price (see below), else with the average you paid.
-    - Each row shows what its what-ifs add and cost, and the cost per added QP (flights left out of the forecast add
-      nothing). "Apply" saves the upgrade and the booster to the flight.
+    - Each row shows what its what-ifs cost and add, and the cost per added Point, QP and HON Circle Point (a Star
+      Alliance flight adds Points only; flights left out of the forecast add nothing); a compensated flight shows the
+      same for its booster. "Apply" saves the upgrade and the booster to the flight.
   - The result builds the year step by step: flown so far, + planned flights (your forecast), + upgrades, + CO₂
     boosters (on top of the upgrades, so a booster on an upgraded flight earns in the upgraded cabin, and the part that
     is only there thanks to the upgrade is named), + extra segments. Each step shows only what it adds, so the Points

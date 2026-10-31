@@ -326,20 +326,22 @@
             : `No status held at the end of ${year}, so no Extra Benefits`}</div></div>
       </div>`;
 
+    // the highest status held at some point in the year (incl. plan): the ladders below it are never held, so they don't apply
+    const topHeld = ladders.filter(l => l.held.forecast).map(l => l.key).pop();
     const ladder = (l) => {
       // from the status's own threshold to its last milestone
       const min = st.settings.rules.thresholds[l.key][l.unit], top = l.milestones[l.milestones.length - 1].at;
+      const excluded = !l.held.forecast && E.rank(topHeld) > E.rank(l.key);
       const stateTxt = (m) => (m.actual ? `<span class="pill ok">✓ Unlocked ${when(m.actual)}</span>`
         : m.forecast ? `<span class="pill planned">Forecast ${when(m.forecast)}</span>`
         : l.total.forecast >= m.at ? `<span class="muted">Reached, but not while holding ${statusLabel(l.key)}</span>`
-        : l.held.forecast ? `<span class="muted">${num(m.at - l.total.forecast)} ${PT_LABEL[l.unit]} to go after plan</span>`
-        : `<span class="muted">Needs ${statusLabel(l.key)} status</span>`);
+        : `<span class="muted">${num(m.at - l.total.forecast)} ${PT_LABEL[l.unit]} to go after plan</span>`);
       const byPlan = !l.held.actual || (sum.carriedByPlan && l.key === sum.carriedIn);
       const held = l.held.forecast ? `You hold ${statusLabel(l.key)} ${l.periods.map(periodTxt).join(' and ')}${byPlan ? planTxt : ''}: this ladder applies then.`
-        : E.rank(sum.statusForecast) > E.rank(l.key) || E.rank(sum.carriedIn) > E.rank(l.key) ? `Not in ${year}: you hold a higher status, whose own Extra Benefits replace these.`
-        : `Not in ${year}: you don't hold ${statusLabel(l.key)}.`;
-      return `<div class="card benefit-ladder${l.held.forecast ? '' : ' inactive'}">
-        <div class="card-head"><h2>${badge(l.key)}</h2><span class="sub">${unitTxt(l.unit)} ${year}: ${num(l.total.actual)} flown${l.total.forecast !== l.total.actual ? ` → ${num(l.total.forecast)}` : ''}</span></div>
+        : excluded ? `Not eligible, because a higher status (${statusLabel(topHeld)}) is held in ${year}.`
+        : `Applies once you reach ${statusLabel(l.key)} in ${year}: ${missingTxt(E.gap(sum.forecast, l.key, st.settings.rules))} to go after plan.`;
+      return `<div class="card benefit-ladder${excluded ? ' inactive' : ''}">
+        <div class="card-head"><h2>${badge(l.key)}</h2>${excluded ? '<span class="pill">not eligible</span>' : ''}<span class="sub">${unitTxt(l.unit)} ${year}: ${num(l.total.actual)} flown${l.total.forecast !== l.total.actual ? ` → ${num(l.total.forecast)}` : ''}</span></div>
         ${bar(l.total.actual, l.total.forecast, top, l.unit, l.milestones.map(m => m.at), min)}
         <div class="bar-scale muted"><span>${num(min)} ${UNIT_LABEL[l.unit]}</span><span>${num(top)} ${UNIT_LABEL[l.unit]}</span></div>
         <p class="hint">${held}</p>
@@ -349,7 +351,7 @@
             <div class="ms-body">
               <b>${esc(m.title)}</b>
               <div class="muted">${esc(m.detail)}</div>
-              <div class="ms-state">${stateTxt(m)}</div>
+              ${excluded ? '' : `<div class="ms-state">${stateTxt(m)}</div>`}
             </div>
           </li>`).join('')}</ol>
       </div>`;
@@ -848,14 +850,20 @@
   /** Flight f with only the upgrade what-if of the plan: the booster is priced in its cabin. */
   const upgradedFlight = (f, plan) => E.whatIfFlight(f, plan, { upgrade: true });
   /** What a booked (locked) booster adds, in the cabin of the upgrade what-if. */
-  const lockedAdds = (f, plan) => `adds ${plusPts(E.co2Gain({ ...upgradedFlight(f, plan), co2Level: 'none' }, f.co2Level, state.settings.rules))}`;
-  /** What the plan's what-ifs for row r's flight add (P · QP · HON) and cost, and the cost per added QP (HON for HON-only gains). */
+  /** "+40 P · +40 QP" (the kinds of points `add` changes) and below them what `cost` comes to per added point of each kind. */
+  const gainTxt = (add, cost) => {
+    const ks = ['p', 'qp', 'hon'].filter(k => add[k]), per = ks.filter(k => add[k] > 0);
+    if (!ks.length) return 'adds no points';
+    return `${ks.map(k => `${signed(add[k])} ${UNIT_LABEL[k]}`).join(' · ')}${cost > 0 && per.length ? `<div class="cpu">${per.map(k => perUnit(cost, add[k], k)).join(' · ')}</div>` : ''}`;
+  };
+  /** What the booster of a compensated flight adds (on top of an upgrade what-if) and its cost per added point. */
+  const lockedAdds = (f, plan) => gainTxt(E.co2Gain({ ...upgradedFlight(f, plan), co2Level: 'none' }, f.co2Level, state.settings.rules), f.co2Cost);
+  /** What the plan's what-ifs for row r's flight add and cost, and the cost per added point of each kind. */
   const addsCell = (r, plan) => {
     const g = E.whatIfGain(r.f, plan, state.settings.rules);
     if (!g) return '<span class="muted">–</span>';
     if (!r.counts) return '<span class="muted">not in forecast</span>';
-    const k = g.add.qp > 0 ? 'qp' : 'hon';
-    return `${plusPts(g.add)}<div class="cpu">${money(g.cost, true)}${g.cost > 0 ? ` · ${perUnit(g.cost, g.add[k], k)}` : ''}</div>`;
+    return `${money(g.cost, true)}<div>${gainTxt(g.add, g.cost)}</div>`;
   };
 
   const renderPlanner = () => {
@@ -941,7 +949,7 @@
         </div>
         ${wiRows.length ? `<div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Flight</th><th>Haul · booked</th><th>Try upgrade</th><th class="num">Upgrade cost</th><th>Try booster</th><th class="num">Booster cost</th>
-            <th class="num">Adds<div class="muted">P · QP · HON · cost</div></th><th></th></tr></thead>
+            <th class="num">Adds<div class="muted">cost · points · cost per point</div></th><th></th></tr></thead>
           <tbody>${wiRows.map(wiRow).join('')}</tbody>
           <tfoot><tr><td colspan="4">Total of the what-ifs</td><td class="num" data-cell="upg-cost"></td><td></td><td class="num" data-cell="co2-cost"></td><td class="num" data-cell="wi-sum"></td><td></td></tr></tfoot>
         </table></div>
@@ -962,7 +970,7 @@
       const est = $('[data-cell="co2-est"]', tr), sel = $('[data-co2-level]', tr);
       if (est) est.innerHTML = co2EstCell(upgradedFlight(f, plan), sel.value);
       const booked = $('[data-cell="co2-locked"]', tr);
-      if (booked) booked.textContent = lockedAdds(f, plan);
+      if (booked) booked.innerHTML = lockedAdds(f, plan);
     };
     const setCo2 = (f, level, cost) => {
       if (level === 'none') delete plan.co2[f.id];
@@ -1071,7 +1079,8 @@
     set('[data-cell="mix-sum"]', `<b>${pts(mixSum)}</b><div class="muted">${money(sc.cost.mix, true)}</div>`);
     // upgrade and CO₂ what-ifs
     const a = sc.adds, signedCost = (v) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`;
-    set('[data-cell="wi-sum"]', `${plusPts(a.whatIfs)}<div class="cpu">${signedCost(sc.cost.upgrades + sc.cost.co2)}</div>`);
+    const wiCost = sc.cost.upgrades + sc.cost.co2;
+    set('[data-cell="wi-sum"]', `${signedCost(wiCost)}<div>${gainTxt(a.whatIfs, wiCost)}</div>`);
     set('[data-cell="upg-cost"]', signedCost(sc.cost.upgrades));
     set('[data-cell="co2-cost"]', signedCost(sc.cost.co2));
 
