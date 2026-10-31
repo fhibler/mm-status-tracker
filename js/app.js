@@ -849,21 +849,21 @@
   const co2EstCell = (f, level) => { const est = level !== 'none' && co2Est(f, level); return est ? co2EstTxt(est) : ''; };
   /** Flight f with only the upgrade what-if of the plan: the booster is priced in its cabin. */
   const upgradedFlight = (f, plan) => E.whatIfFlight(f, plan, { upgrade: true });
-  /** What a booked (locked) booster adds, in the cabin of the upgrade what-if. */
-  /** "+40 P · +40 QP" (the kinds of points `add` changes) and below them what `cost` comes to per added point of each kind. */
+  /** One short line per kind of points `add` changes, "+40 QP €3.67/QP" (what `cost` comes to per added point), so the
+      planner's narrow columns don't grow. */
   const gainTxt = (add, cost) => {
-    const ks = ['p', 'qp', 'hon'].filter(k => add[k]), per = ks.filter(k => add[k] > 0);
-    if (!ks.length) return 'adds no points';
-    return `${ks.map(k => `${signed(add[k])} ${UNIT_LABEL[k]}`).join(' · ')}${cost > 0 && per.length ? `<div class="cpu">${per.map(k => perUnit(cost, add[k], k)).join(' · ')}</div>` : ''}`;
+    const ks = ['p', 'qp', 'hon'].filter(k => add[k]);
+    if (!ks.length) return '<div>no points</div>';
+    return ks.map(k => `<div class="nw">${signed(add[k])} ${UNIT_LABEL[k]}${cost > 0 && add[k] > 0 ? ` <span class="cpu">${perUnit(cost, add[k], k)}</span>` : ''}</div>`).join('');
   };
-  /** What the booster of a compensated flight adds (on top of an upgrade what-if) and its cost per added point. */
+  /** What the booster of a compensated flight adds (in the cabin of the upgrade what-if) and its cost per added point. */
   const lockedAdds = (f, plan) => gainTxt(E.co2Gain({ ...upgradedFlight(f, plan), co2Level: 'none' }, f.co2Level, state.settings.rules), f.co2Cost);
   /** What the plan's what-ifs for row r's flight add and cost, and the cost per added point of each kind. */
   const addsCell = (r, plan) => {
     const g = E.whatIfGain(r.f, plan, state.settings.rules);
     if (!g) return '<span class="muted">–</span>';
     if (!r.counts) return '<span class="muted">not in forecast</span>';
-    return `${money(g.cost, true)}<div>${gainTxt(g.add, g.cost)}</div>`;
+    return `${money(g.cost, true)}${gainTxt(g.add, g.cost)}`;
   };
 
   const renderPlanner = () => {
@@ -887,7 +887,7 @@
         : locked
         ? `<td>${esc(MM.CO2_LABEL[f.co2Level])} <button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button>
           <div class="muted">compensated · locked</div></td>
-        <td class="num">${money(f.co2Cost)}<div class="muted" data-cell="co2-locked">${lockedAdds(f, plan)}</div></td>`
+        <td class="num">${money(f.co2Cost)}<div data-cell="co2-locked">${lockedAdds(f, plan)}</div></td>`
         : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : ''}" aria-label="Booster cost" class="num-input" ${o ? '' : 'disabled'}>
           <div class="muted" data-cell="co2-est">${co2EstCell(upgradedFlight(f, plan), level)}</div></td>`;
@@ -947,9 +947,9 @@
             <button class="btn small" data-co2-bulk="reset" title="Clear every upgrade and booster what-if of ${year}">Reset</button>
           </div>` : ''}
         </div>
-        ${wiRows.length ? `<div class="table-wrap"><table>
+        ${wiRows.length ? `<div class="table-wrap"><table class="whatif">
           <thead><tr><th>Date</th><th>Flight</th><th>Haul · booked</th><th>Try upgrade</th><th class="num">Upgrade cost</th><th>Try booster</th><th class="num">Booster cost</th>
-            <th class="num">Adds<div class="muted">cost · points · cost per point</div></th><th></th></tr></thead>
+            <th class="num">Adds<div class="muted">cost, points<br>and per point</div></th><th></th></tr></thead>
           <tbody>${wiRows.map(wiRow).join('')}</tbody>
           <tfoot><tr><td colspan="4">Total of the what-ifs</td><td class="num" data-cell="upg-cost"></td><td></td><td class="num" data-cell="co2-cost"></td><td class="num" data-cell="wi-sum"></td><td></td></tr></tfoot>
         </table></div>
@@ -1080,7 +1080,7 @@
     // upgrade and CO₂ what-ifs
     const a = sc.adds, signedCost = (v) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`;
     const wiCost = sc.cost.upgrades + sc.cost.co2;
-    set('[data-cell="wi-sum"]', `${signedCost(wiCost)}<div>${gainTxt(a.whatIfs, wiCost)}</div>`);
+    set('[data-cell="wi-sum"]', `${signedCost(wiCost)}${gainTxt(a.whatIfs, wiCost)}`);
     set('[data-cell="upg-cost"]', signedCost(sc.cost.upgrades));
     set('[data-cell="co2-cost"]', signedCost(sc.cost.co2));
 
