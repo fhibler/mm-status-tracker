@@ -568,13 +568,15 @@
   };
   /**
    * The CO₂ what-if of `plan` for flight f, plan.co2[id] = { level, cost }, or null when f can't take it: a booster on a
-   * flight that takes one (E.canBoost) and has none (a compensated flight is locked). CO₂ can still be compensated after
-   * the flight.
+   * flight that takes one (E.canBoost) and has none (a compensated flight is locked), until the status of its year
+   * expires (E.boosterOpen).
    */
-  E.co2WhatIf = (f, plan) => {
+  E.co2WhatIf = (f, plan, today = E.todayISO()) => {
     const c = plan.co2[f.id];
-    return c && c.level !== 'none' && E.canBoost(f) && !E.hasBooster(f) ? c : null;
+    return c && c.level !== 'none' && E.canBoost(f) && !E.hasBooster(f) && E.boosterOpen(f, today) ? c : null;
   };
+  /** CO₂ can be compensated after the flight, and its booster still counts, until the status of the flight's year expires. */
+  E.boosterOpen = (f, today = E.todayISO()) => today <= E.validUntil(+f.date.slice(0, 4));
 
   /**
    * Flight f with the planner's what-ifs of `plan` applied (E.upgradeWhatIf, E.co2WhatIf); parts picks which of the two.
@@ -582,7 +584,7 @@
    * longer applies) and the booster is priced and earns there too. Returns f itself when nothing applies.
    */
   E.whatIfFlight = (f, plan, parts = { upgrade: true, co2: true }, today = E.todayISO()) => {
-    const u = parts.upgrade && E.upgradeWhatIf(f, plan, today), c = parts.co2 && E.co2WhatIf(f, plan);
+    const u = parts.upgrade && E.upgradeWhatIf(f, plan, today), c = parts.co2 && E.co2WhatIf(f, plan, today);
     if (!u && !c) return f;
     return {
       ...f,
@@ -648,7 +650,7 @@
     const co2Step = diff(withWhatIfs.forecast, withUpgrades.forecast), co2Own = diff(co2Alone.forecast, base.forecast);
     return {
       base, withUpgrades, withWhatIfs, mix, total, reached: planReached(withWhatIfs, mix, year, rules),
-      whatIfs: { upgrades: upgrades.length, unpriced: upgrades.filter(u => !u.cost).length, co2: inForecast.filter(f => E.co2WhatIf(f, plan)).length },
+      whatIfs: { upgrades: upgrades.length, unpriced: upgrades.filter(u => !u.cost).length, co2: inForecast.filter(f => E.co2WhatIf(f, plan, today)).length },
       adds: {
         planned: diff(base.forecast, base.actual), upgrades: diff(withUpgrades.forecast, base.forecast), co2: co2Step,
         co2OnUpgrades: diff(co2Step, co2Own), whatIfs: diff(withWhatIfs.forecast, base.forecast),

@@ -455,6 +455,8 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     // a flown flight can't be upgraded any more, but its CO₂ can still be compensated
     const flown = E.whatIfFlight(u, up, undefined, '2026-07-05');
     assert.strictEqual(`${flown.upgradeClass}:${flown.co2Level}:${E.upgradeWhatIf(u, up, '2026-07-05')}`, 'Premium Economy:medium:null');
+    // … until the status of its year expires (2026: end of Feb 2028)
+    assert.strictEqual(['2028-02-29', '2028-03-01'].map(d => E.whatIfFlight(u, up, { co2: true }, d).co2Level).join(), 'medium,none');
     // a booster what-if of None is none
     assert.strictEqual(E.whatIfFlight(u, { ...S.newPlan(), co2: { u: { level: 'none', cost: 50 } } }, undefined, TODAY), u);
     // an upgrade earns in the upgraded cabin, also when the flight had a manual earning class

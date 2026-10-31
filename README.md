@@ -41,7 +41,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
       type in its price (it is never estimated). The flight then earns in the upgraded cabin, also if it had a manual
       earning class, and a booster on it earns and is priced there too. Flights that are already upgraded are locked;
       change their upgrade in the flight dialog.
-    - **CO₂ booster**: try a booster on any flight and see the extra Points, or set one for all flown, planned or all
+    - **CO₂ booster**: try a booster on any flight (on a flown one until the status of its year expires: it can be
+      bought afterwards) and see the extra Points, or set one for all flown, planned or all
       flights at once (optionally only those that earn HON Circle Points). The cost is prefilled with an estimate of
       the lufthansa.com price (see below), else with the average you paid.
     - Each row shows what its what-ifs add and cost, and the cost per added QP (flights left out of the forecast add
