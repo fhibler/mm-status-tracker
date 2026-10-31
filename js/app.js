@@ -326,7 +326,7 @@
           <li class="${m.actual ? 'done' : ''}">
             <div class="ms-at">${num(m.at)} <small>${l.unit === 'hon' ? 'HON' : 'QP'}</small></div>
             <div class="ms-body">
-              <b>${esc(m.title)}</b>${m.confirmed ? '' : ' <span class="pill" title="From third-party guides; not yet checked on miles-and-more.com">unconfirmed</span>'}
+              <b>${esc(m.title)}</b>
               <div class="muted">${esc(m.detail)}</div>
               <div class="ms-state">${stateTxt(m)}</div>
             </div>
@@ -347,13 +347,13 @@
             March ${year}, and the one held in ${year - 1} until the end of February. A milestone only counts while you hold its
             status, so a Senator collects towards the Senator milestones from 1 January.</li>
           <li>A status earned during the year counts from the day it is reached, with all ${unitTxt('qp')} of the year so far: whoever becomes
-            Senator in ${year} can still unlock the Senator milestones in ${year}. <span class="pill" title="Inferred from the official wording; not stated explicitly">unconfirmed</span></li>
+            Senator in ${year} can still unlock the Senator milestones in ${year}. <span class="pill" title="Inferred from the official wording; the page doesn't say it">assumed</span></li>
           <li>The milestones don't add up across statuses: as HON Circle Member you get only the HON Circle ones, as Senator not the
-            Frequent Traveller one. After a soft landing in March the lower status's milestones apply from then on.</li>
+            Frequent Traveller ones; Lifetime status benefits aren't added either. After a soft landing in March the lower status's milestones apply from then on.</li>
           <li>Train ${unitTxt('qp')} and ${unitTxt('hon')} count only up to the status's train cap, as for the status itself.
-            <span class="pill" title="Assumed from the status rules">unconfirmed</span></li>
+            <span class="pill" title="Assumed from the status rules; the page doesn't say it">assumed</span></li>
         </ul>
-        <p class="hint">Milestones marked "unconfirmed" come from third-party guides, because the official page couldn't be read on the last check.</p>
+        <p class="hint">Milestones as on miles-and-more.com (last updated there in October 2023, checked 31 Oct 2026).</p>
       </div>`;
     for (const el of $$('#view-benefits [data-width]')) el.style.width = `${Math.min(100, el.dataset.width)}%`;
     for (const el of $$('#view-benefits [data-left]')) el.style.left = `${el.dataset.left}%`;

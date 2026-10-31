@@ -274,17 +274,17 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     return Object.fromEntries(E.extraBenefits(st, E.history(st, year, TODAY).find(h => h.year === year), TODAY).map(b => [b.key, b]));
   };
   const at = (b, i, which) => { const x = b.milestones[i][which]; return x ? `${x.date} ${x.by}` : '-'; };
-  // no status at the start: FTL on 4 May (800 QP, so its exchange too), Senator on 10 May, 2,200 QP on 11 May;
+  // no status at the start: FTL on 4 May (800 QP, so its 700 and 800 QP milestones too), Senator on 10 May, 2,200 QP on 11 May;
   // two planned flights reach 2,500 QP in the forecast
   let b = benefits({ flights: segs([...may(11), '2026-09-01', '2026-09-02']) });
-  assert.strictEqual([at(b.FTL, 0, 'actual'), at(b.SEN, 0, 'actual'), at(b.SEN, 1, 'actual'), at(b.SEN, 1, 'forecast')].join(' | '),
+  assert.strictEqual([at(b.FTL, 1, 'actual'), at(b.SEN, 0, 'actual'), at(b.SEN, 1, 'actual'), at(b.SEN, 1, 'forecast')].join(' | '),
     '2026-05-04 LH400 | 2026-05-11 LH400 | - | 2026-09-02 LH400');
   assert.strictEqual(`${b.SEN.total.actual}:${b.SEN.total.forecast}:${b.FTL.held.actual}:${b.SEN.held.actual}:${b.HON.held.forecast}`, '2200:2600:true:true:false');
   assert.strictEqual(b.HON.milestones.every(m => !m.forecast), true);
   // HON Circle carried in from 2025: the Senator ladder doesn't apply, however many QP
   b = benefits({ flights: segs([...Array.from({ length: 30 }, (_, i) => `2025-04-${String(i + 1).padStart(2, '0')}`), ...may(13)]) });
   assert.strictEqual(`${b.SEN.held.forecast}:${b.SEN.total.actual}:${at(b.SEN, 0, 'actual')}:${at(b.HON, 0, 'actual')}`, 'false:2600:-:-');
-  // Senator from the statement for 2026: held from 1 Jan, so no FTL exchange at 800 QP
+  // Senator from the statement for 2026: held from 1 Jan, so no FTL milestones at 700 / 800 QP
   b = benefits({ flights: segs(may(11)), settings: { startStatus: { status: 'SEN', year: 2026 } } });
   assert.strictEqual(`${at(b.FTL, 0, 'actual')}:${at(b.SEN, 0, 'actual')}`, '-:2026-05-11 LH400');
   // Senator 2024, not requalified in 2025: Senator until the end of Feb 2026, FTL from March. 800 QP in February

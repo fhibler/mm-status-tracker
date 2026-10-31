@@ -30,8 +30,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   HON Circle in HON Circle Points per calendar year), with the date each one was or will be unlocked, what's still missing,
   and which ladder applies. A milestone counts only while you hold its status: the status held in the year before
   (until the end of February), the one carried in (from March) or one earned during the year (from that day). The
-  ladders of other statuses don't add up. Follows the "Planner" switch like the dashboard. Values not yet seen on
-  miles-and-more.com are marked "unconfirmed".
+  ladders of other statuses don't add up. Follows the "Planner" switch like the dashboard.
 - **Planner tab**: build a what-if scenario per calendar year on top of your forecast, saved in the `.json`:
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
     Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment. They have
