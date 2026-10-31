@@ -19,7 +19,9 @@
   }).format(v || 0);
   /** Price model estimate of booster `level` for flight f (E.co2PriceEstimate); only when amounts are in EUR, its currency. */
   const co2Est = (f, level) => (state.settings.currency === 'EUR' ? E.co2PriceEstimate(f, level) : null);
-  const co2EstTxt = (est) => `${est.quality === 'rough' ? 'rough estimate' : 'estimate'} ${money(est.cost)} · ${num(est.km)} km ${esc(est.cabin)}`;
+  /** Parts of a note joined by " · ": a narrow cell breaks the note only between them ("Premium Economy · / Lufthansa Group"). */
+  const parts = (...xs) => xs.filter(Boolean).map(x => `<span class="nw">${x}</span>`).join(' · ');
+  const co2EstTxt = (est) => parts(`${est.quality === 'rough' ? 'rough estimate' : 'estimate'} ${money(est.cost)}`, `${num(est.km)} km ${esc(est.cabin)}`);
   /** Shows msg for ms milliseconds, or with ms 0 until closed (a result worth reading, e.g. of a run over many flights). */
   const toast = (msg, ms = 2600) => {
     const t = $('#toast');
@@ -881,20 +883,20 @@
         ? `<td><select data-upg-cls aria-label="Upgrade for ${esc(f.flightNo)}"><option value="">No upgrade</option>${opts(E.upgradeClasses(f), u ? u.cls : '')}</select></td>
         <td class="num"><input inputmode="decimal" autocomplete="off" data-upg-cost value="${u ? u.cost || '' : ''}" placeholder="your price" aria-label="Upgrade cost" class="num-input" ${u ? '' : 'disabled'}></td>`
         : E.isUpgraded(f)
-          ? `<td>${esc(E.flownClass(f))}<div class="muted">${upType ? esc(upType.label) + ' · ' : ''}upgraded · locked</div></td><td class="num">${money(f.upgradeCost)}</td>`
+          ? `<td>${esc(E.flownClass(f))}<div class="muted" title="Upgraded: change it in the flight dialog">${parts(upType && esc(upType.label), 'locked')}</div></td><td class="num">${money(f.upgradeCost)}</td>`
           : `<td><span class="muted">${r.planned ? '–' : 'flown'}</span></td><td></td>`;
-      const co2Cell = !locked && !E.boosterOpen(f) ? `<td><span class="muted">status of ${f.date.slice(0, 4)} expired</span></td><td></td>`
+      const co2Cell = !locked && !E.boosterOpen(f) ? `<td><span class="muted">${parts(`status of ${f.date.slice(0, 4)}`, 'expired')}</span></td><td></td>`
         : locked
         ? `<td>${esc(MM.CO2_LABEL[f.co2Level])} <button class="icon-btn" data-co2-remove aria-label="Remove CO₂ compensation from ${esc(f.flightNo)}" title="Remove the CO₂ compensation from this flight">✕</button>
-          <div class="muted">compensated · locked</div></td>
+          <div class="muted" title="Compensated: remove it with ✕ to try other boosters">booked</div></td>
         <td class="num">${money(f.co2Cost)}<div data-cell="co2-locked">${lockedAdds(f, plan)}</div></td>`
         : `<td><select data-co2-level aria-label="CO₂ booster for ${esc(f.flightNo)}">${opts(MM.CO2_LEVELS, level, l => MM.CO2_LABEL[l])}</select></td>
         <td class="num"><input inputmode="decimal" autocomplete="off" data-co2-cost value="${o ? o.cost || '' : ''}" aria-label="Booster cost" class="num-input" ${o ? '' : 'disabled'}>
           <div class="muted" data-cell="co2-est">${co2EstCell(upgradedFlight(f, plan), level)}</div></td>`;
       return `<tr data-wi-id="${esc(f.id)}" class="static${r.planned ? ' planned' : ''}">
-        <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : 'planned · not in forecast') : 'flown'}</div></td>
+        <td>${C.fmtDate(f.date)}<div class="muted">${r.planned ? (r.counts ? 'planned' : parts('planned', 'not in forecast')) : 'flown'}</div></td>
         <td><b>${esc(f.flightNo)}</b><div class="muted">${routeTxt(f)}</div></td>
-        <td>${haulTxt(r.e.haul)}<div class="muted">${esc(f.bookedClass)} · ${esc(MM.GROUP_LABEL[r.e.group])}</div>${E.earningClass(f) !== f.bookedClass ? `<div class="muted">earns ${esc(r.e.cls)}</div>` : ''}</td>
+        <td>${haulTxt(r.e.haul)}<div class="muted">${parts(esc(f.bookedClass), esc(MM.GROUP_LABEL[r.e.group]))}</div>${E.earningClass(f) !== f.bookedClass ? `<div class="muted">earns ${esc(r.e.cls)}</div>` : ''}</td>
         ${upCell}${co2Cell}
         <td class="num" data-cell="delta">${addsCell(r, plan)}</td>
         <td><button class="btn small" data-wi-apply ${o || u ? '' : 'hidden'} title="Save this upgrade and booster with their costs to the flight">Apply</button></td>

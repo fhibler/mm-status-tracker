@@ -341,8 +341,9 @@ label.btn { font-size: 14px; color: var(--ink); }
 .cpu { font-size: 11px; font-weight: 400; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kpi-trio .cpu { white-space: normal; margin-top: 2px; }   /* a narrow column puts the unit on its own line */
 .cpu .nw { white-space: nowrap; }
-/* the planner's what-if table: its notes wrap, so the table fits without scrolling */
-.whatif td .muted { white-space: normal; min-width: 6em; }
+/* the planner's what-if table: its notes wrap between their parts (see parts in app.js), so the table fits without scrolling */
+.whatif td .muted { white-space: normal; }
+.whatif .nw { white-space: nowrap; }
 .kpi-trio .fc { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------- cabin class tags, as in the Lufthansa app (solid colour, white text) ---------- */
