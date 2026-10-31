@@ -362,7 +362,7 @@
             March ${year}, and the one held in ${year - 1} until the end of February. A milestone only counts while you hold its
             status, so a Senator collects towards the Senator milestones from 1 January.</li>
           <li>A status earned during the year counts from the day it is reached, with all ${unitTxt('qp')} of the year so far: whoever becomes
-            Senator in ${year} can still unlock the Senator milestones in ${year}. <span class="pill" title="Inferred from the official wording; the page doesn't say it">assumed</span></li>
+            Senator in ${year} can still unlock the Senator milestones in ${year}.</li>
           <li>The milestones don't add up across statuses: as HON Circle Member you get only the HON Circle ones, as Senator not the
             Frequent Traveller ones; Lifetime status benefits aren't added either. After a soft landing in March the lower status's milestones apply from then on.</li>
           <li>Train ${unitTxt('qp')} and ${unitTxt('hon')} count only up to the status's train cap, as for the status itself.
