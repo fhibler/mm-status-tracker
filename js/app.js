@@ -836,8 +836,8 @@
           <tbody>${wiRows.map(wiRow).join('')}</tbody>
           <tfoot><tr><td colspan="4">Total of the what-ifs</td><td class="num" data-cell="upg-cost"></td><td></td><td class="num" data-cell="co2-cost"></td><td class="num" data-cell="wi-sum"></td><td></td></tr></tfoot>
         </table></div>
-        <p class="hint">Upgrades can only be tried on planned flights; a booster can still be added to a flown one. An upgrade here is a paid upgrade (fixed price or bid), so the flight earns in the upgraded cabin and a booster on it is priced and earns there too.
-          Enter the upgrade price you were offered; it is not estimated. Upgrades with miles or vouchers earn as booked, so they add no points.
+        <p class="hint">Upgrades can only be tried on planned flights; a booster can still be added to a flown one. An upgrade here is a paid upgrade bought online before check-in (fixed price or bid), so the flight earns in the upgraded cabin and a booster on it is priced and earns there too.
+          Enter the upgrade price you were offered; it is not estimated. Upgrades at the airport or with miles or an eVoucher earn as booked, so they add no points.
           ${eur ? 'Booster costs are prefilled with an estimate of the lufthansa.com price by distance and the cabin paid for (continental Economy and Business, long-haul Business), '
           + `${hasAvg ? 'else with the average you paid for that booster and haul' : 'else enter what the booster would cost'}.` : hasAvg ? 'Booster costs are prefilled with the average you paid for that booster and haul.' : 'Enter what the booster would cost.'}
           Boosters are usually booked with the flight – check whether compensation is still possible for a flight you have already flown.</p>`

@@ -166,6 +166,7 @@
     f.route = route(f.route);
     f.routeLookup = routeLookup(f.routeLookup);
     f.times = S.normalizeTimes(f.times);
+    if (f.upgradeType === 'voucher') f.upgradeType = 'miles';   // older versions had them apart (MM.UPGRADE_TYPES)
     for (const [k, ok] of Object.entries(FLIGHT_CHOICES)) if (!ok.includes(f[k])) f[k] = k === 'upgradeClass' ? f.bookedClass : d[k];
     // as the dialog saves them: trains in 2nd or 1st class; trains and buses without the flight-only fields
     if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = 'Economy';
@@ -297,7 +298,7 @@
     const s = S.empty();
     const today = E.todayISO();
     const plan = [
-      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, bid (else voucher), fare (added to the booking), upgradeCost, co2, co2Cost (≈ lufthansa.com price), pnr]
+      // [monthOffsetFromToday, flightNo, from, to, booked, upgrade, bid (else miles / eVoucher), fare (added to the booking), upgradeCost, co2, co2Cost (≈ lufthansa.com price), pnr]
       [-14, 'LH400', 'FRA', 'JFK', 'Economy', 'Business', true, 780, 650, 'medium', 108, 'K7XQ2P'],
       [-14, 'LH401', 'JFK', 'FRA', 'Economy', 'Economy', false, 0, 0, 'none', 0, 'K7XQ2P'],
       [-9, 'LX318', 'ZRH', 'LHR', 'Economy', 'Economy', false, 189, 0, 'none', 0, 'R2MM8D'],
@@ -325,7 +326,7 @@
       // as if looked up on the flight date, so no route shows as provisional (A.otherSeason)
       s.apiCache[key] = { date, fetchedAt: `${date}T12:00:00.000Z`, status: 'ok', response: resp };
       const f = { ...S.newFlight(date), flightNo: no, bookingCode: pnr,
-        bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : bid ? 'bid' : 'voucher',
+        bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : bid ? 'bid' : 'miles',
         upgradeCost: uco, co2Level: co2, co2Cost: co2c };
       s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
       f.route = MM.api.routeFromCache(s.apiCache[key]);

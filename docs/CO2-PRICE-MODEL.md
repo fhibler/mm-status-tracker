@@ -63,8 +63,8 @@ The tracker's export has 36 flights with a paid booster, all with the aircraft l
      MUC→SFO left out of the fit).
 3. **Other cabins, as a factor on Business:** continental Economy **0.695** (3 routes, max error 0.6 %).
    Long-haul Economy / Premium Economy / First: no data (the former "First" sample was Business on MUC→SFO).
-4. **Cabin = the cabin paid for** (`E.co2Class`): a fixed-price or bid upgrade is priced in the upgraded cabin, a
-   voucher, miles or operational upgrade in the booked one. Booster Points follow the earning cabin, which is the
+4. **Cabin = the cabin paid for** (`E.co2Class`): a fixed-price online or bid upgrade is priced in the upgraded cabin, an
+   airport, miles / eVoucher or operational upgrade in the booked one. Booster Points follow the earning cabin, which is the
    same except for `earnClassOverride`.
 5. **Aircraft: no effect** (see above).
 

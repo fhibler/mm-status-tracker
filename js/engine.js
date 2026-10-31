@@ -149,7 +149,7 @@
   E.co2CostIsEstimate = (f) => +f.co2Cost > 0 && [E.co2Class(f), E.flownClass(f), f.bookedClass, E.earningClass(f)]
     .some(c => { const e = E.co2PriceEstimate(f, f.co2Level, c); return !!e && e.cost === +f.co2Cost; });
 
-  /** Fixed (online / airport) and bid upgrades earn in the upgraded class; miles, voucher and operational ones don't. */
+  /** Upgrades paid online before check-in (fixed price, bid) earn in the upgraded class; airport, miles / eVoucher and operational ones don't. */
   E.upgradeEarns = (f) => !!(MM.UPGRADE_TYPES[f.upgradeType] || {}).earnsUpgrade;
 
   /** CO₂ compensation boosters (and their cost) exist for flights only, not for trains or buses. */
@@ -461,8 +461,9 @@
   E.co2Gain = (f, level, rules) => diff(E.earn({ ...f, co2Level: level }, rules), E.earn(f, rules));
 
   /**
-   * Cabin a CO₂ booster is priced in: the cabin paid for, i.e. the upgrade class of a paid upgrade (fixed price, bid),
-   * the booked class with a voucher, miles or operational upgrade (lufthansa.com prices those as the ticket bought).
+   * Cabin a CO₂ booster is priced in: the cabin paid for, i.e. the upgrade class of an upgrade paid online before
+   * check-in (fixed price, bid), which rebooks the ticket; the booked class with an airport, miles / eVoucher or
+   * operational upgrade (lufthansa.com prices those as the ticket bought).
    */
   E.co2Class = (f) => (f.upgradeClass && E.isUpgraded(f) && E.upgradeEarns(f) ? f.upgradeClass : f.bookedClass);
 

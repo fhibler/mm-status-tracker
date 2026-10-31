@@ -102,16 +102,17 @@ MM.airport = (iata) => {
   return a ? { ...a } : null;
 };
 
-/* How an upgrade was obtained (required for an upgraded flight). Only fixed-price and bid upgrades earn in the
- * upgraded class; all others earn in the booked class. '' = no upgrade (or an upgrade saved without a type by an
- * older version, which also earns in the booked class). */
+/* How an upgrade was obtained (required for an upgraded flight). Only upgrades paid for before check-in (a fixed
+ * price online, or a winning myOffer bid) are rebooked into the higher class and earn in it; upgrades paid at
+ * check-in, the airport or on board, with miles or an eVoucher, and operational ones earn in the booked class.
+ * '' = no upgrade (or an upgrade saved without a type by an older version, which also earns in the booked class).
+ * 'voucher', saved by older versions, is read as 'miles' (S.normalize). */
 MM.UPGRADE_TYPES = {
-  'fixed-online':  { label: 'Fixed (Online)',  earnsUpgrade: true },
-  'fixed-airport': { label: 'Fixed (Airport)', earnsUpgrade: true },
-  'bid':           { label: 'Bid',             earnsUpgrade: true },
-  'miles':         { label: 'Miles',           earnsUpgrade: false },
-  'voucher':       { label: 'Voucher',         earnsUpgrade: false },
-  'operational':   { label: 'Operational',     earnsUpgrade: false },
+  'fixed-online':  { label: 'Fixed (Online)',   earnsUpgrade: true },
+  'fixed-airport': { label: 'Fixed (Airport)',  earnsUpgrade: false },
+  'bid':           { label: 'Bid (Online)',     earnsUpgrade: true },
+  'miles':         { label: 'Miles / eVoucher', earnsUpgrade: false },
+  'operational':   { label: 'Operational',      earnsUpgrade: false },
 };
 
 MM.CO2_LEVELS = ['none', 'small', 'medium', 'large', 'xlarge'];
@@ -121,7 +122,7 @@ MM.CO2_LABEL = { none: 'None', small: 'Small', medium: 'Medium', large: 'Large',
    Oct 2026 and the costs paid in 2026; see docs/CO2-PRICE-MODEL.md. Packages are 5 / 20 / 50 / 80 % SAF, priced as
    Medium × (0.302 + 3.49 × SAF share). Medium for Business: `sqrt` = base + rate × √km, `km` = base + rate × km; other
    cabins as a factor on Business. The aircraft makes no difference. `good`: distances the samples cover; `rough`: extrapolated; outside, no
-   estimate. The cabin priced is the one paid for (E.co2Class): a voucher or miles upgrade is priced as booked. */
+   estimate. The cabin priced is the one paid for (E.co2Class): an airport, miles / eVoucher or operational upgrade is priced as booked. */
 MM.CO2_PRICE = {
   factor: { small: 0.476, medium: 1, large: 2.047, xlarge: 3.094 },
   business: {

@@ -6,7 +6,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 ## Features
 
 - **Activity log per CY** (flights, trains and buses): booking code, date, flight number, airline (taken from the flight number),
-  booked class, upgrade class (defaults to the booked class), upgrade type (Fixed online / Fixed airport / Bid / Miles / Voucher / Operational;
+  booked class, upgrade class (defaults to the booked class), upgrade type (Fixed (Online), Fixed (Airport), Bid (Online), Miles / eVoucher, Operational;
   required when the flight is upgraded), upgrade cost.
   Choose Flight, Train or Bus first; trains and buses only ask for what applies to them (no upgrades, codeshares or CO₂ compensation).
 - **Fares per booking**: with a booking code, you enter the fare once for the whole booking. It is shown and counted once,
@@ -18,7 +18,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   via [AeroDataBox](https://aerodatabox.com/) with your own key (called directly, via API.Market or via RapidAPI).
   The origin and destination airports decide whether a flight is **continental** (short-haul) or
   **intercontinental** (long-haul). You can override the haul, or enter the airports manually.
-- **Points engine**: earns on the booked class, or on the upgrade class for fixed-price (online or airport) and bid upgrades. Upgrades with miles, vouchers or operational upgrades earn on the booked class.
+- **Points engine**: earns on the booked class, or on the upgrade class for upgrades paid online before check-in (fixed price or a winning bid), which rebook the ticket. Upgrades paid at check-in, the airport or on board, with miles or an eVoucher, and operational upgrades earn on the booked class.
   - Lufthansa Group airlines and co-issuing partners (Air Dolomiti, Austrian, Brussels, Croatia, Discover,
     Eurowings, ITA, LOT, Lufthansa, Lufthansa City, Luxair, SWISS): Points, QP and HON Circle Points
   - Star Alliance airlines: Points only
@@ -54,7 +54,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are
   5 / 20 / 50 / 80 % SAF and priced as fixed multiples of Medium (Small 0.476×, Large 2.047×, X-Large 3.094×).
   Medium for Business grows with √distance on continental flights and per km on long-haul; other cabins are a factor
-  on Business by the cabin paid for (a fixed-price or bid upgrade is priced in the upgraded cabin, a voucher, miles or
+  on Business by the cabin paid for (a fixed-price online or bid upgrade is priced in the upgraded cabin, an airport, miles / eVoucher or
   operational upgrade as booked): continental Economy 0.695×. The aircraft makes no difference. It is within about 1 %
   on all samples except MUC→SFO (one way 1.31× the model, not modelled);
   distances outside the samples are rough; long-haul Economy, Premium Economy and First have no estimate yet. Only

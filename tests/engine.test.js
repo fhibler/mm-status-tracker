@@ -69,10 +69,11 @@ assert.strictEqual(MM.airport('XXX'), null);
 
 /* ---------- earning per segment ---------- */
 assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'First', upgradeClass: 'First' })), '400,400,400');
-// upgrades: only fixed (online / airport) and bid upgrades earn the upgraded class
+// upgrades: only those paid online before check-in (fixed price, bid) earn the upgraded class
 {
   const up = (upgradeType) => earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType }).p;
-  assert.strictEqual(['fixed-online', 'fixed-airport', 'bid', 'miles', 'voucher', 'operational', ''].map(up).join(','), '200,200,200,60,60,60,60');
+  assert.strictEqual(['fixed-online', 'bid', 'fixed-airport', 'miles', 'operational', ''].map(up).join(','), '200,200,60,60,60,60');
+  assert.strictEqual(`${MM.UPGRADE_TYPES.bid.label}:${MM.UPGRADE_TYPES.miles.label}:${'voucher' in MM.UPGRADE_TYPES}`, 'Bid (Online):Miles / eVoucher:false');
   const e = earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid', earnClassOverride: 'Premium Economy' });
   assert.strictEqual(`${e.cls}:${pts(e)}`, 'Premium Economy:80,80,0');   // cabin override beats the upgrade
 }
@@ -324,8 +325,8 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   }
   assert.strictEqual(est('MUC', 'SFO', 'Business', 'medium').cost, est('SFO', 'MUC', 'Business', 'medium').cost);   // by distance only
   assert.strictEqual(est('MUC', 'LIS', 'Business', 'medium').quality, 'rough');           // longer than the samples
-  {  // booked Business, voucher upgrade to First: Points and CO₂ price as Business (also with earnClassOverride)
-    const up = { flightNo: 'LH458', route: ap2('MUC', 'SFO'), bookedClass: 'Business', upgradeClass: 'First', upgradeType: 'voucher', co2Level: 'medium' };
+  {  // booked Business, eVoucher upgrade to First: Points and CO₂ price as Business (also with earnClassOverride)
+    const up = { flightNo: 'LH458', route: ap2('MUC', 'SFO'), bookedClass: 'Business', upgradeClass: 'First', upgradeType: 'miles', co2Level: 'medium' };
     assert.strictEqual(pts(E.earn(flight(up), rules)), pts(E.earn(flight({ ...up, upgradeClass: 'Business', upgradeType: '' }), rules)));
     assert.strictEqual(E.earn(flight(up), rules).cls, 'Business');
     assert.strictEqual(E.co2PriceEstimate(flight(up), 'medium').cabin, 'Business');
@@ -335,10 +336,11 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     const paid = { ...up, bookedClass: 'Premium Economy', upgradeClass: 'Business', upgradeType: 'fixed-online' };
     assert.strictEqual(E.co2PriceEstimate(flight(paid), 'medium').cabin, 'Business');
     assert.strictEqual(E.co2PriceEstimate(flight({ ...paid, upgradeType: 'bid' }), 'medium').cabin, 'Business');
-    assert.strictEqual(E.co2PriceEstimate(flight({ ...paid, upgradeType: 'voucher' }), 'medium'), null);   // no long-haul Premium Economy data
+    assert.strictEqual(E.co2PriceEstimate(flight({ ...paid, upgradeType: 'miles' }), 'medium'), null);   // no long-haul Premium Economy data
     const contEco = { flightNo: 'LH2066', route: ap2('MUC', 'HAM'), bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'fixed-online' };
     assert.strictEqual(E.co2PriceEstimate(flight(contEco), 'medium').cabin, 'Business');
     assert.strictEqual(E.co2PriceEstimate(flight({ ...contEco, upgradeType: 'miles' }), 'medium').cabin, 'Economy');
+    assert.strictEqual(E.co2PriceEstimate(flight({ ...contEco, upgradeType: 'fixed-airport' }), 'medium').cabin, 'Economy');   // paid at the airport: as booked
     // a saved cost that is the estimate in another cabin (e.g. saved before the upgrade) counts as an estimate
     assert.ok(E.co2CostIsEstimate(flight({ ...contEco, co2Cost: E.co2PriceEstimate(flight(contEco), 'medium', 'Economy').cost, co2Level: 'medium' })));
     assert.ok(E.co2CostIsEstimate(flight({ ...up, co2Cost: E.co2PriceEstimate(flight(up), 'medium').cost })));
@@ -512,6 +514,10 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const choices = ['transport', 'bookedClass', 'upgradeClass', 'co2Level', 'haulOverride', 'earningGroup', 'earnClassOverride', 'upgradeType'];
   const bad = state({ flights: [{ date: '2026-01-01', ...Object.fromEntries(choices.map(k => [k, 'x'])), bookedClass: 'Business' }] }).flights[0];
   assert.strictEqual(choices.map(k => bad[k]).join(','), 'flight,Business,Business,none,auto,auto,auto,');
+  // the upgrade type 'voucher' of older versions is read as 'miles', in saved data and in imported files
+  const vf = { date: '2026-01-01', bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'voucher' };
+  assert.strictEqual(state({ flights: [vf] }).flights[0].upgradeType, 'miles');
+  assert.strictEqual(S.parse(JSON.stringify({ ...S.empty(), flights: [vf] })).flights[0].upgradeType, 'miles');
   // booking codes are normalised and fares never negative; an implausible starting status year is dropped
   const bk = state({ flights: [flight({ bookingCode: 'AB1' })], bookings: { 'ab 1': { fare: -5 } }, settings: { startStatus: { status: 'SEN', year: 1 } } });
   assert.strictEqual(`${Object.keys(bk.bookings).join()}:${bk.bookings.AB1.fare}:${bk.settings.startStatus.year}`, 'AB1:0:null');
