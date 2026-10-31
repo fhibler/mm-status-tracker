@@ -176,6 +176,7 @@ main { padding: 20px max(16px, 3vw) 32px; max-width: 1500px; margin: 0 auto; }
 .kpi .value.small { font-size: 17px; }
 .bar .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--surface); }
 .benefit-ladder.inactive { opacity: .6; }
+.bar-scale { display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; }
 .milestones { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
 .milestones li { display: grid; grid-template-columns: 92px 1fr; gap: 10px; }
 .milestones .ms-at { white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }

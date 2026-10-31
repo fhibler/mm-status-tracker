@@ -45,16 +45,20 @@
   const carriedHow = (h, prev) => (h.carriedByPlan ? ' with your planned flights' : prev && prev.fromStatement ? ' (statement)' : '');
   /** Planned segments of year entry h that count, incl. the planned CO₂ boosters of flown flights (E.yearSummary). */
   const plannedCount = (h) => h.events.filter(e => e.f && e.planned && e.counts).length;
-  /** A progress bar of kind k (c-<k>): flown `cur` and forecast `fc` out of `max`, with ticks at the values `marks`.
-      Its widths and offsets are set by applyBars once it is in the page (the Content-Security-Policy blocks style attributes). */
-  const bar = (cur, fc, max, k, marks = []) => `
+  /** A progress bar of kind k (c-<k>): flown `cur` and forecast `fc` on a scale from `min` to `max` (full from `max` on),
+      with ticks at the values `marks`. Its widths and offsets are set by applyBars once it is in the page (the
+      Content-Security-Policy blocks style attributes). */
+  const bar = (cur, fc, max, k, marks = [], min = 0) => {
+    const pct = (v) => ((v - min) / (max - min)) * 100;
+    return `
       <div class="bar c-${k}">
-        <div class="fc" data-width="${(fc / max) * 100}"></div>
-        <div class="ac" data-width="${(cur / max) * 100}"></div>
-        ${marks.map(v => `<span class="tick" data-left="${(v / max) * 100}"></span>`).join('')}
+        <div class="fc" data-width="${pct(fc)}"></div>
+        <div class="ac" data-width="${pct(cur)}"></div>
+        ${marks.map(v => `<span class="tick" data-left="${pct(v)}"></span>`).join('')}
       </div>`;
+  };
   const applyBars = (root) => {
-    for (const el of $$('[data-width]', root)) el.style.width = `${Math.min(100, el.dataset.width)}%`;
+    for (const el of $$('[data-width]', root)) el.style.width = `${Math.max(0, Math.min(100, el.dataset.width))}%`;
     for (const el of $$('[data-left]', root)) el.style.left = `${el.dataset.left}%`;
   };
   /** "Senator → Frequent Traveller (not requalified)" for a soft-landing year, else ''. */
@@ -323,7 +327,8 @@
       </div>`;
 
     const ladder = (l) => {
-      const top = l.milestones[l.milestones.length - 1].at, max = Math.max(top, l.total.forecast);
+      // from the status's own threshold to its last milestone
+      const min = st.settings.rules.thresholds[l.key][l.unit], top = l.milestones[l.milestones.length - 1].at;
       const stateTxt = (m) => (m.actual ? `<span class="pill ok">✓ Unlocked ${when(m.actual)}</span>`
         : m.forecast ? `<span class="pill planned">Forecast ${when(m.forecast)}</span>`
         : l.total.forecast >= m.at ? `<span class="muted">Reached, but not while holding ${statusLabel(l.key)}</span>`
@@ -335,7 +340,8 @@
         : `Not in ${year}: you don't hold ${statusLabel(l.key)}.`;
       return `<div class="card benefit-ladder${l.held.forecast ? '' : ' inactive'}">
         <div class="card-head"><h2>${badge(l.key)}</h2><span class="sub">${unitTxt(l.unit)} ${year}: ${num(l.total.actual)} flown${l.total.forecast !== l.total.actual ? ` → ${num(l.total.forecast)}` : ''}</span></div>
-        ${bar(l.total.actual, l.total.forecast, max, l.unit, l.milestones.map(m => m.at))}
+        ${bar(l.total.actual, l.total.forecast, top, l.unit, l.milestones.map(m => m.at), min)}
+        <div class="bar-scale muted"><span>${num(min)} ${UNIT_LABEL[l.unit]}</span><span>${num(top)} ${UNIT_LABEL[l.unit]}</span></div>
         <p class="hint">${held}</p>
         <ol class="milestones">${l.milestones.map(m => `
           <li class="${m.actual ? 'done' : ''}">
