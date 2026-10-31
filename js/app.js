@@ -371,8 +371,6 @@
             Senator in ${year} can still unlock the Senator milestones in ${year}.</li>
           <li>The milestones don't add up across statuses: as HON Circle Member you get only the HON Circle ones, as Senator not the
             Frequent Traveller ones; Lifetime status benefits aren't added either. After a soft landing in March the lower status's milestones apply from then on.</li>
-          <li>Train ${unitTxt('qp')} and ${unitTxt('hon')} count only up to the status's train cap, as for the status itself.
-            <span class="pill" title="Assumed from the status rules; the page doesn't say it">assumed</span></li>
         </ul>
         <p class="hint">Milestones as on miles-and-more.com (last updated there in October 2023, checked 31 Oct 2026).</p>
       </div>`;
