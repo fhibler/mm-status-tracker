@@ -11,7 +11,7 @@
   try { state = S.load() || S.empty(); } catch (err) { state = S.empty(); loadError = err.message; }   // old data stays stored until the first change
   let year = new Date().getFullYear();
   let view = 'dashboard';
-  let withPlanner = false;   // dashboard incl. the Planner's scenarios (per browser, not part of the .json)
+  let withPlanner = false;   // dashboard and Extra Benefits incl. the Planner's scenarios (per browser, not part of the .json)
   try { withPlanner = localStorage.getItem('mm-status-tracker:withPlanner') === '1'; } catch { /* ignore */ }
 
   const money = (v, compact) => new Intl.NumberFormat('en-US', {
@@ -39,9 +39,26 @@
     if (!ok && !saveFailed) toast('This browser can\'t store your data (storage full or blocked). Use Save .json to keep it.', 8000);
     saveFailed = !ok;
   };
-  const badge = (s) => `<span class="badge ${s}">${esc(MM.STATUS_LABEL[s])}</span>`;
+  const statusLabel = (s) => esc(MM.STATUS_LABEL[s]);
+  const badge = (s) => `<span class="badge ${s}">${statusLabel(s)}</span>`;
+  /** How the status h.carriedIn came about, for "… carried in from <year>": with planned flights, or from the statement. */
+  const carriedHow = (h, prev) => (h.carriedByPlan ? ' with your planned flights' : prev && prev.fromStatement ? ' (statement)' : '');
+  /** Planned segments of year entry h that count, incl. the planned CO₂ boosters of flown flights (E.yearSummary). */
+  const plannedCount = (h) => h.events.filter(e => e.f && e.planned && e.counts).length;
+  /** A progress bar of kind k (c-<k>): flown `cur` and forecast `fc` out of `max`, with ticks at the values `marks`.
+      Its widths and offsets are set by applyBars once it is in the page (the Content-Security-Policy blocks style attributes). */
+  const bar = (cur, fc, max, k, marks = []) => `
+      <div class="bar c-${k}">
+        <div class="fc" data-width="${(fc / max) * 100}"></div>
+        <div class="ac" data-width="${(cur / max) * 100}"></div>
+        ${marks.map(v => `<span class="tick" data-left="${(v / max) * 100}"></span>`).join('')}
+      </div>`;
+  const applyBars = (root) => {
+    for (const el of $$('[data-width]', root)) el.style.width = `${Math.min(100, el.dataset.width)}%`;
+    for (const el of $$('[data-left]', root)) el.style.left = `${el.dataset.left}%`;
+  };
   /** "Senator → Frequent Traveller (not requalified)" for a soft-landing year, else ''. */
-  const downgradeTxt = (h, when = '') => (h.downgraded ? `${esc(MM.STATUS_LABEL[h.prevHeld])} → ${esc(MM.STATUS_LABEL[h.held])}${when} (not requalified)` : '');
+  const downgradeTxt = (h, when = '') => (h.downgraded ? `${statusLabel(h.prevHeld)} → ${statusLabel(h.held)}${when} (not requalified)` : '');
   /** A route with both airports (a stored route may lack one). */
   const hasRoute = (r) => !!(r && r.origin && r.destination);
   /** A looked-up route from another IATA season than the flight's (A.otherSeason): it may differ on the flight date. */
@@ -156,12 +173,12 @@
     const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
       : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${sum.fromStatement ? 'as per your statement' : C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
-      : sum.carriedIn !== 'NONE' ? `${esc(MM.STATUS_LABEL[sum.carriedIn])} carried in from ${year - 1}${sum.carriedByPlan ? ' with your planned flights' : prevYear && prevYear.fromStatement ? ' (statement)' : ''}`
-      : sum.fromStatement ? `${esc(MM.STATUS_LABEL[sum.statusActual])} earned ${year} as per your statement`
+      : sum.carriedIn !== 'NONE' ? `${statusLabel(sum.carriedIn)} carried in from ${year - 1}${carriedHow(sum, prevYear)}`
+      : sum.fromStatement ? `${statusLabel(sum.statusActual)} earned ${year} as per your statement`
       : !sum.hasPrev ? `No data for ${year - 1} – <a href="#" data-act="goto-settings">set your starting status</a>`
       : `No status carried in from ${year - 1}`;
     const nFlown = sum.rows.filter(r => !r.planned).length;
-    const nPlan = sum.rows.filter(r => r.planned && r.counts).length;
+    const nPlan = plannedCount(sum);
     const totalCost = sum.cost.all.total;
     const nextKey = MM.STATUSES.find(k => E.rank(sum.statusActual) < E.rank(k));
     const nextFc = nextKey && sum.reached.forecast[nextKey];
@@ -177,7 +194,7 @@
             : sum.statusActual !== 'NONE' ? `Valid ${C.fmtDate(sum.reached.actual[sum.statusActual])} – ${C.fmtDate(E.validUntil(year))}` : `${nFlown} segment${nFlown === 1 ? '' : 's'} flown`}</div></div>
         <div class="card kpi"><div class="label">${withPlanner ? 'Forecast with Planner' : 'Forecast'}</div>
           <div class="value">${badge(sum.statusForecast)}</div>
-          <div class="meta">${nextKey ? (nextFc ? `${esc(MM.STATUS_LABEL[nextKey])} on ${C.fmtDate(nextFc)}` : `${esc(MM.STATUS_LABEL[nextKey])} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
+          <div class="meta">${nextKey ? (nextFc ? `${statusLabel(nextKey)} on ${C.fmtDate(nextFc)}` : `${statusLabel(nextKey)} not reached with ${nPlan} planned`) : 'Top tier reached'}</div></div>
         <div class="card kpi"><div class="label">Points ${year} · flown</div>
           <div class="kpi-trio">
             ${[['p', 'Points'], ['qp', 'QP'], ['hon', 'HON']].map(([k, label]) => `
@@ -231,12 +248,6 @@
 
   const renderProgress = (sum, rules) => {
     const t = rules.thresholds;
-    // the widths are set below, once the bars are in the page (the Content-Security-Policy blocks style attributes)
-    const bar = (cur, fc, max, k) => `
-      <div class="bar c-${k}">
-        <div class="fc" data-width="${Math.min(100, (fc / max) * 100)}"></div>
-        <div class="ac" data-width="${Math.min(100, (cur / max) * 100)}"></div>
-      </div>`;
     const line = (key) => {
       // values that count towards this status (train QP / HON capped per status)
       const a = E.effective(sum.actual, key, rules), f = E.effective(sum.forecast, key, rules), th = t[key];
@@ -257,7 +268,7 @@
       </div>`;
     };
     $('#progList').innerHTML = MM.STATUSES.map(line).join('');
-    for (const b of $$('[data-width]', $('#progList'))) b.style.width = `${b.dataset.width}%`;
+    applyBars($('#progList'));
   };
 
   const renderCumCharts = (sum, rules) => {
@@ -279,52 +290,56 @@
 
   /* ================= Extra Benefits (read only) ================= */
   const renderBenefits = () => {
-    const { st, sum } = yearHistory();
+    const { st, hist, sum } = yearHistory();
+    const prevYear = hist.find(h => h.year === year - 1);
     const ladders = E.extraBenefits(st, sum);
-    const label = (k) => esc(MM.STATUS_LABEL[k]);
     const unitTxt = (u) => (u === 'hon' ? 'HON Circle Points' : 'Qualifying Points');
     const when = (x) => `${C.fmtDate(x.date)} · ${esc(x.by)}`;
-    const next = ladders.slice().reverse().flatMap(l => (l.held.forecast ? l.milestones.filter(m => !m.actual).map(m => ({ l, m })) : []))[0];
+    /** "from March to 14 May", "from 1 Jan to the end of February", "from 3 Sep 2026" (E.extraBenefits' periods). */
+    const periodTxt = (p) => `${p.from.endsWith('-01-01') ? 'from 1 Jan' : p.from.endsWith('-03-01') ? 'from March' : `from ${C.fmtDate(p.from)}`}${
+      !p.to ? '' : p.to === E.dayBefore(`${year}-03-01`) ? ' to the end of February' : ` to ${C.fmtDate(p.to)}`}`;
+    const next = E.nextExtraBenefit(ladders);
+    const early = E.rank(sum.carriedIn) > E.rank(sum.prevHeld) ? sum.carriedIn : sum.prevHeld;   // see E.extraBenefits
+    const planTxt = withPlanner ? ' with the Planner' : ' with your planned flights';
 
     const kpis = `
       <div class="kpis">
         <div class="card kpi"><div class="label">Held 1 Jan – end of Feb</div>
-          <div class="value">${badge(sum.prevHeld)}</div>
-          <div class="meta">${sum.hasPrev ? `Status held in ${year - 1}` : `No data for ${year - 1}`}</div></div>
+          <div class="value">${badge(early)}</div>
+          <div class="meta">${early !== sum.prevHeld ? `Earned in ${year - 1}${planTxt}` : sum.hasPrev ? `Status held in ${year - 1}` : `No data for ${year - 1}`}</div></div>
         <div class="card kpi"><div class="label">Held from March</div>
           <div class="value">${badge(sum.carriedIn)}</div>
-          <div class="meta">${sum.downgraded ? downgradeTxt(sum) : `Carried in from ${year - 1}`}</div></div>
+          <div class="meta">${sum.downgraded ? downgradeTxt(sum) : sum.carriedIn === 'NONE' ? `No status carried in from ${year - 1}` : `Carried in from ${year - 1}${carriedHow(sum, prevYear)}`}</div></div>
         <div class="card kpi"><div class="label">Earned in ${year}</div>
           <div class="value">${badge(sum.statusForecast)}</div>
-          <div class="meta">${sum.statusForecast === sum.statusActual ? 'Flown' : `${label(sum.statusActual)} flown, rest ${withPlanner ? 'with Planner' : 'planned'}`}</div></div>
+          <div class="meta">${sum.statusForecast !== sum.statusActual ? `${statusLabel(sum.statusActual)} flown, rest ${withPlanner ? 'with Planner' : 'planned'}`
+            : sum.fromStatement ? 'As per your statement' : sum.statusActual === 'NONE' ? 'No status earned' : 'Flown'}</div></div>
         <div class="card kpi"><div class="label">Next Extra Benefit</div>
           <div class="value small">${next ? esc(next.m.title) : '–'}</div>
-          <div class="meta">${!next ? 'All Extra Benefits of the status you hold are unlocked'
-            : next.m.forecast ? `Forecast ${when(next.m.forecast)}`
-            : `${label(next.l.key)}: ${num(next.m.at - next.l.total.forecast)} ${PT_LABEL[next.l.unit]} to go after plan`}</div></div>
+          <div class="meta">${next ? (next.m.forecast ? `Forecast ${when(next.m.forecast)}`
+              : `${statusLabel(next.l.key)}: ${num(next.m.at - next.l.total.forecast)} ${PT_LABEL[next.l.unit]} to go after plan`)
+            : ladders.some(l => l.periods.some(p => !p.to)) ? 'All Extra Benefits of the status you hold are unlocked'
+            : `No status held at the end of ${year}, so no Extra Benefits`}</div></div>
       </div>`;
 
     const ladder = (l) => {
       const top = l.milestones[l.milestones.length - 1].at, max = Math.max(top, l.total.forecast);
       const stateTxt = (m) => (m.actual ? `<span class="pill ok">✓ Unlocked ${when(m.actual)}</span>`
         : m.forecast ? `<span class="pill planned">Forecast ${when(m.forecast)}</span>`
-        : l.total.forecast >= m.at ? `<span class="muted">Reached, but not while holding ${label(l.key)}</span>`
+        : l.total.forecast >= m.at ? `<span class="muted">Reached, but not while holding ${statusLabel(l.key)}</span>`
         : l.held.forecast ? `<span class="muted">${num(m.at - l.total.forecast)} ${PT_LABEL[l.unit]} to go after plan</span>`
-        : `<span class="muted">Needs ${label(l.key)} status</span>`);
-      const held = l.held.forecast ? `You hold ${label(l.key)} in ${year}${l.held.actual ? '' : ` ${withPlanner ? 'with the Planner' : 'with your planned flights'}`}: this ladder applies.`
+        : `<span class="muted">Needs ${statusLabel(l.key)} status</span>`);
+      const byPlan = !l.held.actual || (sum.carriedByPlan && l.key === sum.carriedIn);
+      const held = l.held.forecast ? `You hold ${statusLabel(l.key)} ${l.periods.map(periodTxt).join(' and ')}${byPlan ? planTxt : ''}: this ladder applies then.`
         : E.rank(sum.statusForecast) > E.rank(l.key) || E.rank(sum.carriedIn) > E.rank(l.key) ? `Not in ${year}: you hold a higher status, whose own Extra Benefits replace these.`
-        : `Not in ${year}: you don't hold ${label(l.key)}.`;
+        : `Not in ${year}: you don't hold ${statusLabel(l.key)}.`;
       return `<div class="card benefit-ladder${l.held.forecast ? '' : ' inactive'}">
         <div class="card-head"><h2>${badge(l.key)}</h2><span class="sub">${unitTxt(l.unit)} ${year}: ${num(l.total.actual)} flown${l.total.forecast !== l.total.actual ? ` → ${num(l.total.forecast)}` : ''}</span></div>
-        <div class="bar c-${l.unit}">
-          <div class="fc" data-width="${(l.total.forecast / max) * 100}"></div>
-          <div class="ac" data-width="${(l.total.actual / max) * 100}"></div>
-          ${l.milestones.map(m => `<span class="tick" data-left="${(m.at / max) * 100}"></span>`).join('')}
-        </div>
+        ${bar(l.total.actual, l.total.forecast, max, l.unit, l.milestones.map(m => m.at))}
         <p class="hint">${held}</p>
         <ol class="milestones">${l.milestones.map(m => `
           <li class="${m.actual ? 'done' : ''}">
-            <div class="ms-at">${num(m.at)} <small>${l.unit === 'hon' ? 'HON' : 'QP'}</small></div>
+            <div class="ms-at">${num(m.at)} <small>${UNIT_LABEL[l.unit]}</small></div>
             <div class="ms-body">
               <b>${esc(m.title)}</b>
               <div class="muted">${esc(m.detail)}</div>
@@ -339,7 +354,7 @@
       <div class="cols-3">${ladders.map(ladder).join('')}</div>
       <div class="card">
         <div class="card-head"><h2>How Extra Benefits work</h2>
-          <div class="right"><a class="btn small" href="https://www.miles-and-more.com/de/de/program/status-benefits/extra-benefits.html" target="_blank" rel="noopener">miles-and-more.com ↗</a></div></div>
+          <div class="right"><a class="btn small" href="https://www.miles-and-more.com/de/en/program/status-benefits/extra-benefits.html" target="_blank" rel="noopener">miles-and-more.com ↗</a></div></div>
         <ul class="rules-list">
           <li>Each status has its own milestones, counted in the ${unitTxt('qp')} (Frequent Traveller, Senator) or ${unitTxt('hon')}
             (HON Circle) you collect in the calendar year. They are credited automatically.</li>
@@ -355,8 +370,7 @@
         </ul>
         <p class="hint">Milestones as on miles-and-more.com (last updated there in October 2023, checked 31 Oct 2026).</p>
       </div>`;
-    for (const el of $$('#view-benefits [data-width]')) el.style.width = `${Math.min(100, el.dataset.width)}%`;
-    for (const el of $$('#view-benefits [data-left]')) el.style.left = `${el.dataset.left}%`;
+    applyBars($('#view-benefits'));
   };
 
   const COST_KINDS = [['flight', 'Flight', '--c-flight'], ['upgrade', 'Upgrade', '--c-upgrade'], ['co2', 'CO₂ compensation', '--c-co2']];
@@ -410,10 +424,10 @@
   const renderHistory = (hist) => {
     const rows = hist.slice().reverse().map(h => {
       const total = h.cost.all.total;
-      const hasPlan = h.rows.some(r => r.planned && r.counts);
+      const nPlan = plannedCount(h), hasPlan = nPlan > 0;
       return `<tr data-year="${h.year}" ${h.year === year ? 'class="current"' : ''}>
         <td>${h.year}</td>
-        <td class="num">${h.rows.filter(r => !r.planned).length}${hasPlan ? ` <span class="muted">+${h.rows.filter(r => r.planned && r.counts).length}</span>` : ''}</td>
+        <td class="num">${h.rows.filter(r => !r.planned).length}${hasPlan ? ` <span class="muted">+${nPlan}</span>` : ''}</td>
         ${['p', 'qp', 'hon'].map(k => `<td class="num">${num(h.actual[k])}${hasPlan ? ` <span class="muted">→ ${num(h.forecast[k])}</span>` : ''}
           <div class="cpu">${perUnit(total, h.forecast[k], k)}</div></td>`).join('')}
         <td>${badge(h.statusActual)}${h.fromStatement ? ' <span class="muted">(statement)</span>' : ''}${hasPlan && h.statusForecast !== h.statusActual ? ` <span class="muted">→</span> ${badge(h.statusForecast)}` : ''}</td>
@@ -431,7 +445,7 @@
       C.stackedBars(yc, {
         label: 'Costs per year', categories: hist.map(h => String(h.year)), series: costSeries(), data: hist.map(h => h.cost.all),
         format: (v) => money(v, true),
-        note: (i) => `<div class="row muted"><span>Status incl. plan</span><span>${esc(MM.STATUS_LABEL[hist[i].statusForecast])}</span></div>`,
+        note: (i) => `<div class="row muted"><span>Status incl. plan</span><span>${statusLabel(hist[i].statusForecast)}</span></div>`,
       });
     }
   };
@@ -1092,7 +1106,7 @@
       <div class="plan-targets">${MM.STATUSES.map(target).join('')}</div>
       <div class="table-wrap"><table>
         <thead><tr><th>Step</th><th class="num">Points</th><th class="num">QP</th><th class="num">HON</th><th>Status</th>
-          <th>${cmp ? `Missing for ${esc(MM.STATUS_LABEL[cmp])}` : 'Missing'}</th><th class="num">Cost of the step</th><th class="num">Cost per ${UNIT_LABEL[unit]}</th></tr></thead>
+          <th>${cmp ? `Missing for ${statusLabel(cmp)}` : 'Missing'}</th><th class="num">Cost of the step</th><th class="num">Cost per ${UNIT_LABEL[unit]}</th></tr></thead>
         <tbody>${steps.map((x, i) => `<tr class="static">
           <td>${x.bold ? `<b>${x.label}</b>` : x.label}${x.note ? `<div class="muted wrap">${x.note}</div>` : ''}</td>
           ${ptsCells(x.t, x.add, i === 0)}<td>${badge(x.s)}</td><td>${missCell(x.t, x.s)}</td>${costCells(x.cost, x.add, x.what)}</tr>`).join('')}</tbody>
@@ -1104,7 +1118,7 @@
         </tfoot>
       </table></div>
       <p class="hint">The grey numbers are what a step adds; the costs of the steps add up to the total. Boosters count on top of the upgrades, so a booster on an upgraded
-        flight earns its share of the upgraded cabin. Cost per ${UNIT_LABEL[unit]} is a step's cost divided by the ${PT_LABEL[unit]} it adds${cmp ? `, the points ${esc(MM.STATUS_LABEL[cmp])} needs` : ''}:
+        flight earns its share of the upgraded cabin. Cost per ${UNIT_LABEL[unit]} is a step's cost divided by the ${PT_LABEL[unit]} it adds${cmp ? `, the points ${statusLabel(cmp)} needs` : ''}:
         the lower, the cheaper that way to the status. Upgrades without a price count as free here.</p>`);
 
     renderGap(sc.total, sc.status.total);
@@ -1163,7 +1177,7 @@
           <div class="card-head"><h2>Starting status</h2><span class="sub">your status before the first tracked year</span></div>
           <div class="grid">
             <label>Status (as on your statement)
-              <select id="startStatus">${MM.STATUS_ORDER.map(s => `<option value="${s}" ${s === ss.status ? 'selected' : ''}>${s === 'NONE' ? 'None / Base' : esc(MM.STATUS_LABEL[s])}</option>`).join('')}</select>
+              <select id="startStatus">${MM.STATUS_ORDER.map(s => `<option value="${s}" ${s === ss.status ? 'selected' : ''}>${s === 'NONE' ? 'None / Base' : statusLabel(s)}</option>`).join('')}</select>
             </label>
             <label>Earned in calendar year<input type="number" id="startYear" min="2000" max="2100" step="1" value="${ssYear}"></label>
           </div>
@@ -1880,6 +1894,6 @@
 
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
-  setView(['dashboard', 'benefits', 'flights', 'planner', 'settings'].includes(startView) ? startView : 'dashboard');
+  setView($$('.tabs [data-view]').some(b => b.dataset.view === startView) ? startView : 'dashboard');
   if (loadError) toast(`${loadError} Load a saved .json file instead.`, 10000);
 })();

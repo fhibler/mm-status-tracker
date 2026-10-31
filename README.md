@@ -28,9 +28,9 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   Planned flights also count when the history decides which status you carry into the next year.
 - **Extra Benefits tab** (read only): the milestones of each status (Frequent Traveller and Senator in Qualifying Points,
   HON Circle in HON Circle Points per calendar year), with the date each one was or will be unlocked, what's still missing,
-  and which ladder applies. A milestone counts only while you hold its status: the status held in the year before
-  (until the end of February), the one carried in (from March) or one earned during the year (from that day). The
-  ladders of other statuses don't add up. Follows the "Planner" switch like the dashboard.
+  and when each ladder applies. A milestone counts only while you hold its status: the status held in the year before
+  (until the end of February; or the higher one your planned flights earn in that year), the one carried in (from
+  March) or one earned during the year (from that day). The ladders of other statuses don't add up. Follows the "Planner" switch like the dashboard.
 - **Planner tab**: build a what-if scenario per calendar year on top of your forecast, saved in the `.json`:
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
     Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment. They have
@@ -52,7 +52,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     and costs add up to the total, plus the status after it, what is still missing for the next status, and its cost
     per QP (HON Circle Points when HON Circle is next). It also shows when each status is reached and how many more
     segments of one type would close the gap.
-  - The dashboard's "incl. Planner" button counts the scenario as planned: a booster what-if on a flown flight adds to
+  - The "Planner" switch (dashboard and Extra Benefits) counts the scenario as planned: a booster what-if on a flown flight adds to
     the forecast and the planned cost, while what you have flown and spent stays as it is.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted

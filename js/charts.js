@@ -109,9 +109,9 @@
       q += `H${X(days)}`;
       el('path', { d: q, fill: 'none', stroke: opts.color, 'stroke-width': 2, 'stroke-dasharray': '5 4', opacity: 0.85 }, svg);
     }
-    // markers for flights
+    // markers for flights (a planned item dated in the past, the CO₂ booster what-if of a flown flight, sits at today like its step)
     for (const s of act.slice(1)) el('circle', { cx: X(s.d), cy: Y(s.v), r: 3.2, fill: opts.color, stroke: 'var(--surface)', 'stroke-width': 2 }, svg);
-    for (const s of fc) el('circle', { cx: X(s.d), cy: Y(s.v), r: 3.2, fill: 'var(--surface)', stroke: opts.color, 'stroke-width': 2 }, svg);
+    for (const s of fc) el('circle', { cx: X(Math.max(s.d, endAct)), cy: Y(s.v), r: 3.2, fill: 'var(--surface)', stroke: opts.color, 'stroke-width': 2 }, svg);
 
     // hover layer
     const cross = el('line', { y1: m.t, y2: m.t + ih, class: 'cross', visibility: 'hidden' }, svg);
@@ -125,7 +125,7 @@
         if (rd > d) break;
         if (!r.planned) va += r.e[k];
         if (r.counts) vf += r.e[k];
-        if (rd === d) on.push(r);
+        if (rd === d && (!r.planned || d > todayD)) on.push(r);   // the day shows the flown value up to today
       }
       return { va, vf, on };
     };

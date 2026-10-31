@@ -130,7 +130,7 @@
   E.haul = (f) => (f.haulOverride && f.haulOverride !== 'auto' ? f.haulOverride
     : E.autoHaul(f) || (f.transport === 'rail' || f.transport === 'bus' ? 'continental' : null));
 
-  /** Cabin that earns: manual override, else the upgrade class (fixed or bid upgrade), else the booked class. */
+  /** Cabin that earns: manual override, else the upgrade class (fixed price online or bid upgrade), else the booked class. */
   E.earningClass = (f) => {
     if (f.earnClassOverride && f.earnClassOverride !== 'auto') return f.earnClassOverride;
     return E.upgradeEarns(f) && f.upgradeClass ? f.upgradeClass : f.bookedClass;
@@ -265,6 +265,8 @@
   };
   E.rank = (s) => MM.STATUS_ORDER.indexOf(s);
   const best = (a, b) => (E.rank(a) >= E.rank(b) ? a : b);
+  /** The day before an ISO date. */
+  E.dayBefore = (date) => new Date(Date.parse(date) - 864e5).toISOString().slice(0, 10);
 
   /** A status reached in `year` is valid immediately until the end of February of the year after next. */
   E.validUntil = (year) => new Date(Date.UTC(year + 2, 2, 0)).toISOString().slice(0, 10);
@@ -328,7 +330,7 @@
    * are planned. A starting status from the statement earned in this year raises statusActual / statusForecast
    * (fromStatement: it is higher than the status earned with the tracked items); it has no date in `reached`.
    * unknown: flights in the forecast that would earn but have no haul.
-   * A flown flight with a planner CO₂ what-if (f.asFlown = the flight as flown, see planned) counts as flown, and its
+   * A flown flight with a planner CO₂ what-if (f.asFlown = the flight as flown, see scenarioFlight) counts as flown, and its
    * booster as a planned event on the same date (events only: { …, f, booster: true }, e and c = what it adds).
    * Each event names what it is in `by` (flight number, 'Correction' or 'Marriott Bonvoy').
    */
@@ -379,7 +381,7 @@
       else if (isStay) { stays.push(row); stayTotal.p += e.p; }
       else rows.push(row);
       count(row, isAdj ? 'Correction' : isStay ? 'Marriott Bonvoy' : f.flightNo);
-      if (f && f !== it.f) {   // the planned CO₂ booster of a flown flight (see planned)
+      if (f && f !== it.f) {   // the planned CO₂ booster of a flown flight (see scenarioFlight)
         const ew = E.earn(it.f, rules), cw = E.cost(it.f, fare);
         const booster = { date, e: { ...ew, ...diff(ew, e) }, c: Object.fromEntries(Object.keys(cw).map(k => [k, cw[k] - c[k]])), planned: true, counts: true, f: it.f, booster: true };
         count(booster, it.f.flightNo);
@@ -430,32 +432,40 @@
 
   /**
    * Extra Benefits (MM.EXTRA_BENEFITS) in the year of history entry h (E.history). The status held changes during the
-   * year: until the end of February it is the one held in the year before (h.prevHeld), from March the one carried in
-   * (h.carriedIn), and from the day a status is earned that one if it is higher. A milestone is unlocked when the
-   * year's total in its unit (rail capped as for the status, E.effective) reaches it while its status is held; the
-   * ladders of other statuses don't count. Walks h.events twice: flown only (actual) and incl. plan (forecast).
-   * Returns per status { key, unit, total: { actual, forecast }, held: { actual, forecast } (held at some point in
-   * the year), milestones: [{ …milestone, actual, forecast }] } with actual / forecast = { date, by } or null.
+   * year: until the end of February it is the one held in the year before (h.prevHeld, or the higher one that year's
+   * planned flights earn, h.carriedIn), from March the one carried in (h.carriedIn), and from the day a status is
+   * earned that one if it is higher. A milestone is unlocked when the year's total in its unit (rail capped as for the
+   * status, E.effective) reaches it while its status is held; the ladders of other statuses don't count. Walks
+   * h.events twice: flown only up to today (actual) and incl. plan (forecast).
+   * Returns per status { key, unit, total: { actual, forecast }, held: { actual, forecast } (held in the year, with
+   * flown items only or incl. plan), periods: [{ from, to }] (when it is held in the forecast; to = its last day, null
+   * = to the end of the year), milestones: [{ …milestone, actual, forecast }] } with actual / forecast = { date, by }
+   * or null.
    */
   E.extraBenefits = (state, h, today = E.todayISO()) => {
     const rules = state.settings.rules, march = `${h.year}-03-01`, stmt = E.statementStatus(state, h.year);
-    /** Walks the events that `counts` up to the date `until`. */
+    const early = best(h.prevHeld, h.carriedIn);
+    /** Walks the events that `counts`; milestones are unlocked up to the date `until`. */
     const walk = (counts, until) => {
-      const t = noPoints(), got = {}, held = new Set();
+      const t = noPoints(), got = {}, periods = {};
+      let held = null;
       const check = (date, by) => {
-        if (date > until) return;
-        const s = best(best(date < march ? h.prevHeld : h.carriedIn, stmt), E.status(t, rules)), b = MM.EXTRA_BENEFITS[s];
-        held.add(s);
-        if (!b) return;
+        const s = best(best(date < march ? early : h.carriedIn, stmt), E.status(t, rules)), b = MM.EXTRA_BENEFITS[s];
+        if (s !== held) {
+          if (held) periods[held][periods[held].length - 1].to = E.dayBefore(date);
+          (periods[s] = periods[s] || []).push({ from: date, to: null });
+          held = s;
+        }
+        if (date > until || !b) return;
         const v = E.effective(t, s, rules)[b.unit];
         b.milestones.forEach((m, i) => { if (v >= m.at && !got[s + i]) got[s + i] = { date, by }; });
       };
       let inMarch = false;
       const toMarch = (date) => { if (!inMarch && date >= march) { inMarch = true; check(march, 'status from March'); } };
-      check(`${h.year}-01-01`, 'status at the start of the year');
+      check(`${h.year}-01-01`);   // nothing collected yet: only starts the status held
       for (const ev of h.events.filter(counts)) { toMarch(ev.date); addEarn(t, ev.e); check(ev.date, ev.by); }
       toMarch(march);
-      return { got, held, t };
+      return { got, periods, t };
     };
     const act = walk(ev => !ev.planned, today), fc = walk(ev => ev.counts, '9999-12-31');
     return MM.STATUSES.map(key => {
@@ -463,10 +473,23 @@
       return {
         key, unit,
         total: { actual: E.effective(act.t, key, rules)[unit], forecast: E.effective(fc.t, key, rules)[unit] },
-        held: { actual: act.held.has(key), forecast: fc.held.has(key) },
+        held: { actual: key in act.periods, forecast: key in fc.periods },
+        periods: fc.periods[key] || [],
         milestones: milestones.map((m, i) => ({ ...m, actual: act.got[key + i] || null, forecast: fc.got[key + i] || null })),
       };
     });
+  };
+
+  /**
+   * The next Extra Benefit of ladders (E.extraBenefits): the one forecast first that isn't unlocked yet, else the first
+   * one not forecast of the status held at the end of the year ({ l: ladder, m: milestone }), or null when there is none.
+   */
+  E.nextExtraBenefit = (ladders) => {
+    const forecast = ladders.flatMap(l => l.milestones.filter(m => m.forecast && !m.actual).map(m => ({ l, m })))
+      .sort((a, b) => a.m.forecast.date.localeCompare(b.m.forecast.date));
+    if (forecast.length) return forecast[0];
+    const l = ladders.find(x => x.periods.some(p => !p.to)), m = l && l.milestones.find(x => !x.forecast);
+    return m ? { l, m } : null;
   };
 
   /** What's still missing to reach a status, based on totals t. */
@@ -572,7 +595,7 @@
    * Flight f with the plan's what-ifs (E.whatIfFlight) as a scenario counts it: a flown flight remembers how it was
    * flown (asFlown), since its what-if (a CO₂ booster) is only planned (see E.yearSummary).
    */
-  const planned = (f, plan, parts, today) => {
+  const scenarioFlight = (f, plan, parts, today) => {
     const w = E.whatIfFlight(f, plan, parts, today);
     return w === f || E.isPlanned(f, today) ? w : { ...w, asFlown: f };
   };
@@ -605,7 +628,7 @@
    */
   E.planScenario = (state, year, plan, today = E.todayISO()) => {
     const rules = state.settings.rules;
-    const summary = (parts) => E.yearSummary({ ...state, flights: state.flights.map(f => planned(f, plan, parts, today)) }, year, today);
+    const summary = (parts) => E.yearSummary({ ...state, flights: state.flights.map(f => scenarioFlight(f, plan, parts, today)) }, year, today);
     const base = E.yearSummary(state, year, today);
     const withUpgrades = summary({ upgrade: true });
     const withWhatIfs = summary({ upgrade: true, co2: true });
@@ -643,7 +666,7 @@
   };
 
   /**
-   * The state with every year's planner scenario applied, for the dashboard's "incl. Planner" view: the upgrade and
+   * The state with every year's planner scenario applied, for the Planner switch (dashboard and Extra Benefits): the upgrade and
    * CO₂ what-ifs apply to flights that take them (see E.whatIfFlight; locked ones keep theirs; on a flown flight the
    * booster is planned, see E.yearSummary), and each extra segment
    * of the mix becomes a planned flight on 31 Dec of its year (see E.mixCounts), flightNo 'Planner', cost = its cost
@@ -653,7 +676,7 @@
   E.withPlans = (state, today = E.todayISO()) => {
     const flights = state.flights.map(f => {
       const plan = state.plans[f.date.slice(0, 4)];
-      return plan ? planned(f, plan, undefined, today) : f;
+      return plan ? scenarioFlight(f, plan, undefined, today) : f;
     });
     for (const [y, plan] of Object.entries(state.plans)) {
       const date = `${y}-12-31`;

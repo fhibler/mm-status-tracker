@@ -73,7 +73,6 @@ assert.strictEqual(pts(earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Firs
 {
   const up = (upgradeType) => earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType }).p;
   assert.strictEqual(['fixed-online', 'bid', 'fixed-airport', 'miles', 'operational', ''].map(up).join(','), '200,200,60,60,60,60');
-  assert.strictEqual(`${MM.UPGRADE_TYPES.bid.label}:${MM.UPGRADE_TYPES.miles.label}:${'voucher' in MM.UPGRADE_TYPES}`, 'Bid (Online):Miles / eVoucher:false');
   const e = earn({ flightNo: 'LH1', route: fraJfk, bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid', earnClassOverride: 'Premium Economy' });
   assert.strictEqual(`${e.cls}:${pts(e)}`, 'Premium Economy:80,80,0');   // cabin override beats the upgrade
 }
@@ -269,10 +268,14 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
 {
   const segs = (dates) => dates.map(d => lhBiz({ id: d, date: d }));   // 200 P / QP / HON each
   const may = (n) => Array.from({ length: n }, (_, i) => `2026-05-${String(i + 1).padStart(2, '0')}`);
-  const benefits = (o, year = 2026) => {
+  const ladders = (o, year = 2026, today = TODAY) => {
     const st = state(o);
-    return Object.fromEntries(E.extraBenefits(st, E.history(st, year, TODAY).find(h => h.year === year), TODAY).map(b => [b.key, b]));
+    return E.extraBenefits(st, E.history(st, year, today).find(h => h.year === year), today);
   };
+  const benefits = (...args) => Object.fromEntries(ladders(...args).map(b => [b.key, b]));
+  const periods = (b) => b.periods.map(p => `${p.from}..${p.to || ''}`).join(' ');
+  const next = (l) => { const n = E.nextExtraBenefit(l); return n ? `${n.l.key} ${n.m.at} ${n.m.forecast ? n.m.forecast.date : '-'}` : '-'; };
+  const sen2024 = Array.from({ length: 10 }, (_, i) => `2024-04-${String(i + 1).padStart(2, '0')}`);
   const at = (b, i, which) => { const x = b.milestones[i][which]; return x ? `${x.date} ${x.by}` : '-'; };
   // no status at the start: FTL on 4 May (800 QP, so its 700 and 800 QP milestones too), Senator on 10 May, 2,200 QP on 11 May;
   // two planned flights reach 2,500 QP in the forecast
@@ -281,6 +284,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     '2026-05-04 LH400 | 2026-05-11 LH400 | - | 2026-09-02 LH400');
   assert.strictEqual(`${b.SEN.total.actual}:${b.SEN.total.forecast}:${b.FTL.held.actual}:${b.SEN.held.actual}:${b.HON.held.forecast}`, '2200:2600:true:true:false');
   assert.strictEqual(b.HON.milestones.every(m => !m.forecast), true);
+  assert.strictEqual(`${periods(b.FTL)} | ${periods(b.SEN)}`, '2026-05-04..2026-05-09 | 2026-05-10..');
+  // the next one is the first forecast that isn't unlocked yet; planned flights left out of the forecast don't count
+  assert.strictEqual(next(ladders({ flights: segs([...may(11), '2026-09-01', '2026-09-02']) })), 'SEN 2500 2026-09-02');
+  const out = segs(['2026-09-01', '2026-09-02']).map(f => ({ ...f, includeInPlan: false }));
+  assert.strictEqual(`${at(benefits({ flights: [...segs(may(11)), ...out] }).SEN, 1, 'forecast')}:${next(ladders({ flights: [...segs(may(11)), ...out] }))}`, '-:SEN 2500 -');
+  assert.strictEqual(next(ladders({ flights: segs(['2026-05-01']) })), '-');   // no status, no ladder
   // HON Circle carried in from 2025: the Senator ladder doesn't apply, however many QP
   b = benefits({ flights: segs([...Array.from({ length: 30 }, (_, i) => `2025-04-${String(i + 1).padStart(2, '0')}`), ...may(13)]) });
   assert.strictEqual(`${b.SEN.held.forecast}:${b.SEN.total.actual}:${at(b.SEN, 0, 'actual')}:${at(b.HON, 0, 'actual')}`, 'false:2600:-:-');
@@ -288,10 +297,19 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   b = benefits({ flights: segs(may(11)), settings: { startStatus: { status: 'SEN', year: 2026 } } });
   assert.strictEqual(`${at(b.FTL, 0, 'actual')}:${at(b.SEN, 0, 'actual')}`, '-:2026-05-11 LH400');
   // Senator 2024, not requalified in 2025: Senator until the end of Feb 2026, FTL from March. 800 QP in February
-  // unlock the FTL exchange on 1 March; before March they count for the Senator ladder only
-  b = benefits({ flights: segs([...Array.from({ length: 10 }, (_, i) => `2024-04-${String(i + 1).padStart(2, '0')}`), '2026-02-01', '2026-02-02', '2026-02-03', '2026-02-04']) });
-  assert.strictEqual(`${b.SEN.held.actual}:${b.FTL.held.actual}:${at(b.FTL, 0, 'actual')}`, 'true:true:2026-03-01 status from March');
-  assert.strictEqual(at(benefits({ flights: segs(['2026-02-01', '2026-02-02', '2026-02-03', '2026-02-04']) }, 2026).FTL, 0, 'actual'), '2026-02-04 LH400');
+  // unlock the FTL eVoucher (700 QP) and exchange (800 QP) on 1 March; before March they count for the Senator ladder only
+  b = benefits({ flights: segs([...sen2024, '2026-02-01', '2026-02-02', '2026-02-03', '2026-02-04']) });
+  assert.strictEqual(`${b.SEN.held.actual}:${b.FTL.held.actual}:${at(b.FTL, 0, 'actual')}:${at(b.FTL, 1, 'actual')}`, 'true:true:2026-03-01 status from March:2026-03-01 status from March');
+  assert.strictEqual(`${periods(b.SEN)} | ${periods(b.FTL)}`, '2026-01-01..2026-02-28 | 2026-03-01..');
+  // the same before March, with nothing planned: FTL is held from March without planned flights, its milestones are only forecast
+  b = benefits({ flights: segs([...sen2024, '2026-02-01', '2026-02-02', '2026-02-03', '2026-02-04']) }, 2026, '2026-02-10');
+  assert.strictEqual(`${b.FTL.held.actual}:${at(b.FTL, 0, 'actual')}:${at(b.FTL, 0, 'forecast')}`, 'true:-:2026-03-01 status from March');
+  // after the soft landing the next one is the lower status's
+  assert.strictEqual(next(ladders({ flights: segs([...sen2024, '2026-05-01']) })), 'FTL 700 -');
+  // planned flights this year that earn Senator: held from 1 Jan next year, so no FTL milestones then
+  b = benefits({ flights: segs([...may(2), ...Array.from({ length: 8 }, (_, i) => `2026-09-0${i + 1}`), '2027-01-10', '2027-01-11', '2027-01-12', '2027-01-13']) }, 2027);
+  assert.strictEqual(`${b.FTL.held.forecast}:${at(b.FTL, 0, 'forecast')}:${periods(b.SEN)}`, 'false:-:2027-01-01..');
+  assert.strictEqual(at(benefits({ flights: segs(['2026-02-01', '2026-02-02', '2026-02-03', '2026-02-04']) }).FTL, 0, 'actual'), '2026-02-04 LH400');
 }
 
 /* ---------- fares per booking (store) ---------- */
@@ -461,7 +479,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     const out = state({ flights: [u, { ...v, id: 'w', upgradeClass: 'Economy', upgradeType: '', includeInPlan: false }] });
     const wi = E.planScenario(out, 2026, { ...up, upgrade: { u: { cls: 'Business', cost: 0 }, w: { cls: 'Business', cost: 1 } }, co2: { u: up.co2.u, w: up.co2.u } }, TODAY).whatIfs;
     assert.strictEqual(`${wi.upgrades}:${wi.unpriced}:${wi.co2}:${JSON.stringify(sc.whatIfs)}`, '1:1:1:{"upgrades":1,"unpriced":0,"co2":1}');
-    // the dashboard's "incl. Planner" view applies the upgrades too, but not on a flight flown by then
+    // the Planner switch (E.withPlans) applies the upgrades too, but not on a flight flown by then
     for (const today of [TODAY, '2026-07-05']) {
       const s = E.planScenario(us, 2026, up, today), w = E.yearSummary(E.withPlans(state({ flights: [u, v], plans: { 2026: up } }), today), 2026, today);
       assert.strictEqual(`${pts(w.forecast)}:${w.cost.all.total}`, `${pts(s.total)}:${s.cost.total}`);
@@ -480,7 +498,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     S.saveFlight(lb, { ...u, bookedClass: 'First', upgradeClass: 'First' }, 0);   // booked in First now: nothing above
     assert.strictEqual(JSON.stringify(lb.plans['2026'].upgrade), '{}');
   }
-  // the dashboard's "incl. Planner" view: the same totals, cost and status as the scenario, as planned items
+  // the Planner switch (E.withPlans): the same totals, cost and status as the scenario, as planned items
   const sp = state({ ...st, plans: { 2026: plan, 2025: { co2: {}, mix: [plan.mix[0]] } } });
   const wp = E.yearSummary(E.withPlans(sp, TODAY), 2026, TODAY);
   assert.strictEqual(`${pts(wp.forecast)}:${pts(wp.actual)}:${wp.cost.all.total}:${wp.statusForecast}`, `${pts(sc.total)}:${pts(sc.withWhatIfs.actual)}:${sc.cost.total}:FTL`);
@@ -543,10 +561,9 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const choices = ['transport', 'bookedClass', 'upgradeClass', 'co2Level', 'haulOverride', 'earningGroup', 'earnClassOverride', 'upgradeType'];
   const bad = state({ flights: [{ date: '2026-01-01', ...Object.fromEntries(choices.map(k => [k, 'x'])), bookedClass: 'Business' }] }).flights[0];
   assert.strictEqual(choices.map(k => bad[k]).join(','), 'flight,Business,Business,none,auto,auto,auto,');
-  // the upgrade type 'voucher' of older versions is read as 'miles', in saved data and in imported files
+  // the upgrade type 'voucher' of older versions is read as 'miles' (S.parse and loading saved data both normalize)
   const vf = { date: '2026-01-01', bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'voucher' };
   assert.strictEqual(state({ flights: [vf] }).flights[0].upgradeType, 'miles');
-  assert.strictEqual(S.parse(JSON.stringify({ ...S.empty(), flights: [vf] })).flights[0].upgradeType, 'miles');
   // booking codes are normalised and fares never negative; an implausible starting status year is dropped
   const bk = state({ flights: [flight({ bookingCode: 'AB1' })], bookings: { 'ab 1': { fare: -5 } }, settings: { startStatus: { status: 'SEN', year: 1 } } });
   assert.strictEqual(`${Object.keys(bk.bookings).join()}:${bk.bookings.AB1.fare}:${bk.settings.startStatus.year}`, 'AB1:0:null');

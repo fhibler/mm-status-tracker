@@ -88,7 +88,8 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 | Points per segment, HON cabins, thresholds, rail caps, Marriott stays, CO₂ boosters | `js/data.js` → `MM.DEFAULT_RULES` |
 | Hotel stays (Points per stay, minimum nights, yearly cap) | `js/data.js` → `MM.DEFAULT_RULES.marriott`; logic in `js/engine.js` → `E.stayEarn` |
 | Cabins per haul (Lufthansa Group continental: Economy and Business; used by the planner) | `js/data.js` → `MM.CONTINENTAL_CLASSES`; logic in `js/engine.js` → `E.cabins` |
-| Extra Benefits milestones | `js/data.js` → `MM.EXTRA_BENEFITS` ; logic in `js/engine.js` → `E.extraBenefits` |
+| Extra Benefits milestones | `js/data.js` → `MM.EXTRA_BENEFITS` (and its "checked" date in the comment above it and in the hint below "How Extra Benefits work" in `js/app.js`); logic in `js/engine.js` → `E.extraBenefits` |
+| Upgrade types and which of them earn in the upgraded class | `js/data.js` → `MM.UPGRADE_TYPES` (`earnsUpgrade`); logic in `js/engine.js` → `E.upgradeEarns`, `E.earningClass`, `E.co2Class` |
 | Validity rule | `js/engine.js` → `E.validUntil` |
 | Downgrade rule | `js/engine.js` → `E.softLanding`, `E.history` |
 | Special earning cases (rail, bus, codeshare operator) | `js/engine.js` → `E.earn`, `E.earningGroup`, `E.effective` |
@@ -101,7 +102,8 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 
 Users keep their rules in localStorage and in exported `.json` files, and `S.normalize` keeps stored values over
 the defaults. A changed default therefore does **not** reach existing data on its own. The app has a single user
-and keeps **no migration code** (the old ones were removed on 2026-10-16, after the data had been migrated):
+and keeps no migration code apart from one alias (the old migrations were removed on 2026-10-16, after the data had
+been migrated): `S.normalize` reads the upgrade type `voucher` of older versions as `miles`.
 
 1. Tell the user which value changed. They update it in Settings, or use "Reset rules to defaults" if they never
    changed the rules on purpose.
