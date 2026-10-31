@@ -330,6 +330,7 @@
    * unknown: flights in the forecast that would earn but have no haul.
    * A flown flight with a planner CO₂ what-if (f.asFlown = the flight as flown, see planned) counts as flown, and its
    * booster as a planned event on the same date (events only: { …, f, booster: true }, e and c = what it adds).
+   * Each event names what it is in `by` (flight number, 'Correction' or 'Marriott Bonvoy').
    */
   E.yearSummary = (state, year, today = E.todayISO()) => {
     const rules = state.settings.rules;
@@ -350,6 +351,7 @@
     const holders = E.fareHolders(state, today);
     /** Counts an event in the forecast (if it counts) and, unless it is planned, in what was flown; `by` names it. */
     const count = (ev, by) => {
+      ev.by = by;
       if (ev.counts) {
         addEarn(all, ev.e);
         for (const k of Object.keys(ev.c)) { (ev.planned ? cost.plan : cost.actual)[k] += ev.c[k]; cost.all[k] += ev.c[k]; }
@@ -424,6 +426,47 @@
       prev = s;
     }
     return out;
+  };
+
+  /**
+   * Extra Benefits (MM.EXTRA_BENEFITS) in the year of history entry h (E.history). The status held changes during the
+   * year: until the end of February it is the one held in the year before (h.prevHeld), from March the one carried in
+   * (h.carriedIn), and from the day a status is earned that one if it is higher. A milestone is unlocked when the
+   * year's total in its unit (rail capped as for the status, E.effective) reaches it while its status is held; the
+   * ladders of other statuses don't count. Walks h.events twice: flown only (actual) and incl. plan (forecast).
+   * Returns per status { key, unit, total: { actual, forecast }, held: { actual, forecast } (held at some point in
+   * the year), milestones: [{ …milestone, actual, forecast }] } with actual / forecast = { date, by } or null.
+   */
+  E.extraBenefits = (state, h, today = E.todayISO()) => {
+    const rules = state.settings.rules, march = `${h.year}-03-01`, stmt = E.statementStatus(state, h.year);
+    /** Walks the events that `counts` up to the date `until`. */
+    const walk = (counts, until) => {
+      const t = noPoints(), got = {}, held = new Set();
+      const check = (date, by) => {
+        if (date > until) return;
+        const s = best(best(date < march ? h.prevHeld : h.carriedIn, stmt), E.status(t, rules)), b = MM.EXTRA_BENEFITS[s];
+        held.add(s);
+        if (!b) return;
+        const v = E.effective(t, s, rules)[b.unit];
+        b.milestones.forEach((m, i) => { if (v >= m.at && !got[s + i]) got[s + i] = { date, by }; });
+      };
+      let inMarch = false;
+      const toMarch = (date) => { if (!inMarch && date >= march) { inMarch = true; check(march, 'status from March'); } };
+      check(`${h.year}-01-01`, 'status at the start of the year');
+      for (const ev of h.events.filter(counts)) { toMarch(ev.date); addEarn(t, ev.e); check(ev.date, ev.by); }
+      toMarch(march);
+      return { got, held, t };
+    };
+    const act = walk(ev => !ev.planned, today), fc = walk(ev => ev.counts, '9999-12-31');
+    return MM.STATUSES.map(key => {
+      const { unit, milestones } = MM.EXTRA_BENEFITS[key];
+      return {
+        key, unit,
+        total: { actual: E.effective(act.t, key, rules)[unit], forecast: E.effective(fc.t, key, rules)[unit] },
+        held: { actual: act.held.has(key), forecast: fc.held.has(key) },
+        milestones: milestones.map((m, i) => ({ ...m, actual: act.got[key + i] || null, forecast: fc.got[key + i] || null })),
+      };
+    });
   };
 
   /** What's still missing to reach a status, based on totals t. */

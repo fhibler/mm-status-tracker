@@ -72,7 +72,7 @@
     view = v;
     $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
     $$('.view').forEach(s => (s.hidden = s.id !== 'view-' + v));
-    $('#planSwitch').hidden = v !== 'dashboard';
+    $('#planSwitch').hidden = v !== 'dashboard' && v !== 'benefits';
     render();
     try { localStorage.setItem('mm-status-tracker:view', v); } catch { /* ignore */ }
   };
@@ -109,6 +109,7 @@
   const render = () => {
     renderYearSelect();
     if (view === 'dashboard') renderDashboard();
+    if (view === 'benefits') renderBenefits();
     if (view === 'flights') renderFlights();
     if (view === 'planner') renderPlanner();
     if (view === 'settings') renderSettings();
@@ -138,13 +139,20 @@
     }
   };
 
+  /** The state the dashboard and Extra Benefits show (incl. the Planner's scenarios as planned items if switched on),
+      its history (E.history) and the entry of the selected year. */
+  const yearHistory = () => {
+    const st = withPlanner ? E.withPlans(state) : state;
+    const hist = E.history(st, year);
+    const sum = hist.find(h => h.year === year) || { ...E.yearSummary(st, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
+    return { st, hist, sum };
+  };
+
   const renderDashboard = () => {
     const host = $('#view-dashboard');
     if (!state.flights.length && !state.adjustments.length && !state.stays.length) { host.innerHTML = emptyState(); return; }
     const rules = state.settings.rules;
-    const st = withPlanner ? E.withPlans(state) : state;   // the Planner's scenarios count as planned items
-    const hist = E.history(st, year);
-    const sum = hist.find(h => h.year === year) || { ...E.yearSummary(st, year), carriedIn: 'NONE', held: 'NONE', prevHeld: 'NONE', downgraded: false };
+    const { hist, sum } = yearHistory();
     const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
       : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${sum.fromStatement ? 'as per your statement' : C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
@@ -267,6 +275,88 @@
         <div class="legend"><span><i class="c-${d.key}"></i>Flown</span><span><i class="dash c-${d.key}"></i>Forecast</span><span><i class="c-today"></i>Today</span></div>
       </div>`).join('');
     for (const d of defs) C.cumulative($(`[data-cum="${d.key}"]`, host), { ...d, year, rows: sum.events, today: E.todayISO() });
+  };
+
+  /* ================= Extra Benefits (read only) ================= */
+  const renderBenefits = () => {
+    const { st, sum } = yearHistory();
+    const ladders = E.extraBenefits(st, sum);
+    const label = (k) => esc(MM.STATUS_LABEL[k]);
+    const unitTxt = (u) => (u === 'hon' ? 'HON Circle Points' : 'Qualifying Points');
+    const when = (x) => `${C.fmtDate(x.date)} · ${esc(x.by)}`;
+    const next = ladders.slice().reverse().flatMap(l => (l.held.forecast ? l.milestones.filter(m => !m.actual).map(m => ({ l, m })) : []))[0];
+
+    const kpis = `
+      <div class="kpis">
+        <div class="card kpi"><div class="label">Held 1 Jan – end of Feb</div>
+          <div class="value">${badge(sum.prevHeld)}</div>
+          <div class="meta">${sum.hasPrev ? `Status held in ${year - 1}` : `No data for ${year - 1}`}</div></div>
+        <div class="card kpi"><div class="label">Held from March</div>
+          <div class="value">${badge(sum.carriedIn)}</div>
+          <div class="meta">${sum.downgraded ? downgradeTxt(sum) : `Carried in from ${year - 1}`}</div></div>
+        <div class="card kpi"><div class="label">Earned in ${year}</div>
+          <div class="value">${badge(sum.statusForecast)}</div>
+          <div class="meta">${sum.statusForecast === sum.statusActual ? 'Flown' : `${label(sum.statusActual)} flown, rest ${withPlanner ? 'with Planner' : 'planned'}`}</div></div>
+        <div class="card kpi"><div class="label">Next Extra Benefit</div>
+          <div class="value small">${next ? esc(next.m.title) : '–'}</div>
+          <div class="meta">${!next ? 'All Extra Benefits of the status you hold are unlocked'
+            : next.m.forecast ? `Forecast ${when(next.m.forecast)}`
+            : `${label(next.l.key)}: ${num(next.m.at - next.l.total.forecast)} ${PT_LABEL[next.l.unit]} to go after plan`}</div></div>
+      </div>`;
+
+    const ladder = (l) => {
+      const top = l.milestones[l.milestones.length - 1].at, max = Math.max(top, l.total.forecast);
+      const stateTxt = (m) => (m.actual ? `<span class="pill ok">✓ Unlocked ${when(m.actual)}</span>`
+        : m.forecast ? `<span class="pill planned">Forecast ${when(m.forecast)}</span>`
+        : l.total.forecast >= m.at ? `<span class="muted">Reached, but not while holding ${label(l.key)}</span>`
+        : l.held.forecast ? `<span class="muted">${num(m.at - l.total.forecast)} ${PT_LABEL[l.unit]} to go after plan</span>`
+        : `<span class="muted">Needs ${label(l.key)} status</span>`);
+      const held = l.held.forecast ? `You hold ${label(l.key)} in ${year}${l.held.actual ? '' : ` ${withPlanner ? 'with the Planner' : 'with your planned flights'}`}: this ladder applies.`
+        : E.rank(sum.statusForecast) > E.rank(l.key) || E.rank(sum.carriedIn) > E.rank(l.key) ? `Not in ${year}: you hold a higher status, whose own Extra Benefits replace these.`
+        : `Not in ${year}: you don't hold ${label(l.key)}.`;
+      return `<div class="card benefit-ladder${l.held.forecast ? '' : ' inactive'}">
+        <div class="card-head"><h2>${badge(l.key)}</h2><span class="sub">${unitTxt(l.unit)} ${year}: ${num(l.total.actual)} flown${l.total.forecast !== l.total.actual ? ` → ${num(l.total.forecast)}` : ''}</span></div>
+        <div class="bar c-${l.unit}">
+          <div class="fc" data-width="${(l.total.forecast / max) * 100}"></div>
+          <div class="ac" data-width="${(l.total.actual / max) * 100}"></div>
+          ${l.milestones.map(m => `<span class="tick" data-left="${(m.at / max) * 100}"></span>`).join('')}
+        </div>
+        <p class="hint">${held}</p>
+        <ol class="milestones">${l.milestones.map(m => `
+          <li class="${m.actual ? 'done' : ''}">
+            <div class="ms-at">${num(m.at)} <small>${l.unit === 'hon' ? 'HON' : 'QP'}</small></div>
+            <div class="ms-body">
+              <b>${esc(m.title)}</b>${m.confirmed ? '' : ' <span class="pill" title="From third-party guides; not yet checked on miles-and-more.com">unconfirmed</span>'}
+              <div class="muted">${esc(m.detail)}</div>
+              <div class="ms-state">${stateTxt(m)}</div>
+            </div>
+          </li>`).join('')}</ol>
+      </div>`;
+    };
+
+    $('#view-benefits').innerHTML = `
+      ${kpis}
+      <div class="cols-3">${ladders.map(ladder).join('')}</div>
+      <div class="card">
+        <div class="card-head"><h2>How Extra Benefits work</h2>
+          <div class="right"><a class="btn small" href="https://www.miles-and-more.com/de/de/program/status-benefits/extra-benefits.html" target="_blank" rel="noopener">miles-and-more.com ↗</a></div></div>
+        <ul class="rules-list">
+          <li>Each status has its own milestones, counted in the ${unitTxt('qp')} (Frequent Traveller, Senator) or ${unitTxt('hon')}
+            (HON Circle) you collect in the calendar year. They are credited automatically.</li>
+          <li><b>Last year's status matters</b>, because it decides which status you hold: the status earned in ${year - 1} is valid from
+            March ${year}, and the one held in ${year - 1} until the end of February. A milestone only counts while you hold its
+            status, so a Senator collects towards the Senator milestones from 1 January.</li>
+          <li>A status earned during the year counts from the day it is reached, with all ${unitTxt('qp')} of the year so far: whoever becomes
+            Senator in ${year} can still unlock the Senator milestones in ${year}. <span class="pill" title="Inferred from the official wording; not stated explicitly">unconfirmed</span></li>
+          <li>The milestones don't add up across statuses: as HON Circle Member you get only the HON Circle ones, as Senator not the
+            Frequent Traveller one. After a soft landing in March the lower status's milestones apply from then on.</li>
+          <li>Train ${unitTxt('qp')} and ${unitTxt('hon')} count only up to the status's train cap, as for the status itself.
+            <span class="pill" title="Assumed from the status rules">unconfirmed</span></li>
+        </ul>
+        <p class="hint">Milestones marked "unconfirmed" come from third-party guides, because the official page couldn't be read on the last check.</p>
+      </div>`;
+    for (const el of $$('#view-benefits [data-width]')) el.style.width = `${Math.min(100, el.dataset.width)}%`;
+    for (const el of $$('#view-benefits [data-left]')) el.style.left = `${el.dataset.left}%`;
   };
 
   const COST_KINDS = [['flight', 'Flight', '--c-flight'], ['upgrade', 'Upgrade', '--c-upgrade'], ['co2', 'CO₂ compensation', '--c-co2']];
@@ -1790,6 +1880,6 @@
 
   let startView = 'dashboard';
   try { startView = localStorage.getItem('mm-status-tracker:view') || 'dashboard'; } catch { /* ignore */ }
-  setView(['dashboard', 'flights', 'planner', 'settings'].includes(startView) ? startView : 'dashboard');
+  setView(['dashboard', 'benefits', 'flights', 'planner', 'settings'].includes(startView) ? startView : 'dashboard');
   if (loadError) toast(`${loadError} Load a saved .json file instead.`, 10000);
 })();

@@ -14,6 +14,7 @@ meilenoptimieren.com, reisetopia.de) only to find hints or dates, never as the f
 | Earning per airline, points per segment, zones, FAQ | https://www.miles-and-more.com/at/en/program/status-benefits/points-system.html |
 | List of airline partners | https://www.miles-and-more.com/at/en/program/partners.html#categoryselected=airlines |
 | Status thresholds | https://www.miles-and-more.com/de/en/general-information/help-and-contact/help/how-to-achieve-frequent-flyer-status.html |
+| Extra Benefits (milestones per status) | https://www.miles-and-more.com/de/en/program/status-benefits/extra-benefits.html (German: `/de/de/`) |
 | Status validity and downgrade | https://www.miles-and-more.com/de/en/general-information/help-and-contact/help/status-validity-for-frequent-travellers-and-senators.html and `.../status-validity-of-hon-circle-miles.html` |
 | Star Alliance members (Points-only group) | https://www.staralliance.com/en/member-airlines |
 | CO₂ boosters (Small/Medium/Large/X-Large) | Supplied by the user. Check the Miles & More CO₂ compensation offer if it is reachable. |
@@ -87,6 +88,7 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 | Points per segment, HON cabins, thresholds, rail caps, Marriott stays, CO₂ boosters | `js/data.js` → `MM.DEFAULT_RULES` |
 | Hotel stays (Points per stay, minimum nights, yearly cap) | `js/data.js` → `MM.DEFAULT_RULES.marriott`; logic in `js/engine.js` → `E.stayEarn` |
 | Cabins per haul (Lufthansa Group continental: Economy and Business; used by the planner) | `js/data.js` → `MM.CONTINENTAL_CLASSES`; logic in `js/engine.js` → `E.cabins` |
+| Extra Benefits milestones | `js/data.js` → `MM.EXTRA_BENEFITS` (set `confirmed: true` once seen on the official page); logic in `js/engine.js` → `E.extraBenefits` |
 | Validity rule | `js/engine.js` → `E.validUntil` |
 | Downgrade rule | `js/engine.js` → `E.softLanding`, `E.history` |
 | Special earning cases (rail, bus, codeshare operator) | `js/engine.js` → `E.earn`, `E.earningGroup`, `E.effective` |
@@ -132,4 +134,8 @@ and keeps **no migration code** (the old ones were removed on 2026-10-16, after 
 - **Rail caps:** FTL 160 QP, SEN 500 QP, HON 1,000 HON
 - **Marriott Bonvoy:** 40 Points per stay of 2+ nights, max 120 Points per calendar year, no QP / HON
 - **Validity:** until end of February of the year after next; one-level soft landing
+- **Extra Benefits (2026-10-31, from search snippets only; the page was blocked):** FTL 800 QP mileage exchange;
+  SEN 2,200 QP Worldshop €50, 2,500 two eVouchers*, 3,500 FTL partner card, 4,500 15,000 miles*, 5,500 First Class
+  Lounge voucher; HON 7,000 two eVouchers*, 10,000 two eVouchers*, 11,500 FTL partner card + 35,000 miles,
+  13,000 Senator partner card + 50,000 miles (* third-party only)
 - **CO₂ boosters (from the user):** Small 5/5/5 %, Medium 20/20/20 %, Large 50/50/20 %, X-Large 80/80/20 % (P/QP/HON)

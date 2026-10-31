@@ -165,6 +165,30 @@ MM.STATUS_ORDER = ['NONE', 'FTL', 'SEN', 'HON'];
 MM.STATUSES = MM.STATUS_ORDER.slice(1);   // the statuses that can be reached
 MM.STATUS_LABEL = { NONE: 'Base', FTL: 'Frequent Traveller', SEN: 'Senator', HON: 'HON Circle' };
 
+/* Extra Benefits (miles-and-more.com, "Extra Benefits for status customers"). Each status has its own ladder, counted in
+   the Qualifying Points (FTL, SEN) or HON Circle Points (HON) of the calendar year; a milestone is unlocked once it is
+   reached while holding that status, and the ladders of lower statuses don't apply on top. `confirmed`: the value was
+   seen on the official page; the others come from third-party guides (reisetopia.de, meilenoptimieren.com,
+   insideflyer.de, turningleftforless.com) because the page couldn't be read on the last check (2026-10-31). */
+MM.EXTRA_BENEFITS = {
+  FTL: { unit: 'qp', milestones: [
+    { at: 800, title: 'Mileage exchange', detail: 'Exchange up to 20,000 miles for up to 125 Points and 125 Qualifying Points to reach Senator.', confirmed: true },
+  ] },
+  SEN: { unit: 'qp', milestones: [
+    { at: 2200, title: 'Worldshop voucher', detail: 'A €50 Miles & More Worldshop voucher.', confirmed: true },
+    { at: 2500, title: 'Two eVouchers', detail: 'Two extra upgrade eVouchers on top of the ones that come with the status.', confirmed: false },
+    { at: 3500, title: 'Frequent Traveller partner card', detail: 'Give Frequent Traveller status and its benefits to a friend or family member.', confirmed: true },
+    { at: 4500, title: '15,000 miles', detail: 'A credit of 15,000 award miles.', confirmed: false },
+    { at: 5500, title: 'First Class Lounge voucher', detail: 'Access to a First Class Lounge for you or a travel companion on one of your next flights.', confirmed: true },
+  ] },
+  HON: { unit: 'hon', milestones: [
+    { at: 7000, title: 'Two eVouchers', detail: 'Two extra upgrade eVouchers on top of the ones that come with the status.', confirmed: false },
+    { at: 10000, title: 'Two more eVouchers', detail: 'Two further upgrade eVouchers.', confirmed: false },
+    { at: 11500, title: 'Frequent Traveller partner card + 35,000 miles', detail: 'Frequent Traveller status for a friend or family member, with 35,000 miles as a starting credit.', confirmed: true },
+    { at: 13000, title: 'Senator partner card + 50,000 miles', detail: 'Senator status for a friend or family member, with 50,000 miles as a starting credit.', confirmed: true },
+  ] },
+};
+
 MM.CURRENCIES = ['EUR', 'CHF', 'USD', 'GBP'];
 /* Kinds of extra segments in the planner (see MM.engine.mixRowEarn). */
 MM.MIX_KIND = { LHG: 'Lufthansa Group', STAR: 'Star Alliance', RAIL: 'Train' };
