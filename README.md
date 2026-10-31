@@ -28,17 +28,19 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   Planned flights also count when the history decides which status you carry into the next year.
 - **Planner tab**: build a what-if scenario per calendar year on top of your forecast, saved in the `.json`:
   - **Extra segments**: a mix of rows like 2 × Business continental + 4 × Premium Economy intercontinental with a
-    Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment.
+    Medium booster, Star Alliance flights (Points only) or trains, each with an estimated cost per segment. They have
+    no dates, so they count on 31 December, and no longer once the year has ended.
   - **Upgrades & CO₂ compensation**, one table of your existing and planned flights:
     - **Upgrade** (planned flights only, a flown one can't be upgraded any more): try a paid upgrade (fixed price or
-      bid) to any cabin above the booked one and type in its price
-      (it is never estimated). The flight then earns in the upgraded cabin, and a booster on it earns and is priced
-      there too. Flights that are already upgraded are locked; change their upgrade in the flight dialog.
+      bid) to a cabin above the booked one (Lufthansa Group continental flights have Economy and Business only) and
+      type in its price (it is never estimated). The flight then earns in the upgraded cabin, also if it had a manual
+      earning class, and a booster on it earns and is priced there too. Flights that are already upgraded are locked;
+      change their upgrade in the flight dialog.
     - **CO₂ booster**: try a booster on any flight and see the extra Points, or set one for all flown, planned or all
       flights at once (optionally only those that earn HON Circle Points). The cost is prefilled with an estimate of
       the lufthansa.com price (see below), else with the average you paid.
-    - Each row shows what its what-ifs add and cost, and the cost per added QP. "Apply" saves the upgrade and the
-      booster to the flight.
+    - Each row shows what its what-ifs add and cost, and the cost per added QP (flights left out of the forecast add
+      nothing). "Apply" saves the upgrade and the booster to the flight.
   - The result builds the year step by step: flown so far, + planned flights (your forecast), + upgrades, + CO₂
     boosters (on top of the upgrades, so a booster on an upgraded flight earns in the upgraded cabin, and the part that
     is only there thanks to the upgrade is named), + extra segments. Each step shows only what it adds, so the Points

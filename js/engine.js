@@ -158,10 +158,12 @@
       locked there (no what-ifs) until its compensation is removed (S.removeBooster). */
   E.canBoost = (f) => f.transport === 'flight' && E.earningGroup(f) !== 'NONE';
   /** Flights for which the planner offers upgrade what-ifs: like E.canBoost, not upgraded yet (an upgraded flight is
-      locked there; change its upgrade in the flight dialog) and booked below First. */
+      locked there; change its upgrade in the flight dialog) and with a cabin above the booked one (E.upgradeClasses). */
   E.canUpgrade = (f) => E.canBoost(f) && !E.isUpgraded(f) && E.upgradeClasses(f).length > 0;
   /** Cabins a flight of this haul and earning group can have: Lufthansa Group continental flights only Economy and Business. */
   E.cabins = (haul, group) => (haul === 'continental' && group === 'LHG' ? MM.CONTINENTAL_CLASSES : MM.CLASSES);
+  /** `cls` if a flight of this haul and group has it (E.cabins), else the nearest cabin it has: First becomes Business, Premium Economy Economy. */
+  E.fitCabin = (haul, group, cls) => (E.cabins(haul, group).includes(cls) ? cls : cls === 'First' ? 'Business' : 'Economy');
   /** Cabins a flight can be upgraded to in the planner: the ones above its booked class that it has (see E.cabins). */
   E.upgradeClasses = (f) => E.cabins(E.haul(f), E.earningGroup(f)).filter(c => MM.CLASSES.indexOf(c) > MM.CLASSES.indexOf(f.bookedClass));
   /** Upgrade type of a planner what-if: a paid upgrade, which earns in the upgraded cabin (see E.upgradeEarns). */
@@ -441,11 +443,11 @@
     return { n, e };
   };
 
+  /** Points b minus points a (P · QP · HON). */
+  const diff = (b, a) => ({ p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon });
+
   /** Points a flight gains (or loses) with CO₂ booster `level` instead of its own. */
-  E.co2Gain = (f, level, rules) => {
-    const a = E.earn(f, rules), b = E.earn({ ...f, co2Level: level }, rules);
-    return { p: b.p - a.p, qp: b.qp - a.qp, hon: b.hon - a.hon };
-  };
+  E.co2Gain = (f, level, rules) => diff(E.earn({ ...f, co2Level: level }, rules), E.earn(f, rules));
 
   /**
    * Cabin a CO₂ booster is priced in: the cabin paid for, i.e. the upgrade class of a paid upgrade (fixed price, bid),
@@ -478,22 +480,47 @@
   };
 
   /**
-   * Flight f with the planner's what-ifs of `plan` (one year's scenario) applied: an upgrade (plan.upgrade[id] =
-   * { cls, cost }, a paid upgrade, see E.WHATIF_UPGRADE) for a planned flight that can take one (E.canUpgrade: a
-   * flown flight can't be upgraded any more, while CO₂ can still be compensated afterwards), and a CO₂ booster
-   * (plan.co2[id] = { level, cost }) for a flight without one. parts picks which of the two apply. The booster is
-   * priced and earns in the upgraded cabin. Returns f itself when nothing applies.
+   * The upgrade what-if of `plan` (one year's scenario) for flight f, plan.upgrade[id] = { cls, cost }, or null when f
+   * can't take it: only a planned flight that can be upgraded (E.canUpgrade; a flown flight can't be upgraded any more),
+   * to a cabin above the booked one that it has (E.upgradeClasses, which can change when its route is looked up).
+   */
+  E.upgradeWhatIf = (f, plan, today = E.todayISO()) => {
+    const u = plan.upgrade[f.id];
+    return u && E.isPlanned(f, today) && E.canUpgrade(f) && E.upgradeClasses(f).includes(u.cls) ? u : null;
+  };
+  /**
+   * The CO₂ what-if of `plan` for flight f, plan.co2[id] = { level, cost }, or null when f can't take it: a booster on a
+   * flight that takes one (E.canBoost) and has none (a compensated flight is locked). CO₂ can still be compensated after
+   * the flight.
+   */
+  E.co2WhatIf = (f, plan) => {
+    const c = plan.co2[f.id];
+    return c && c.level !== 'none' && E.canBoost(f) && !E.hasBooster(f) ? c : null;
+  };
+
+  /**
+   * Flight f with the planner's what-ifs of `plan` applied (E.upgradeWhatIf, E.co2WhatIf); parts picks which of the two.
+   * The upgrade is a paid one (E.WHATIF_UPGRADE), so the flight earns in the upgraded cabin (a manual earning class no
+   * longer applies) and the booster is priced and earns there too. Returns f itself when nothing applies.
    */
   E.whatIfFlight = (f, plan, parts = { upgrade: true, co2: true }, today = E.todayISO()) => {
-    const u = parts.upgrade && (plan.upgrade || {})[f.id], c = parts.co2 && (plan.co2 || {})[f.id];
-    const up = u && E.isPlanned(f, today) && E.canUpgrade(f) && E.upgradeClasses(f).includes(u.cls), boost = c && !E.hasBooster(f);
-    if (!up && !boost) return f;
+    const u = parts.upgrade && E.upgradeWhatIf(f, plan, today), c = parts.co2 && E.co2WhatIf(f, plan);
+    if (!u && !c) return f;
     return {
       ...f,
-      ...(up ? { upgradeClass: u.cls, upgradeType: E.WHATIF_UPGRADE, upgradeCost: u.cost } : {}),
-      ...(boost ? { co2Level: c.level, co2Cost: c.cost } : {}),
+      ...(u ? { upgradeClass: u.cls, upgradeType: E.WHATIF_UPGRADE, upgradeCost: u.cost, earnClassOverride: 'auto' } : {}),
+      ...(c ? { co2Level: c.level, co2Cost: c.cost } : {}),
     };
   };
+
+  /** What the plan's what-ifs for flight f add to its earning (P · QP · HON) and cost, or null when none applies. */
+  E.whatIfGain = (f, plan, rules, today = E.todayISO()) => {
+    const w = E.whatIfFlight(f, plan, undefined, today);
+    return w === f ? null : { add: diff(E.earn(w, rules), E.earn(f, rules)), cost: E.cost(w, 0).total - E.cost(f, 0).total };
+  };
+
+  /** Extra segments of a year's plan count on its 31 December (they have no dates), so only while that is still ahead. */
+  E.mixCounts = (year, today = E.todayISO()) => E.isPlanned({ date: `${year}-12-31` }, today);
 
   /**
    * What-if scenario for a calendar year, on top of the forecast (flown + planned flights, corrections, stays), built
@@ -505,11 +532,12 @@
    *     with a booster is locked, so a what-if for it is ignored), on top of the upgrades: a booster on an upgraded
    *     flight earns its share of the upgraded cabin's points (co2OnUpgrades: the part of step 2 that is only there
    *     thanks to step 1)
-   *  3. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in)
+   *  3. plan.mix = [{ count, kind, haul, cls, co2Level, cost }] – extra segments (cost = per segment, all-in); they
+   *     count on 31 December, so not once the year has ended (E.mixCounts: then n = 0)
    * Returns the year summary after each step (base = the forecast, withUpgrades, withWhatIfs = upgrades and boosters),
-   * the totals with the extra segments, what each step adds and costs, the status after each step (a starting status
-   * from the statement counts in every one, see E.yearSummary) and when each status of the whole scenario is reached
-   * (see E.planReached).
+   * the totals with the extra segments, how many flights of the forecast take a what-if (upgrades, of them unpriced,
+   * co2), what each step adds and costs, the status after each step (a starting status from the statement counts in
+   * every one, see E.yearSummary) and when each status of the whole scenario is reached (see planReached).
    */
   E.planScenario = (state, year, plan, today = E.todayISO()) => {
     const rules = state.settings.rules;
@@ -519,24 +547,28 @@
     const withWhatIfs = summary({ upgrade: true, co2: true });
     const co2Alone = summary({ co2: true });   // only for co2OnUpgrades
     const total = { ...withWhatIfs.forecast };
+    const counts = E.mixCounts(year, today);
     let mixCost = 0;
     const mix = plan.mix.map(row => {
-      const n = row.count, e = E.mixRowEarn(row, rules), cost = n * row.cost;
+      const n = counts ? row.count : 0, e = E.mixRowEarn(row, rules), cost = n * row.cost;
       addEarn(total, e, n);
       mixCost += cost;
       return { row, n, e, sum: { p: n * e.p, qp: n * e.qp, hon: n * e.hon }, cost };
     });
+    const inForecast = base.rows.filter(r => r.counts).map(r => r.f);
+    const upgrades = inForecast.map(f => E.upgradeWhatIf(f, plan, today)).filter(Boolean);
     const costOf = (s) => s.cost.all.total;
-    const diff = (a, b) => ({ p: a.p - b.p, qp: a.qp - b.qp, hon: a.hon - b.hon });
     const co2Step = diff(withWhatIfs.forecast, withUpgrades.forecast), co2Own = diff(co2Alone.forecast, base.forecast);
     return {
-      base, withUpgrades, withWhatIfs, mix, total, reached: E.planReached(withWhatIfs, mix, year, rules),
+      base, withUpgrades, withWhatIfs, mix, total, reached: planReached(withWhatIfs, mix, year, rules),
+      whatIfs: { upgrades: upgrades.length, unpriced: upgrades.filter(u => !u.cost).length, co2: inForecast.filter(f => E.co2WhatIf(f, plan)).length },
       adds: {
-        upgrades: diff(withUpgrades.forecast, base.forecast), co2: co2Step, co2OnUpgrades: diff(co2Step, co2Own),
+        planned: diff(base.forecast, base.actual), upgrades: diff(withUpgrades.forecast, base.forecast), co2: co2Step,
+        co2OnUpgrades: diff(co2Step, co2Own), whatIfs: diff(withWhatIfs.forecast, base.forecast),
         mix: diff(total, withWhatIfs.forecast), total: diff(total, base.forecast),
       },
       cost: {
-        base: costOf(base), upgrades: costOf(withUpgrades) - costOf(base), co2: costOf(withWhatIfs) - costOf(withUpgrades),
+        upgrades: costOf(withUpgrades) - costOf(base), co2: costOf(withWhatIfs) - costOf(withUpgrades),
         mix: mixCost, extra: costOf(withWhatIfs) - costOf(base) + mixCost, total: costOf(withWhatIfs) + mixCost,
       },
       status: {
@@ -548,9 +580,9 @@
 
   /**
    * The state with every year's planner scenario applied, for the dashboard's "incl. Planner" view: the upgrade and
-   * CO₂ what-ifs apply to flights that take them (see E.whatIfFlight; locked ones keep theirs), and each extra segment of the mix becomes a planned
-   * flight on 31 Dec of its year (the mix has no dates; skipped for years that have ended), flightNo 'Planner', cost =
-   * its cost per segment.
+   * CO₂ what-ifs apply to flights that take them (see E.whatIfFlight; locked ones keep theirs), and each extra segment
+   * of the mix becomes a planned flight on 31 Dec of its year (see E.mixCounts), flightNo 'Planner', cost = its cost
+   * per segment.
    * Its totals match E.planScenario. The state itself is not changed.
    */
   E.withPlans = (state, today = E.todayISO()) => {
@@ -560,7 +592,7 @@
     });
     for (const [y, plan] of Object.entries(state.plans)) {
       const date = `${y}-12-31`;
-      if (!E.isPlanned({ date }, today)) continue;
+      if (!E.mixCounts(+y, today)) continue;
       for (const row of plan.mix) {
         const rail = row.kind === 'RAIL';
         for (let i = 0; i < row.count; i++) {
@@ -583,7 +615,7 @@
    * they count on 31 December. Like E.yearSummary, a date is cleared when a negative correction takes the status
    * away again. Statuses not reached have no entry.
    */
-  E.planReached = (withWhatIfs, mix, year, rules) => {
+  const planReached = (withWhatIfs, mix, year, rules) => {
     const t = noPoints(), out = {};
     for (const ev of withWhatIfs.events) {
       if (ev.counts) { addEarn(t, ev.e); noteReached(t, out, { date: ev.date, step: 'whatif' }, rules); }

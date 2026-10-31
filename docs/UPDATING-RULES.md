@@ -86,6 +86,7 @@ The `/at/en/`, `/de/en/` and `/row/en/` country versions contain the same rules.
 | Zones | `js/data.js` → `MM.REGIONS` (ISO 3166 alpha-2 codes; also used by `E.autoHaul`) |
 | Points per segment, HON cabins, thresholds, rail caps, Marriott stays, CO₂ boosters | `js/data.js` → `MM.DEFAULT_RULES` |
 | Hotel stays (Points per stay, minimum nights, yearly cap) | `js/data.js` → `MM.DEFAULT_RULES.marriott`; logic in `js/engine.js` → `E.stayEarn` |
+| Cabins per haul (Lufthansa Group continental: Economy and Business; used by the planner) | `js/data.js` → `MM.CONTINENTAL_CLASSES`; logic in `js/engine.js` → `E.cabins` |
 | Validity rule | `js/engine.js` → `E.validUntil` |
 | Downgrade rule | `js/engine.js` → `E.softLanding`, `E.history` |
 | Special earning cases (rail, bus, codeshare operator) | `js/engine.js` → `E.earn`, `E.earningGroup`, `E.effective` |

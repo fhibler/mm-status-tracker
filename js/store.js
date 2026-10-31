@@ -41,8 +41,8 @@
     if (row.kind === 'RAIL') {
       row.haul = 'continental'; row.co2Level = 'none';
       if (!(row.cls in MM.RAIL_CLASSES)) row.cls = 'Business';
-    } else if (!E.cabins(row.haul, row.kind).includes(row.cls)) {
-      row.cls = row.cls === 'First' ? 'Business' : 'Economy';
+    } else {
+      row.cls = E.fitCabin(row.haul, row.kind, row.cls);
     }
     return row;
   };
@@ -102,7 +102,7 @@
     for (const [y, p] of Object.entries(state.plans)) for (const id of Object.keys(p.co2)) if (yearOf.get(id) !== y) delete p.co2[id];
     const upgradable = new Map(state.flights.filter(E.canUpgrade).map(f => [f.id, f]));
     for (const [y, p] of Object.entries(state.plans)) {
-      for (const [id, o] of Object.entries(p.upgrade || {})) {
+      for (const [id, o] of Object.entries(p.upgrade)) {
         const f = upgradable.get(id);
         if (!f || f.date.slice(0, 4) !== y || !E.upgradeClasses(f).includes(o.cls)) delete p.upgrade[id];
       }
@@ -173,6 +173,7 @@
       Object.assign(f, { operatingFlightNo: '', upgradeClass: f.bookedClass, upgradeType: '', upgradeCost: 0,
         earnClassOverride: 'auto', haulOverride: 'auto', co2Level: 'none' });
     }
+    for (const k of ['flightCost', 'upgradeCost', 'co2Cost']) f[k] = Math.max(0, +f[k] || 0);   // like the fares of bookings
     if (!E.hasBooster(f)) f.co2Cost = 0;   // a CO₂ cost only with a booster
     return f;
   };
@@ -192,14 +193,12 @@
     const out = {};
     for (const [y, p] of Object.entries(isObj(raw) ? raw : {})) {
       if (!/^\d{4}$/.test(y) || !isObj(p)) continue;
-      const co2 = {};
-      for (const [id, o] of Object.entries(isObj(p.co2) ? p.co2 : {})) {
-        if (isObj(o) && MM.CO2_LEVELS.includes(o.level)) co2[id] = { level: o.level, cost: Math.max(0, +o.cost || 0) };
-      }
-      const upgrade = {};
-      for (const [id, o] of Object.entries(isObj(p.upgrade) ? p.upgrade : {})) {
-        if (isObj(o) && MM.CLASSES.includes(o.cls)) upgrade[id] = { cls: o.cls, cost: Math.max(0, +o.cost || 0) };
-      }
+      // what-ifs per flight ID (prune drops those for flights that can't take them); fromEntries keeps a "__proto__" ID a plain key
+      const whatIfs = (x, ok, field) => Object.fromEntries(Object.entries(isObj(x) ? x : {})
+        .filter(([, o]) => isObj(o) && ok.includes(o[field]))
+        .map(([id, o]) => [id, { [field]: o[field], cost: Math.max(0, +o.cost || 0) }]));
+      const co2 = whatIfs(p.co2, MM.CO2_LEVELS.filter(l => l !== 'none'), 'level');
+      const upgrade = whatIfs(p.upgrade, MM.CLASSES, 'cls');
       const safeId = safeIds();
       const mix = (Array.isArray(p.mix) ? p.mix : []).filter(isObj).map(r => S.fitMixRow(S.newMixRow({
         id: safeId(r.id), count: Math.max(0, Math.round(+r.count || 0)),
