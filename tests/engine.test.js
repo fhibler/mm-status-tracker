@@ -347,6 +347,28 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(`${kept}:${'b' in st.plans['2026'].co2}`, 'true:false');
 }
 
+/* ---------- cache pruning (store): lookups no flight uses go once older than S.CACHE_KEEP ---------- */
+{
+  const ago = (days) => new Date(Date.now() - days * 864e5).toISOString();
+  const lookup = (date, fetchedAt) => ({ date, fetchedAt, status: 'notfound' });
+  const keys = (st) => Object.keys(st.apiCache).sort().join('|');
+  // a codeshare uses the lookups of its number and of its operating flight, in any spelling, on its date
+  const st = state({
+    flights: [flight({ id: 'c', flightNo: 'lh 1', operatingFlightNo: 'UAL9' })],
+    apiCache: { 'LH1 2026-03-01': lookup('2026-03-01', ago(30)), 'UA9 2026-03-01': lookup('2026-03-01', ago(30)),
+      'LH1 2026-02-28': lookup('2026-02-28', ago(8)),   // another date: unused
+      'LH2 2026-03-01': lookup('2026-03-01', ago(6)),   // unused, but recent (e.g. looked up in the dialog, not saved yet)
+      'LH3 2026-03-01': lookup('2026-03-01', 'whenever') },   // unused, without a valid time
+  });
+  assert.strictEqual(keys(st), 'LH1 2026-03-01|LH2 2026-03-01|UA9 2026-03-01');   // on load and import (S.normalize)
+  // re-dating the flight leaves its old date's lookups unused
+  st.apiCache['LH1 2026-03-02'] = lookup('2026-03-02', ago(10));
+  S.saveFlight(st, { ...st.flights[0], date: '2026-03-02' }, 0);
+  assert.strictEqual(keys(st), 'LH1 2026-03-02|LH2 2026-03-01');
+  S.deleteFlight(st, 'c');
+  assert.strictEqual(keys(st), 'LH2 2026-03-01');
+}
+
 /* ---------- planner ---------- */
 {
   const lh = lhBiz({ id: 'a', date: '2026-02-01', co2Level: 'large', co2Cost: 40 });   // 300 · 300 · 240
@@ -535,7 +557,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   // IDs end up in HTML and selectors: unsafe and repeated ones are replaced; invalid entries are dropped
   const st = state({
     settings: { currency: 'XYZ', memberNumber: '992 000-123 456 789' },
-    flights: [{ id: 'x"><b>', date: '2026-01-01' }, { id: 'ok-1', date: '2026-02-01', route: { origin: 'FRA' }, routeLookup: { flightNo: 'LH1', date: 5 } },
+    flights: [{ id: 'x"><b>', date: '2026-01-01', flightNo: 'LH2' }, { id: 'ok-1', date: '2026-02-01', route: { origin: 'FRA' }, routeLookup: { flightNo: 'LH1', date: 5 } },
       { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }, { date: '2026-02-30' }],
     adjustments: [{ date: '2026-13' }, { date: '2026-04-01', p: 5 }], stays: [{ nights: 2 }],
     apiCache: { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' },

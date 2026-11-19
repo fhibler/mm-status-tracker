@@ -86,6 +86,12 @@
     return f;
   };
 
+  /**
+   * How long a cached lookup that no flight uses is kept (ms; see prune): long enough for one made in the flight dialog
+   * of a flight not saved yet.
+   */
+  S.CACHE_KEEP = 7 * 864e5;
+
   /** An empty planner scenario for one calendar year (see MM.engine.planScenario). */
   S.newPlan = () => ({ co2: {}, upgrade: {}, mix: [] });
 
@@ -93,11 +99,15 @@
    * Drops bookings without segments, CO₂ what-ifs for flights that no longer exist, moved to another year, no
    * longer take a booster (see E.canBoost) or have one (locked), and upgrade what-ifs for flights that no longer exist,
    * moved, can't take one (see E.canUpgrade: e.g. upgraded, which locks them) or whose cabin isn't above the booked
-   * one any more, since the planner neither shows nor resets those.
+   * one any more, since the planner neither shows nor resets those. Also drops cached lookups (state.apiCache) that no
+   * flight uses (its number or its operating flight's on its date) and that are older than S.CACHE_KEEP, e.g. those of
+   * deleted or re-dated flights; a lookup without a valid time counts as old.
    */
-  const prune = (state) => {
+  const prune = (state, now = Date.now()) => {
     const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
     for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
+    const asked = new Set(state.flights.flatMap(f => [E.parseFlightNo(f.flightNo), E.operating(f)].filter(Boolean).map(p => MM.api.cacheKey(p.iata, f.date))));
+    for (const [k, c] of Object.entries(state.apiCache)) if (!asked.has(k) && !(Date.parse(c.fetchedAt) > now - S.CACHE_KEEP)) delete state.apiCache[k];
     const yearOf = new Map(state.flights.filter(f => E.canBoost(f) && !E.hasBooster(f)).map(f => [f.id, f.date.slice(0, 4)]));
     for (const [y, p] of Object.entries(state.plans)) for (const id of Object.keys(p.co2)) if (yearOf.get(id) !== y) delete p.co2[id];
     const upgradable = new Map(state.flights.filter(E.canUpgrade).map(f => [f.id, f]));

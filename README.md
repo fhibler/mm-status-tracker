@@ -84,7 +84,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 - **Save / Load `.json`**: the file holds your flights and fares, point corrections, hotel stays, planner
   scenarios, your settings (including an AeroDataBox key) and every route lookup the app made so far (`apiCache`, with a `status` per flight
   number and date). When you load a saved file, the app reuses those answers and calls the API again only
-  for failed lookups, provisional routes (see Notes) and, with an AeroDataBox key, routes without times. Lookups saved before 18 Oct 2026 had no date and are dropped on load;
+  for failed lookups, provisional routes (see Notes) and, with an AeroDataBox key, routes without times. Lookups that no flight uses (by its flight number or operating flight on its date, e.g. of a deleted or re-dated flight) are dropped once they are older than 7 days, on load and when a flight is saved or deleted. Lookups saved before 18 Oct 2026 had no date and are dropped on load;
   the routes stored with your flights stay. Files in the old format (version 1, saved
   before the fares-per-booking update of 16 Oct 2026) can no longer be loaded.
   With your Miles & More number set in Settings, the file is named `miles-and-more-<number>.json`.
