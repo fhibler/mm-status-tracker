@@ -584,15 +584,16 @@
   /**
    * Flight f with the planner's what-ifs of `plan` applied (E.upgradeWhatIf, E.co2WhatIf); parts picks which of the two.
    * The upgrade is a paid one (E.WHATIF_UPGRADE), so the flight earns in the upgraded cabin (a manual earning class no
-   * longer applies) and the booster is priced and earns there too. Returns f itself when nothing applies.
+   * longer applies) and the booster is priced and earns there too. Each what-if is paid `today`, when it would be bought
+   * (the expense report's paid date; "Apply" saves it so). Returns f itself when nothing applies.
    */
   E.whatIfFlight = (f, plan, parts = { upgrade: true, co2: true }, today = E.todayISO()) => {
     const u = parts.upgrade && E.upgradeWhatIf(f, plan, today), c = parts.co2 && E.co2WhatIf(f, plan, today);
     if (!u && !c) return f;
     return {
       ...f,
-      ...(u ? { upgradeClass: u.cls, upgradeType: E.WHATIF_UPGRADE, upgradeCost: u.cost, earnClassOverride: 'auto' } : {}),
-      ...(c ? { co2Level: c.level, co2Cost: c.cost } : {}),
+      ...(u ? { upgradeClass: u.cls, upgradeType: E.WHATIF_UPGRADE, upgradeCost: u.cost, upgradePaidOn: today, earnClassOverride: 'auto' } : {}),
+      ...(c ? { co2Level: c.level, co2Cost: c.cost, co2PaidOn: today } : {}),
     };
   };
 
@@ -675,7 +676,7 @@
    * CO₂ what-ifs apply to flights that take them (see E.whatIfFlight; locked ones keep theirs; on a flown flight the
    * booster is planned, see E.yearSummary), and each extra segment
    * of the mix becomes a planned flight on 31 Dec of its year (see E.mixCounts), flightNo 'Planner', cost = its cost
-   * per segment.
+   * per segment, with every field of a flight (S.newFlight): personal and not paid yet.
    * Its totals match E.planScenario. The state itself is not changed.
    */
   E.withPlans = (state, today = E.todayISO()) => {
@@ -693,8 +694,11 @@
             id: `plan-${y}-${row.id}-${i}`, bookingCode: '', date, transport: rail ? 'rail' : 'flight',
             flightNo: 'Planner', operatingFlightNo: '', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
             bookedClass: row.cls, upgradeClass: row.cls, upgradeType: '', flightCost: +row.cost || 0, upgradeCost: 0,
-            co2Level: rail ? 'none' : row.co2Level, co2Cost: 0, earnClassOverride: 'auto',
-            haulOverride: rail ? 'continental' : row.haul, route: null, routeLookup: null, includeInPlan: true, notes: '',
+            co2Level: rail ? 'none' : row.co2Level, co2Cost: 0,
+            upgradePaidOn: '', upgradePaidBy: 'personal', co2PaidOn: '', co2PaidBy: 'personal',
+            expense: { paidOn: '', business: false, reimbursed: null, award: false },
+            earnClassOverride: 'auto', haulOverride: rail ? 'continental' : row.haul, route: null, routeLookup: null, times: null,
+            includeInPlan: true, notes: '',
           });
         }
       }
@@ -790,15 +794,18 @@
   };
 
   /**
-   * The dashboard's costs of `year` by who paid them (costItems): each in the month it was paid or, without a paid date,
-   * in the month of its flight (a fare: its booking's first segment): { months: [{ employer, personal }] for Jan…Dec,
-   * total }. The employer's part is at most the cost, so the two add up to it.
+   * The dashboard's costs of `year` by who paid them (costItems), counting what the dashboard counts: the segments in
+   * the forecast (E.inForecast) and the fare of a booking with one (see E.fareHolders). Each is in the month it was paid
+   * or, without a paid date, in the month of its flight (a fare: its booking's first segment in the forecast):
+   * { months: [{ employer, personal }] for Jan…Dec, total }. The employer's part is at most the cost, so the two add up to it.
    */
-  E.costSplit = (state, year) => {
+  E.costSplit = (state, year, today = E.todayISO()) => {
     const months = Array.from({ length: 12 }, () => ({ employer: 0, personal: 0 })), total = { employer: 0, personal: 0 };
     for (const b of E.bookings(state)) {
-      for (const x of costItems(b)) {
-        const date = x.paidOn || (x.f || b.flights[0]).date, personal = Math.max(0, x.cost - x.reimbursed);
+      const flights = b.flights.filter(f => E.inForecast(f, today));
+      if (!flights.length) continue;
+      for (const x of costItems({ ...b, flights })) {
+        const date = x.paidOn || (x.f || flights[0]).date, personal = Math.max(0, x.cost - x.reimbursed);
         if (date.slice(0, 4) !== String(year)) continue;
         for (const m of [months[+date.slice(5, 7) - 1], total]) { m.employer += x.cost - personal; m.personal += personal; }
       }

@@ -1035,14 +1035,11 @@
         upCost.addEventListener('input', setUpgrade);
       }
       $('[data-wi-apply]', tr).addEventListener('click', () => {
-        const w = E.whatIfFlight(f, plan);   // the what-ifs that apply, as the scenario counts them
+        const w = E.whatIfFlight(f, plan);   // the what-ifs that apply, as the scenario counts them, each paid today
         if (w === f) return;
         const done = [];
         if (w.upgradeClass !== f.upgradeClass) done.push(`upgrade to ${w.upgradeClass}`);
         if (w.co2Level !== f.co2Level) done.push(`booster ${MM.CO2_LABEL[w.co2Level]}`);
-        // bought now, not with the fare (E.expenseReport files each cost by the date it was paid)
-        if (w.upgradeClass !== f.upgradeClass) w.upgradePaidOn = E.todayISO();
-        if (w.co2Level !== f.co2Level) w.co2PaidOn = E.todayISO();
         Object.assign(f, w);   // which locks the flight
         delete plan.co2[f.id]; delete plan.upgrade[f.id];
         save(); renderPlanner(); toast(`${f.flightNo}: ${done.join(' and ')} saved to the flight`);
@@ -1205,11 +1202,13 @@
   /** "14 Apr 2026 LH430 MUC→ORD", one line per segment of a booking. */
   const segmentsTxt = (flights) => flights.map(f => `<div class="nw">${C.fmtDate(f.date)} ${esc(f.flightNo)}${hasRoute(f.route) ? ` <span class="route">${routeTxt(f)}</span>` : ''}</div>`).join('');
   const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code> ${b.expense.business ? '<span class="pill ok">business</span>' : '<span class="pill">personal</span>'}${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
+  /** Calendar years in which Activity marks a booking without a paid date (⚠, E.unpaidBookings): those of its segments. */
+  const unpaidYears = () => [...new Set(E.unpaidBookings(state).flatMap(b => b.flights.map(f => +f.date.slice(0, 4))))].sort((a, b) => a - b);
 
   const renderReport = () => {
     const host = $('#view-report'), collapse = reportPrefs.collapse;
     const rep = E.expenseReport(state, year, { businessOnly: reportPrefs.businessOnly }), t = rep.total;
-    const unpaid = E.unpaidBookings(state), whatIfs = E.expenseWhatIfs(state, year);
+    const unpaid = E.unpaidBookings(state), unpaidYs = unpaidYears(), whatIfs = E.expenseWhatIfs(state, year);
     const amounts = (x) => E.EXPENSE_AMOUNTS.map(k => `<td class="num">${money(x[k])}</td>`).join('');
     const pref = (key, value, label) => `<button type="button" class="with-label" data-pref="${key}:${value}" aria-pressed="${reportPrefs[key] === value}">${label}</button>`;
     const kpi = (label, v, meta) => `<div class="card kpi"><div class="label">${label}</div><div class="value fit">${money(v)}</div><div class="meta">${meta}</div></div>`;
@@ -1227,8 +1226,9 @@
       <p class="print-only">Flight costs paid in ${year} · as of ${C.fmtDate(E.todayISO())}</p>
       ${unpaid.length ? `<div class="card warn-card no-print">
         <b>⚠ ${unpaid.length} booking${unpaid.length === 1 ? ' has' : 's have'} no paid date</b> and ${unpaid.length === 1 ? 'is' : 'are'} left out of the report
-        until you enter ${unpaid.length === 1 ? 'it' : 'them'}. Activity marks ${unpaid.length === 1 ? 'it' : 'them'} with ⚠.
-        <button class="btn small" data-act="goto-flights">Show in Activity</button>
+        until you enter ${unpaid.length === 1 ? 'it' : 'them'}. Activity marks ${unpaid.length === 1 ? 'it' : 'them'} with ⚠${
+          unpaidYs.some(y => y !== year) ? ` (CY ${unpaidYs.join(', ')})` : ''}.
+        <button class="btn small" data-act="goto-unpaid">Show in Activity</button>
       </div>` : ''}
       <div class="kpis">
         ${kpi(`Cost paid in ${year}`, t.cost, `${rep.bookings.length} booking${rep.bookings.length === 1 ? '' : 's'}${reportPrefs.businessOnly ? ' · business trips' : ''}`)}
@@ -1366,7 +1366,7 @@
         <div class="card">
           <div class="card-head"><h2>Expense report</h2><span class="sub">optional · what you paid, what your employer reimbursed and what is personal</span></div>
           <label class="check"><input type="checkbox" id="expOn" ${ex.enabled ? 'checked' : ''}> Show the Report tab and the payment details of each booking</label>
-          <p class="hint">${ex.enabled && unpaid ? `<b>${unpaid} booking${unpaid === 1 ? ' has' : 's have'} no paid date yet:</b> <a href="#" data-act="goto-flights">enter ${unpaid === 1 ? 'it' : 'them'} in Activity</a> (marked ⚠). ` : ''}
+          <p class="hint">${ex.enabled && unpaid ? `<b>${unpaid} booking${unpaid === 1 ? ' has' : 's have'} no paid date yet:</b> <a href="#" data-act="goto-unpaid">enter ${unpaid === 1 ? 'it' : 'them'} in Activity</a> (marked ⚠). ` : ''}
             Each booking gets the date it was paid, which decides the year it counts in, and whether it was a business trip,
             with what your employer reimbursed; upgrades and CO₂ compensation are personal or paid by the employer. The
             Report tab adds up the costs, what the employer reimbursed and what is personal, and exports them as CSV or PDF.</p>
@@ -1437,7 +1437,6 @@
       save(); render();
       toast(!ex.enabled ? 'Expense report off' : n ? `Expense report on · ${n} booking${n === 1 ? ' needs' : 's need'} a paid date (⚠ in Activity)` : 'Expense report on', 5000);
     });
-    if (!ex.enabled) return;
   };
 
   /* ================= flight dialog ================= */
@@ -2000,6 +1999,12 @@
     if (act === 'add-adj') openAdjDialog(null);
     if (act === 'add-stay') openStayDialog(null);
     if (act === 'goto-flights') setView('flights');
+    if (act === 'goto-unpaid') {   // Activity of a year with a booking marked ⚠: the selected one if it has one, else the latest
+      e.preventDefault();
+      const ys = unpaidYears();
+      if (ys.length && !ys.includes(year)) year = ys[ys.length - 1];
+      setView('flights');
+    }
     if (act === 'times-refresh') refreshTimes(state.flights.find(f => f.id === b.dataset.id), b);
     if (act === 'times-one') { lookupTimes([state.flights.find(f => f.id === b.dataset.id)]); }
     if (act === 'times-all') lookupTimes(E.yearSummary(state, year).rows.map(r => r.f).filter(timesAvailable), b);
@@ -2010,7 +2015,6 @@
     }
     if (act === 'goto-settings') { e.preventDefault(); setView('settings'); }
     if (act === 'goto-planner') setView('planner');
-    if (act === 'goto-report') { e.preventDefault(); setView('report'); }
     if (act === 'report-csv') { S.exportExpenseCsv(E.expenseReport(state, year, reportPrefs), reportPrefs.collapse, state.settings.currency); toast('Saved .csv'); }
     if (act === 'report-print') window.print();
     if (act === 'load') $('#fileLoad').click();

@@ -390,11 +390,17 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   assert.strictEqual(E.expenseReport(st, 2027).bookings.length, 0);   // flown in 2027, paid in 2026
   // the dashboard's costs by who paid, per month paid; without a paid date (U) in the month flown
   const splitTxt = (x) => x.months.map((m, i) => (m.employer || m.personal ? `${i + 1}:${m.employer}/${m.personal}` : '')).filter(Boolean).join(' ') + ` =${x.total.employer}/${x.total.personal}`;
-  assert.strictEqual(splitTxt(E.costSplit(st, 2026)), '3:600/1000 4:38/0 5:0/380 12:500/400 =1138/1780');
+  assert.strictEqual(splitTxt(E.costSplit(st, 2026, TODAY)), '3:600/1000 4:38/0 5:0/380 12:500/400 =1138/1780');
+  // like the dashboard, only what counts in the forecast: not a planned booking left out of it, nor such a segment's upgrade
+  const out = expenseState();
+  out.flights.push(lhBiz({ id: 'x1', date: '2026-09-01', bookingCode: 'X', includeInPlan: false }),
+    lhBiz({ id: 'b3', date: '2026-09-02', bookingCode: 'B', ...upgraded, upgradeCost: 70, upgradePaidOn: '2026-07-01', includeInPlan: false }));
+  out.bookings.X = { fare: 200, expense: expense({ paidOn: '2026-07-01' }) };
+  assert.strictEqual(splitTxt(E.costSplit(out, 2026, TODAY)), splitTxt(E.costSplit(st, 2026, TODAY)));
   // more reimbursed than paid is flagged
   st.bookings.B.expense.reimbursed = 1200;
   assert.strictEqual(costItems(E.expenseReport(st, 2026).bookings[2]).split(' ')[0], 'fare@2026-03-02:1000-1200=0!over');
-  assert.strictEqual(splitTxt(E.costSplit(st, 2026)).split(' ')[0], '3:1000/600');   // the employer's part is at most the cost
+  assert.strictEqual(splitTxt(E.costSplit(st, 2026, TODAY)).split(' ')[0], '3:1000/600');   // the employer's part is at most the cost
 }
 {
   // each cost in the year it was paid: an upgrade paid in 2027 on a booking paid in 2026, and the booking's date is its first item's
@@ -432,6 +438,11 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   // a booking code from an edited .json that a spreadsheet would run as a formula stays text, and one with a separator is quoted
   const code = (k) => csv(true, state({ flights: [flight({ bookingCode: k })], bookings: { [k]: { fare: 10, expense: expense({ paidOn: '2026-01-01', business: true }) } } }))[1].split(';').slice(1, -5).join(';');
   assert.strictEqual(['=1+1', '+1', '-1', '@SUM(A1)', 'A;"B'].map(code).join('|'), `'=1+1|'+1|'-1|'@SUM(A1)|"A;""B"`);
+  // so is any cell starting with a tab or a carriage return (booking codes can't, as they drop spaces)
+  const rep = E.expenseReport(st, 2026);
+  rep.bookings[0].code = '\t=1';
+  rep.bookings[1].code = '\r=1';
+  assert.strictEqual(S.expenseCsv(rep, true, 'EUR').split('\r\n').slice(1, 3).map(x => x.split(';')[1]).join('|'), `'\t=1|"'\r=1"`);
 }
 {
   // the Planner's what-ifs of the year's flights in the forecast
@@ -441,6 +452,15 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   st.plans['2026'] = { ...S.newPlan(), upgrade: { w1: { cls: 'Business', cost: 400 }, w2: { cls: 'Business', cost: 300 } }, co2: { w1: { level: 'small', cost: 9 }, p1: { level: 'small', cost: 7 } } };
   assert.strictEqual(E.expenseWhatIfs(st, 2026, TODAY).map(x => `${x.kind}:${x.f.id}:${x.cost}`).join(' '), 'co2:p1:7 upgrade:w1:400 co2:w1:9');   // not w2, left out of the forecast
   assert.strictEqual(E.expenseWhatIfs(st, 2025, TODAY).length, 0);
+  // with the Planner switch (E.withPlans), the dashboard's costs by who paid add the what-ifs, personal and paid today
+  // (as "Apply" saves them), and the extra segments, personal on 31 December
+  st.plans['2026'].mix = [S.newMixRow({ count: 2, cost: 150 })];
+  const month = (s, m) => Object.values(E.costSplit(s, 2026, TODAY).months[m - 1]).join('/');
+  assert.strictEqual(`${month(st, 6)} ${month(st, 12)}`, '0/0 500/400');
+  const wp = E.withPlans(st, TODAY);
+  assert.strictEqual(`${month(wp, 6)} ${month(wp, 12)}`, '0/416 500/700');
+  // a Planner segment has every field of a flight
+  assert.strictEqual(Object.keys(S.newFlight()).filter(k => !(k in wp.flights.find(f => f.flightNo === 'Planner'))).join(), '');
 }
 {
   // saving a flight keeps the payment details with its booking, or with the flight itself without a booking code
@@ -710,6 +730,9 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   // only a flight's own fields are kept: an imported asFlown would replace the flight in every calculation (E.yearSummary)
   const af = state({ flights: [{ date: '2026-01-01', flightNo: 'LH1', asFlown: { bookedClass: 'First', flightCost: 99999 }, extra: 1 }] }).flights[0];
   assert.strictEqual(`${'asFlown' in af}:${'extra' in af}:${Object.keys(af).length === Object.keys(S.newFlight()).length}`, 'false:false:true');
+  // a flight's text fields are text: a number becomes one, anything else empty (string methods run on them)
+  const tx = state({ flights: [{ date: '2026-01-01', flightNo: 400, bookingCode: 123, operatingFlightNo: null, notes: { a: 1 } }] }).flights[0];
+  assert.strictEqual(['flightNo', 'bookingCode', 'operatingFlightNo', 'notes'].map(k => `${typeof tx[k]}:${tx[k]}`).join(), 'string:400,string:123,string:,string:');
   assert.strictEqual(`${JSON.stringify(ex.settings.expenses)}:${JSON.stringify(state().settings.expenses)}`, '{"enabled":false}:{"enabled":false}');
   // booking codes are normalised and fares never negative; an implausible starting status year is dropped
   const bk = state({ flights: [flight({ bookingCode: 'AB1' })], bookings: { 'ab 1': { fare: -5 } }, settings: { startStatus: { status: 'SEN', year: 1 } } });

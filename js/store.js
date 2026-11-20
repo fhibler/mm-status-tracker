@@ -197,6 +197,9 @@
   const normalizeFlight = (x) => {
     const d = S.newFlight(x.date);
     const f = Object.fromEntries(Object.keys(d).map(k => [k, x[k]]));   // only a flight's own fields (e.g. no asFlown, see E.whatIfFlight)
+    for (const k of ['bookingCode', 'flightNo', 'operatingFlightNo', 'notes']) {   // text: a number in an edited .json becomes text, anything else ''
+      f[k] = ['string', 'number'].includes(typeof f[k]) ? String(f[k]) : '';
+    }
     f.route = route(f.route);
     f.routeLookup = routeLookup(f.routeLookup);
     f.times = S.normalizeTimes(f.times);
@@ -324,9 +327,12 @@
   const COST_FLAG_DE = { over: 'Erstattung über den Kosten' };
   const deDate = (iso) => iso.split('-').reverse().join('.');
   const deAmount = (v) => v.toFixed(2).replace('.', ',');
-  /** A CSV cell: quoted when it holds a separator, a quote or a line break; text starting like a formula is defused. */
+  /**
+   * A CSV cell: quoted when it holds a separator, a quote or a line break; text a spreadsheet would run as a formula
+   * (starting with =, +, -, @, a tab or a carriage return) is defused.
+   */
   const cell = (v) => {
-    const t = typeof v === 'number' ? deAmount(v) : /^[=+\-@]/.test(v) ? `'${v}` : v;
+    const t = typeof v === 'number' ? deAmount(v) : /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
     return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
   /** "14.04.2026 LH430 MUC–ORD" for each segment of a booking. */

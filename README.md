@@ -66,16 +66,18 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     the rest is personal. With a booking code these belong to the whole booking, else to the segment.
   - Upgrades and CO₂ compensation have their own paid date (empty: paid with the fare) and are either personal
     or paid by the employer (reimbursed in full). One applied from the Planner is dated the day you apply it.
-  - Activity marks every booking with a cost but no paid date with ⚠, and the Report tab says how many there are; the
-    report leaves those costs out until you enter the date. Opening such a booking highlights its paid date. Saving a
-    flown trip with a cost needs the date; a planned one can wait until it is paid. The year selector also offers
+  - Activity marks every booking with a cost but no paid date with ⚠, and the Report tab says how many there are (and
+    in which years, when not only in the selected one) with a link to them; the report leaves those costs out until
+    you enter the date. Opening such a booking highlights its paid date. Saving a flown trip with a cost needs the date; a planned one can wait until it is paid. The year selector also offers
     every year in which something was paid.
   - The **Report tab** shows the costs paid in the year per item (fare, upgrade, CO₂ compensation) or one line per
     booking, all trips or business trips only: cost, employer and personal, flagging a reimbursement above
     the cost, and the Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast.
   - **Export CSV** for a spreadsheet (German formats: `;`, decimal comma, DD.MM.YYYY) and **Print / PDF**.
-  - The dashboard's cost charts then show what the employer and you paid instead of the items, by the month and
-    year paid (without a paid date: flown). The employer's and the personal part are shown only there and in the Report tab.
+  - The dashboard's cost charts then show what the employer and you paid instead of the items, of what the forecast
+    counts (not the flights left out of it), by the month and year paid (without a paid date: flown). With the
+    "Planner" switch, its upgrade and CO₂ what-ifs count as personal and paid today, its extra segments as personal
+    on 31 December. The employer's and the personal part are shown only there and in the Report tab.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
   to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are
