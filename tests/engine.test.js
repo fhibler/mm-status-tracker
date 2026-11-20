@@ -347,12 +347,12 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(`${kept}:${'b' in st.plans['2026'].co2}`, 'true:false');
 }
 
-/* ---------- expense report: costs by the year paid, reimbursed by the employer, the rest paid privately ---------- */
+/* ---------- expense report: costs by the year paid, reimbursed by the employer, the rest personal ---------- */
 const expense = (o) => ({ ...S.newExpense(), ...o });
 const upgraded = { bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid' };
-/** A state with business trip B (two segments; an upgrade paid privately and a booster paid by the employer, each with
- * its own date), private trip p1 (no booking code), business trip M (paid in 2026, flown in 2027; the fare reimbursed in
- * full, its upgrade paid privately with the fare) and U (no paid date yet). */
+/** A state with business trip B (two segments; a personal upgrade and a booster paid by the employer, each with
+ * its own date), personal trip p1 (no booking code), business trip M (paid in 2026, flown in 2027; the fare reimbursed in
+ * full, its personal upgrade paid with the fare) and U (no paid date yet). */
 const expenseState = () => state({
   settings: { expenses: { enabled: true } },
   flights: [
@@ -371,7 +371,7 @@ const expenseState = () => state({
 });
 const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.reimbursed}=${x.own}${x.flags.length ? '!' + x.flags : ''}`).join(' ');
 {
-  // what the employer reimbursed of a fare: on a business trip what was entered or else all of it, nothing on a private trip
+  // what the employer reimbursed of a fare: on a business trip what was entered or else all of it, nothing on a personal trip
   assert.strictEqual([expense({ business: true }), expense({ business: true, reimbursed: 100 }), expense({ reimbursed: 100 })].map(x => E.fareReimbursed(x, 300)).join(), '300,100,0');
   const st = expenseState();
   assert.strictEqual(E.bookings(st).map(b => `${b.code}:${b.flights.map(f => f.id)}`).join(' '), 'B:a1,a2 U:u1 :p1 M:m1');
@@ -420,7 +420,7 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   st.bookings.B.expense.reimbursed = 1200;
   const csv = (collapse, s = st) => S.expenseCsv(E.expenseReport(s, 2026, { businessOnly: true }), collapse, 'EUR').split('\r\n');
   const rows = csv(false);
-  assert.strictEqual(rows[0], '﻿Bezahlt am;Buchungscode;Flüge;Geschäftsreise;Posten;Kosten (EUR);Erstattet (EUR);Privat bezahlt (EUR);Hinweise');
+  assert.strictEqual(rows[0], '﻿Bezahlt am;Buchungscode;Flüge;Geschäftsreise;Posten;Kosten (EUR);Arbeitgeber (EUR);Persönlich (EUR);Hinweise');
   assert.strictEqual(rows[3], '02.03.2026;B;14.04.2026 LH400 X–X, 19.04.2026 LH401 X–X;ja;Flugpreis;1000,00;1200,00;0,00;Erstattung über den Kosten');
   assert.strictEqual(`${rows.length}:${rows[rows.length - 2]}`, '8:Summe;;;;;2538,00;1738,00;1000,00;');
   const one = csv(true);
@@ -697,12 +697,12 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   const ex = state({ flights: [{ date: '2026-01-01', ...upgraded, co2Level: 'small', upgradePaidOn: '2026/01/02', co2PaidOn: '2026-01-03',
     upgradePaidBy: 'boss', co2PaidBy: 'employer', expense: badExpense }], settings: { expenses: { enabled: 'yes', co2Business: false } } });
   const tf = ex.flights[0], expenseTxt = (t) => [t.paidOn, t.business, t.reimbursed, t.award, 'receipt' in t].join('|');
-  assert.strictEqual(`${tf.upgradePaidOn}|${tf.co2PaidOn}|${tf.upgradePaidBy}|${tf.co2PaidBy}|${expenseTxt(tf.expense)}`, '|2026-01-03|private|employer||false||false|false');
+  assert.strictEqual(`${tf.upgradePaidOn}|${tf.co2PaidOn}|${tf.upgradePaidBy}|${tf.co2PaidBy}|${expenseTxt(tf.expense)}`, '|2026-01-03|personal|employer||false||false|false');
   assert.strictEqual(expenseTxt(state({ flights: [flight({ bookingCode: 'X' })], bookings: { X: { fare: 1, expense: { ...badExpense, business: true } } } }).bookings.X.expense), '|true|12|false|false');
   // the payment details of an upgrade or a booster only with one, as the dialog saves them
   const paid = { upgradePaidOn: '2026-01-02', upgradePaidBy: 'employer', co2PaidOn: '2026-01-03', co2PaidBy: 'employer' };
   const np = state({ flights: [{ date: '2026-01-01', ...paid }] }).flights[0];
-  assert.strictEqual(Object.keys(paid).map(k => np[k]).join(), ',private,,private');
+  assert.strictEqual(Object.keys(paid).map(k => np[k]).join(), ',personal,,personal');
   // only a flight's own fields are kept: an imported asFlown would replace the flight in every calculation (E.yearSummary)
   const af = state({ flights: [{ date: '2026-01-01', flightNo: 'LH1', asFlown: { bookedClass: 'First', flightCost: 99999 }, extra: 1 }] }).flights[0];
   assert.strictEqual(`${'asFlown' in af}:${'extra' in af}:${Object.keys(af).length === Object.keys(S.newFlight()).length}`, 'false:false:true');

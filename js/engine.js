@@ -741,7 +741,7 @@
     return [...out.values()];
   };
 
-  /** What the employer reimbursed of a fare (S.newExpense): on a business trip what was entered (null: all of it), nothing on a private trip. */
+  /** What the employer reimbursed of a fare (S.newExpense): on a business trip what was entered (null: all of it), nothing on a personal trip. */
   E.fareReimbursed = (expense, fare) => (!expense.business ? 0 : expense.reimbursed == null ? fare : expense.reimbursed);
 
   /**
@@ -769,7 +769,7 @@
   /**
    * Expense report of the costs paid in `year` (the year paid, not the year flown), per booking (E.bookings;
    * opts.businessOnly: business trips only). Its items are the booking's costs paid in that year (see costItems), each
-   * with what you paid privately (own: cost − reimbursed) and flags: 'over' (reimbursed more than the cost). Returns
+   * with the personal part (own: cost − reimbursed) and flags: 'over' (reimbursed more than the cost). Returns
    * { year, bookings: [{ …booking, paidOn (its first item's), items, total }] (newest payment first), total }.
    */
   E.expenseReport = (state, year, opts = {}) => {

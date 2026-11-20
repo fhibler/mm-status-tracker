@@ -118,7 +118,7 @@ MM.UPGRADE_TYPES = {
 MM.CO2_LEVELS = ['none', 'small', 'medium', 'large', 'xlarge'];
 MM.CO2_LABEL = { none: 'None', small: 'Small', medium: 'Medium', large: 'Large', xlarge: 'X-Large' };
 /** Who paid an upgrade or a CO₂ compensation, for the expense report: what the employer paid is reimbursed in full. */
-MM.PAID_BY = { private: 'Privately', employer: 'By employer' };
+MM.PAID_BY = { personal: 'Personal', employer: 'Employer' };
 
 /* Price of a CO₂ compensation package on lufthansa.com in EUR, fitted to the one-way flights (all four packages) seen in
    Oct 2026 and the costs paid in 2026; see docs/CO2-PRICE-MODEL.md. Packages are 5 / 20 / 50 / 80 % SAF, priced as

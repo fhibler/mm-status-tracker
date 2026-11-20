@@ -59,19 +59,19 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
   - The "Planner" switch (dashboard and Extra Benefits) counts the scenario as planned: a booster what-if on a flown flight adds to
     the forecast and the planned cost, while what you have flown and spent stays as it is.
 - **Expense report** (optional, turn it on in Settings): what your flights cost, what your employer reimbursed and
-  what you paid privately.
+  what is personal.
   - Each booking gets the date it was **paid**, which decides the year it counts in (the year paid, not the year
     flown), whether it was a **business trip** and whether it was an award booking (the fare is then the cash part
     paid). On a business trip, the dialog also asks what your employer **reimbursed** of the fare (empty: all of it);
-    the rest you paid privately. With a booking code these belong to the whole booking, else to the segment.
-  - Upgrades and CO₂ compensation have their own paid date (empty: paid with the fare) and are paid either privately
-    or by your employer (reimbursed in full). One applied from the Planner is dated the day you apply it.
+    the rest is personal. With a booking code these belong to the whole booking, else to the segment.
+  - Upgrades and CO₂ compensation have their own paid date (empty: paid with the fare) and are either personal
+    or paid by the employer (reimbursed in full). One applied from the Planner is dated the day you apply it.
   - Activity marks every booking with a cost but no paid date with ⚠, and the Report tab says how many there are; the
     report leaves those costs out until you enter the date. Opening such a booking highlights its paid date. Saving a
     flown trip with a cost needs the date; a planned one can wait until it is paid. The year selector also offers
     every year in which something was paid.
   - The **Report tab** shows the costs paid in the year per item (fare, upgrade, CO₂ compensation) or one line per
-    booking, all trips or business trips only: cost, reimbursed and paid privately, flagging a reimbursement above
+    booking, all trips or business trips only: cost, employer and personal, flagging a reimbursement above
     the cost, and the Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast.
   - **Export CSV** for a spreadsheet (German formats: `;`, decimal comma, DD.MM.YYYY) and **Print / PDF**.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the

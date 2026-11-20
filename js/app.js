@@ -650,7 +650,7 @@
     const fareCell = (f, fare) => {
       const k = E.bookingKey(f.bookingCode), b = E.booking(state, f);
       const t = E.fareExpense(state, f), r = E.fareReimbursed(t, fare);
-      const paid = !expensesOn() ? '' : `<div class="muted">${t.business ? `reimb. ${money(r)} · you ${money(Math.max(0, fare - r))}` : 'private'}</div>`;
+      const paid = !expensesOn() ? '' : `<div class="muted">${t.business ? `employer ${money(r)} · personal ${money(Math.max(0, fare - r))}` : 'personal'}</div>`;
       if (!b || segs[k] < 2) return money(fare) + paid;
       if (holders[k] === f.id) return `${money(fare)}<div class="muted" title="Whole fare of booking ${esc(k)}, counted once for its ${segs[k]} segments">booking · ${segs[k]} seg.</div>${paid}`;
       const h = state.flights.find(x => x.id === holders[k]);
@@ -1195,7 +1195,7 @@
   const COST_FLAG = { over: 'reimbursed more than paid' };
   /** "14 Apr 2026 LH430 MUC→ORD", one line per segment of a booking. */
   const segmentsTxt = (flights) => flights.map(f => `<div class="nw">${C.fmtDate(f.date)} ${esc(f.flightNo)}${hasRoute(f.route) ? ` <span class="route">${routeTxt(f)}</span>` : ''}</div>`).join('');
-  const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code> ${b.expense.business ? '<span class="pill ok">business</span>' : '<span class="pill">private</span>'}${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
+  const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code> ${b.expense.business ? '<span class="pill ok">business</span>' : '<span class="pill">personal</span>'}${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
 
   const renderReport = () => {
     const host = $('#view-report'), collapse = reportPrefs.collapse;
@@ -1223,8 +1223,8 @@
       </div>` : ''}
       <div class="kpis">
         ${kpi(`Cost paid in ${year}`, t.cost, `${rep.bookings.length} booking${rep.bookings.length === 1 ? '' : 's'}${reportPrefs.businessOnly ? ' · business trips' : ''}`)}
-        ${kpi('Reimbursed by employer', t.reimbursed, 'paid back to you')}
-        ${kpi('Paid privately', t.own, 'cost − reimbursed')}
+        ${kpi('Employer', t.reimbursed, 'reimbursed to you')}
+        ${kpi('Personal', t.own, 'cost − employer')}
       </div>
       <div class="card">
         <div class="card-head">
@@ -1239,7 +1239,7 @@
         </div>
         ${rep.bookings.length ? `<div class="table-wrap"><table class="report">
           <thead><tr><th>Paid on</th><th>Booking</th><th>Flights</th>${collapse ? '' : '<th>Item</th>'}
-            <th class="num">Cost</th><th class="num">Reimbursed</th><th class="num">Paid privately</th>${collapse ? '' : '<th>Notes</th>'}</tr></thead>
+            <th class="num">Cost</th><th class="num">Employer</th><th class="num">Personal</th>${collapse ? '' : '<th>Notes</th>'}</tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr><td colspan="${cols}">Total</td>${amounts(t)}${collapse ? '' : '<td></td>'}</tr></tfoot>
         </table></div>` : `<p class="muted m0">No costs paid in ${year}${reportPrefs.businessOnly ? ' on business trips' : ''}.</p>`}
@@ -1355,12 +1355,12 @@
             along. Keep the file to yourself.</p>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Expense report</h2><span class="sub">optional · what you paid, what your employer reimbursed and what you paid privately</span></div>
+          <div class="card-head"><h2>Expense report</h2><span class="sub">optional · what you paid, what your employer reimbursed and what is personal</span></div>
           <label class="check"><input type="checkbox" id="expOn" ${ex.enabled ? 'checked' : ''}> Show the Report tab and the payment details of each booking</label>
           <p class="hint">${ex.enabled && unpaid ? `<b>${unpaid} booking${unpaid === 1 ? ' has' : 's have'} no paid date yet:</b> <a href="#" data-act="goto-flights">enter ${unpaid === 1 ? 'it' : 'them'} in Activity</a> (marked ⚠). ` : ''}
             Each booking gets the date it was paid, which decides the year it counts in, and whether it was a business trip,
-            with what your employer reimbursed; upgrades and CO₂ compensation are paid privately or by your employer. The
-            Report tab adds up the costs, what was reimbursed and what you paid privately, and exports them as CSV or PDF.</p>
+            with what your employer reimbursed; upgrades and CO₂ compensation are personal or paid by the employer. The
+            Report tab adds up the costs, what the employer reimbursed and what is personal, and exports them as CSV or PDF.</p>
         </div>
         <div class="card">
           <div class="card-head"><h2>Data</h2></div>
@@ -1632,11 +1632,11 @@
       upgradeType: up ? form.upgradeType.value : '',
       upgradeCost: up ? E.parseAmount(form.upgradeCost.value) : 0,
       upgradePaidOn: up ? E.parseDate(form.upgradePaidOn.value) : '',
-      upgradePaidBy: up ? form.upgradePaidBy.value : 'private',
+      upgradePaidBy: up ? form.upgradePaidBy.value : 'personal',
       co2Level: fl ? form.co2Level.value : 'none',
       co2Cost: co2 ? E.parseAmount(form.co2Cost.value) : 0,
       co2PaidOn: co2 ? E.parseDate(form.co2PaidOn.value) : '',
-      co2PaidBy: co2 ? form.co2PaidBy.value : 'private',
+      co2PaidBy: co2 ? form.co2PaidBy.value : 'personal',
       includeInPlan: form.includeInPlan.checked,
       notes: form.notes.value.trim(),
     });
@@ -1657,7 +1657,7 @@
   });
   const expenseLine = (fi) => {
     const t = readExpense(), r = E.fareReimbursed(t, fi.fare);
-    return !fi.fare ? '' : parts(`Fare paid privately ${money(Math.max(0, fi.fare - r))}`, t.business ? `reimbursed ${money(r)}` : 'private trip');
+    return !fi.fare ? '' : parts(`Fare: personal ${money(Math.max(0, fi.fare - r))}`, t.business ? `employer ${money(r)}` : 'personal trip');
   };
 
   /** The fare field holds the whole booking's fare when there is a booking code, else this segment's fare. */

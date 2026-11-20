@@ -24,7 +24,7 @@
   /**
    * Payment details of a booking's fare (or of a segment's own fare without a booking code), for the expense report
    * (E.expenseReport): the date it was paid ('' = not entered yet), whether it is a business trip, what the employer
-   * reimbursed of the fare on one (null = all of it; see E.fareReimbursed; the rest you paid privately) and whether it is
+   * reimbursed of the fare on one (null = all of it; see E.fareReimbursed; the rest is personal) and whether it is
    * an award booking (the fare is the cash part paid).
    */
   S.newExpense = () => ({ paidOn: '', business: false, reimbursed: null, award: false });
@@ -35,7 +35,7 @@
     earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradeType: '',   // see MM.UPGRADE_TYPES
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
     // expense report: when the upgrade and the CO₂ compensation were paid ('' = with the booking's fare) and who paid them (MM.PAID_BY)
-    upgradePaidOn: '', upgradePaidBy: 'private', co2PaidOn: '', co2PaidBy: 'private',
+    upgradePaidOn: '', upgradePaidBy: 'personal', co2PaidOn: '', co2PaidBy: 'personal',
     expense: S.newExpense(),   // the fare's payment details, used without a booking code (like flightCost)
     earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, times: null, includeInPlan: true, notes: '',
   });
@@ -210,8 +210,8 @@
     }
     for (const k of ['flightCost', 'upgradeCost', 'co2Cost']) f[k] = amount(f[k]);   // like the fares of bookings
     // as the dialog saves them: the payment details of an upgrade or a booster only with one
-    if (!E.isUpgraded(f)) Object.assign(f, { upgradePaidOn: '', upgradePaidBy: 'private' });
-    if (!E.hasBooster(f)) Object.assign(f, { co2Cost: 0, co2PaidOn: '', co2PaidBy: 'private' });
+    if (!E.isUpgraded(f)) Object.assign(f, { upgradePaidOn: '', upgradePaidBy: 'personal' });
+    if (!E.hasBooster(f)) Object.assign(f, { co2Cost: 0, co2PaidOn: '', co2PaidBy: 'personal' });
     f.upgradePaidOn = isoOrEmpty(f.upgradePaidOn);
     f.co2PaidOn = isoOrEmpty(f.co2PaidOn);
     f.expense = normalizeExpense(f.expense);
@@ -338,7 +338,7 @@
    */
   S.expenseCsv = (report, collapse, currency) => {
     const head = ['Bezahlt am', 'Buchungscode', 'Flüge', 'Geschäftsreise', ...(collapse ? [] : ['Posten']),
-      ...['Kosten', 'Erstattet', 'Privat bezahlt'].map(h => `${h} (${currency})`), ...(collapse ? [] : ['Hinweise'])];
+      ...['Kosten', 'Arbeitgeber', 'Persönlich'].map(h => `${h} (${currency})`), ...(collapse ? [] : ['Hinweise'])];
     const money = (t) => E.EXPENSE_AMOUNTS.map(k => t[k]);
     const rows = report.bookings.flatMap(b => {
       const base = [b.code, flightsDe(b.flights), b.expense.business ? 'ja' : 'nein'];
