@@ -649,7 +649,8 @@
      */
     const fareCell = (f, fare) => {
       const k = E.bookingKey(f.bookingCode), b = E.booking(state, f);
-      const t = E.fareExpense(state, f), paid = !expensesOn() ? '' : `<div class="muted">${t.business ? `reimb. ${money(t.reimbursed)} · you ${money(E.expenseShare('fare', fare, t.reimbursed, t).own)}` : 'private'}</div>`;
+      const t = E.fareExpense(state, f), r = E.fareReimbursed(t, fare);
+      const paid = !expensesOn() ? '' : `<div class="muted">${t.business ? `reimb. ${money(r)} · you ${money(Math.max(0, fare - r))}` : 'private'}</div>`;
       if (!b || segs[k] < 2) return money(fare) + paid;
       if (holders[k] === f.id) return `${money(fare)}<div class="muted" title="Whole fare of booking ${esc(k)}, counted once for its ${segs[k]} segments">booking · ${segs[k]} seg.</div>${paid}`;
       const h = state.flights.find(x => x.id === holders[k]);
@@ -663,7 +664,7 @@
       return `<tr data-id="${esc(f.id)}" class="${r.planned ? 'planned' : ''} ${r.counts ? '' : 'excluded'}">
         <td class="fold"><button class="fold-btn" data-fold="${esc(f.id)}" aria-expanded="${open}" title="Times and aircraft">▸</button></td>
         <td>${C.fmtDate(f.date)}${r.counts ? '' : '<div class="muted">not in forecast</div>'}</td>
-        <td><b>${esc(f.flightNo)}</b>${f.transport === 'rail' ? ' <span class="pill">Train</span>' : f.transport === 'bus' ? ' <span class="pill">Bus</span>' : ''}<div class="muted"><code>${esc(f.bookingCode || '–')}</code>${unpaid.has(f.id) ? ' <span class="pill warn" title="Paid date missing: not in the expense report">⚠ paid date</span>' : ''}</div></td>
+        <td><b>${esc(f.flightNo)}</b>${f.transport === 'rail' ? ' <span class="pill">Train</span>' : f.transport === 'bus' ? ' <span class="pill">Bus</span>' : ''}<div class="muted"><code>${esc(f.bookingCode || '–')}</code>${unpaid.has(f.id) ? ' <span class="pill warn" title="Paid date missing: not in the expense report. Click to enter it">⚠</span>' : ''}</div></td>
         <td>${esc(E.airlineName(f))}<div class="muted">${E.operating(f) ? `op. by ${esc(E.operating(f).name)} · ` : ''}${esc(MM.GROUP_LABEL[r.e.group])}</div></td>
         <td><span class="route">${isFlight(f) || f.route ? routeTxt(f) : '<span class="muted">–</span>'}</span>${f.route && f.route.source === 'manual' ? '<div class="muted">manual</div>' : ''}</td>
         <td>${haulTxt(r.e.haul)}${f.haulOverride && f.haulOverride !== 'auto' ? '<div class="muted">override</div>' : ''}</td>
@@ -1191,7 +1192,7 @@
   /* ================= report view (the optional expense report: settings.expenses.enabled) ================= */
   const expensesOn = () => state.settings.expenses.enabled;
   const COST_ITEM = { fare: 'Fare', upgrade: 'Upgrade', co2: 'CO₂ compensation' };
-  const COST_FLAG = { over: 'reimbursed more than paid', private: 'reimbursed on a private trip', receipt: 'no receipt' };
+  const COST_FLAG = { over: 'reimbursed more than paid' };
   /** "14 Apr 2026 LH430 MUC→ORD", one line per segment of a booking. */
   const segmentsTxt = (flights) => flights.map(f => `<div class="nw">${C.fmtDate(f.date)} ${esc(f.flightNo)}${hasRoute(f.route) ? ` <span class="route">${routeTxt(f)}</span>` : ''}</div>`).join('');
   const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code> ${b.expense.business ? '<span class="pill ok">business</span>' : '<span class="pill">private</span>'}${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
@@ -1209,28 +1210,21 @@
           <td>${C.fmtDate(it.paidOn)}</td>
           ${i ? '' : `<td rowspan="${b.items.length}">${bookingTxt(b)}</td><td rowspan="${b.items.length}">${segmentsTxt(b.flights)}</td>`}
           <td>${COST_ITEM[it.kind]}${it.f && b.flights.length > 1 ? ` <span class="muted">${esc(it.f.flightNo)}</span>` : ''}</td>
-          ${amounts(it)}<td>${[...it.flags, ...(i ? [] : b.flags)].map(k => `<span class="pill warn">${COST_FLAG[k]}</span>`).join(' ')}</td>
+          ${amounts(it)}<td>${it.flags.map(k => `<span class="pill warn">${COST_FLAG[k]}</span>`).join(' ')}</td>
         </tr>`).join(''))).join('');
     const cols = collapse ? 3 : 4;
-    const wiTotal = whatIfs.reduce((a, x) => ({ cost: a.cost + x.cost, business: a.business + x.business }), { cost: 0, business: 0 });
-    const wiCells = (x) => `<td class="num">${money(x.cost)}</td><td class="num">${money(x.business)}</td>`;
 
     host.innerHTML = `
       <p class="print-only">Flight costs paid in ${year} · as of ${C.fmtDate(E.todayISO())}</p>
       ${unpaid.length ? `<div class="card warn-card no-print">
-        <div class="card-head"><h2>⚠ ${unpaid.length} booking${unpaid.length === 1 ? '' : 's'} without a paid date</h2>
-          <span class="sub">left out of the report until you enter when ${unpaid.length === 1 ? 'it was' : 'each was'} paid</span></div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Booking</th><th>Flights</th><th class="num">Fare</th><th>Paid on</th></tr></thead>
-          <tbody>${unpaid.map((b, i) => `<tr class="static"><td><code>${esc(b.code || '–')}</code></td><td>${segmentsTxt(b.flights)}</td><td class="num">${money(b.fare)}</td>
-            <td><input class="date-input" data-paid="${i}" placeholder="YYYY/MM/DD" inputmode="numeric" maxlength="10" autocomplete="off" aria-label="Paid on"></td></tr>`).join('')}</tbody>
-        </table></div>
+        <b>⚠ ${unpaid.length} booking${unpaid.length === 1 ? ' has' : 's have'} no paid date</b> and ${unpaid.length === 1 ? 'is' : 'are'} left out of the report
+        until you enter ${unpaid.length === 1 ? 'it' : 'them'}. Activity marks ${unpaid.length === 1 ? 'it' : 'them'} with ⚠.
+        <button class="btn small" data-act="goto-flights">Show in Activity</button>
       </div>` : ''}
       <div class="kpis">
         ${kpi(`Cost paid in ${year}`, t.cost, `${rep.bookings.length} booking${rep.bookings.length === 1 ? '' : 's'}${reportPrefs.businessOnly ? ' · business trips' : ''}`)}
         ${kpi('Reimbursed by employer', t.reimbursed, 'paid back to you')}
-        ${kpi('Your share', t.own, 'cost − reimbursed')}
-        ${kpi('Business share', t.business, 'your share of business trips')}
+        ${kpi('Paid privately', t.own, 'cost − reimbursed')}
       </div>
       <div class="card">
         <div class="card-head">
@@ -1245,18 +1239,18 @@
         </div>
         ${rep.bookings.length ? `<div class="table-wrap"><table class="report">
           <thead><tr><th>Paid on</th><th>Booking</th><th>Flights</th>${collapse ? '' : '<th>Item</th>'}
-            <th class="num">Cost</th><th class="num">Reimbursed</th><th class="num">Your share</th><th class="num">Business share</th>${collapse ? '' : '<th>Notes</th>'}</tr></thead>
+            <th class="num">Cost</th><th class="num">Reimbursed</th><th class="num">Paid privately</th>${collapse ? '' : '<th>Notes</th>'}</tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr><td colspan="${cols}">Total</td>${amounts(t)}${collapse ? '' : '<td></td>'}</tr></tfoot>
         </table></div>` : `<p class="muted m0">No costs paid in ${year}${reportPrefs.businessOnly ? ' on business trips' : ''}.</p>`}
       </div>
       ${whatIfs.length ? `<div class="card no-print">
-        <div class="card-head"><h2>Planner what-ifs ${year}</h2><span class="sub">upgrades and CO₂ boosters you try in the Planner on flights in ${year}, if not reimbursed</span>
+        <div class="card-head"><h2>Planner what-ifs ${year}</h2><span class="sub">upgrades and CO₂ boosters you try in the Planner on flights in ${year}</span>
           <div class="right"><button class="btn small" data-act="goto-planner">Open Planner →</button></div></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Flight</th><th>What-if</th><th class="num">Cost</th><th class="num">Business share</th></tr></thead>
-          <tbody>${whatIfs.map(x => `<tr class="static"><td>${C.fmtDate(x.f.date)}</td><td><b>${esc(x.f.flightNo)}</b>${hasRoute(x.f.route) ? ` <span class="route">${routeTxt(x.f)}</span>` : ''}</td><td>${COST_ITEM[x.kind]}</td>${wiCells(x)}</tr>`).join('')}</tbody>
-          <tfoot><tr><td colspan="3">Total</td>${wiCells(wiTotal)}</tr></tfoot>
+          <thead><tr><th>Date</th><th>Flight</th><th>What-if</th><th class="num">Cost</th></tr></thead>
+          <tbody>${whatIfs.map(x => `<tr class="static"><td>${C.fmtDate(x.f.date)}</td><td><b>${esc(x.f.flightNo)}</b>${hasRoute(x.f.route) ? ` <span class="route">${routeTxt(x.f)}</span>` : ''}</td><td>${COST_ITEM[x.kind]}</td><td class="num">${money(x.cost)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td colspan="3">Total</td><td class="num">${money(whatIfs.reduce((a, x) => a + x.cost, 0))}</td></tr></tfoot>
         </table></div>
       </div>` : ''}`;
     fitText($$('.kpi .value.fit', host));
@@ -1266,14 +1260,6 @@
       reportPrefs[k] = v === 'true';
       try { localStorage.setItem(REPORT_KEY, JSON.stringify(reportPrefs)); } catch { /* ignore */ }
       render();
-    }));
-    $$('[data-paid]', host).forEach(inp => inp.addEventListener('change', () => {
-      const iso = E.parseDate(inp.value);
-      if (!iso) { toast('Please enter the date as YYYY/MM/DD'); return; }
-      unpaid[+inp.dataset.paid].expense.paidOn = iso;   // the booking's own payment details (E.bookings)
-      save(); render(); toast(`Paid on ${C.fmtDate(iso)}`);
-      const next = $(`[data-paid="${inp.dataset.paid}"]`, host);   // the next booking, now in this one's place
-      if (next) next.focus();
     }));
   };
 
@@ -1369,13 +1355,12 @@
             along. Keep the file to yourself.</p>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Expense report</h2><span class="sub">optional · what you paid, what your employer reimbursed and your share of business trips</span></div>
+          <div class="card-head"><h2>Expense report</h2><span class="sub">optional · what you paid, what your employer reimbursed and what you paid privately</span></div>
           <label class="check"><input type="checkbox" id="expOn" ${ex.enabled ? 'checked' : ''}> Show the Report tab and the payment details of each booking</label>
-          ${ex.enabled ? `<label class="check"><input type="checkbox" id="expCo2" ${ex.co2Business ? 'checked' : ''}> CO₂ compensation on business trips counts as a business cost</label>` : ''}
-          <p class="hint">${ex.enabled && unpaid ? `<b>${unpaid} booking${unpaid === 1 ? ' has' : 's have'} no paid date yet:</b> <a href="#" data-act="goto-report">fill ${unpaid === 1 ? 'it' : 'them'} in on the Report tab</a>. ` : ''}
-            Each booking gets the date it was paid, which decides the year it counts in, what your employer reimbursed and
-            whether it was a business trip. The Report tab adds up the costs, your share and your share of business trips, and
-            exports them as CSV or PDF.</p>
+          <p class="hint">${ex.enabled && unpaid ? `<b>${unpaid} booking${unpaid === 1 ? ' has' : 's have'} no paid date yet:</b> <a href="#" data-act="goto-flights">enter ${unpaid === 1 ? 'it' : 'them'} in Activity</a> (marked ⚠). ` : ''}
+            Each booking gets the date it was paid, which decides the year it counts in, and whether it was a business trip,
+            with what your employer reimbursed; upgrades and CO₂ compensation are paid privately or by your employer. The
+            Report tab adds up the costs, what was reimbursed and what you paid privately, and exports them as CSV or PDF.</p>
         </div>
         <div class="card">
           <div class="card-head"><h2>Data</h2></div>
@@ -1441,15 +1426,15 @@
       ex.enabled = e.target.checked;
       const n = E.unpaidBookings(state).length;
       save(); render();
-      toast(!ex.enabled ? 'Expense report off' : n ? `Expense report on · ${n} booking${n === 1 ? ' needs' : 's need'} a paid date (Report tab)` : 'Expense report on', 5000);
+      toast(!ex.enabled ? 'Expense report off' : n ? `Expense report on · ${n} booking${n === 1 ? ' needs' : 's need'} a paid date (⚠ in Activity)` : 'Expense report on', 5000);
     });
     if (!ex.enabled) return;
-    $('#expCo2', host).addEventListener('change', (e) => { ex.co2Business = e.target.checked; save(); render(); toast('Expense report updated'); });
   };
 
   /* ================= flight dialog ================= */
   const dlg = $('#flightDialog'), form = $('#flightForm');
   let draft = null, isNew = false, upgradeTouched = false, co2Touched = false, lookupSeq = 0, pendingLookup = null;
+  let paidMissing = false;   // the booking lacks the paid date the expense report needs: the empty field is highlighted
   let fareFrom = '';   // booking whose whole fare the fare field shows ('' = the segment's own fare)
   /** True when the dialog was closed or shows another flight since `d` was current: async lookups must not touch it. */
   const stale = (d) => !dlg.open || draft !== d;
@@ -1464,6 +1449,7 @@
       const b = state.settings.rules.co2[l];
       return `<option value="${l}">${MM.CO2_LABEL[l]}${b ? ` (+${b.p}% P, +${b.qp}% QP, +${b.hon}% HON)` : ''}</option>`;
     }).join('');
+    form.upgradePaidBy.innerHTML = form.co2PaidBy.innerHTML = Object.entries(MM.PAID_BY).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   };
 
   /* ---------- Flight / Train / Bus: what the dialog asks for ---------- */
@@ -1646,11 +1632,11 @@
       upgradeType: up ? form.upgradeType.value : '',
       upgradeCost: up ? E.parseAmount(form.upgradeCost.value) : 0,
       upgradePaidOn: up ? E.parseDate(form.upgradePaidOn.value) : '',
-      upgradeReimbursed: up ? E.parseAmount(form.upgradeReimbursed.value) : 0,
+      upgradePaidBy: up ? form.upgradePaidBy.value : 'private',
       co2Level: fl ? form.co2Level.value : 'none',
       co2Cost: co2 ? E.parseAmount(form.co2Cost.value) : 0,
       co2PaidOn: co2 ? E.parseDate(form.co2PaidOn.value) : '',
-      co2Reimbursed: co2 ? E.parseAmount(form.co2Reimbursed.value) : 0,
+      co2PaidBy: co2 ? form.co2PaidBy.value : 'private',
       includeInPlan: form.includeInPlan.checked,
       notes: form.notes.value.trim(),
     });
@@ -1659,23 +1645,19 @@
   /** The payment details of the fare (S.newExpense): the booking's with a booking code, else this segment's (S.saveFlight). */
   const fillExpense = (t) => {
     form.paidOn.value = dateToField(t.paidOn);
-    form.reimbursed.value = t.reimbursed || '';
     form.business.checked = t.business;
-    form.businessShare.value = t.businessShare == null ? '' : t.businessShare;
+    form.reimbursed.value = t.reimbursed == null ? '' : t.reimbursed;
     form.award.checked = t.award;
-    form.receipt.value = t.receipt;
   };
   const readExpense = () => ({
     paidOn: E.parseDate(form.paidOn.value),
-    reimbursed: E.parseAmount(form.reimbursed.value),
     business: form.business.checked,
-    businessShare: form.business.checked && form.businessShare.value.trim() ? E.parseAmount(form.businessShare.value) : null,
+    reimbursed: form.business.checked && form.reimbursed.value.trim() ? E.parseAmount(form.reimbursed.value) : null,
     award: form.award.checked,
-    receipt: form.receipt.value.trim(),
   });
   const expenseLine = (fi) => {
-    const t = readExpense(), s = E.expenseShare('fare', fi.fare, t.reimbursed, t, true);
-    return !fi.fare ? '' : parts(`Your share of the fare ${money(s.own)}`, t.business ? `business ${money(s.business)}` : 'private trip');
+    const t = readExpense(), r = E.fareReimbursed(t, fi.fare);
+    return !fi.fare ? '' : parts(`Fare paid privately ${money(Math.max(0, fi.fare - r))}`, t.business ? `reimbursed ${money(r)}` : 'private trip');
   };
 
   /** The fare field holds the whole booking's fare when there is a booking code, else this segment's fare. */
@@ -1717,6 +1699,7 @@
       $$('[data-exp-upgrade]', form).forEach(el => (el.hidden = !E.isUpgraded(draft)));
       $$('[data-exp-co2]', form).forEach(el => (el.hidden = !E.hasBooster(draft)));
       $('[data-business-only]', form).hidden = !form.business.checked;
+      form.paidOn.classList.toggle('missing', paidMissing && !form.paidOn.value.trim());
       $('#expenseLine').innerHTML = expenseLine(fi);
     }
     // CO₂ cost: until typed in, it follows the price model's estimate for the chosen booster, route and cabin
@@ -1825,10 +1808,12 @@
     form.co2Level.value = draft.co2Level;
     form.co2Cost.value = draft.co2Cost || '';
     form.upgradePaidOn.value = dateToField(draft.upgradePaidOn);
-    form.upgradeReimbursed.value = draft.upgradeReimbursed || '';
+    form.upgradePaidBy.value = draft.upgradePaidBy;
     form.co2PaidOn.value = dateToField(draft.co2PaidOn);
-    form.co2Reimbursed.value = draft.co2Reimbursed || '';
+    form.co2PaidBy.value = draft.co2PaidBy;
     fillExpense(E.fareExpense(state, draft));
+    // a booking the expense report leaves out for want of a paid date (marked ⚠ in Activity): highlight the field
+    paidMissing = !isNew && expensesOn() && E.unpaidBookings(state).some(b => b.flights.some(f => f.id === draft.id));
     form.includeInPlan.checked = draft.includeInPlan !== false;
     form.notes.value = draft.notes || '';
     resetDelete($('#btnDelete'), isNew);
@@ -1865,7 +1850,7 @@
   };
   const datePicker = $('#datePicker');
   wireDateField(form.date, $('#btnDatePick'), datePicker, () => { updatePreview(); autoLookup(); });
-  $$('#expenseBox .date-field').forEach(el => wireDateField($('input[name]', el), $('.date-btn', el), $('.date-native', el)));
+  $$('#expenseBox .date-field').forEach(el => wireDateField($('input[name]', el), $('.date-btn', el), $('.date-native', el), updatePreview));
 
   wireDateField(stayForm.date, $('#btnStayDatePick'), $('#stayDatePicker'));
   $$('[data-close]', stayDlg).forEach(b => b.addEventListener('click', () => stayDlg.close()));

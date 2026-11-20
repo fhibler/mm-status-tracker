@@ -721,7 +721,7 @@
   const cents = (v) => Math.round(v * 100) / 100;
 
   /** The amounts of an expense report item or total. */
-  E.EXPENSE_AMOUNTS = ['cost', 'reimbursed', 'own', 'business'];
+  E.EXPENSE_AMOUNTS = ['cost', 'reimbursed', 'own'];
 
   /** Payment details (S.newExpense) of the fare of flight f: its booking's, or its own without a booking (like E.segmentFare). */
   E.fareExpense = (state, f) => (E.booking(state, f) || f).expense;
@@ -741,28 +741,21 @@
     return [...out.values()];
   };
 
-  /**
-   * Your share of one cost of a booking (cost − what the employer reimbursed) and the business part of it: on a
-   * business trip all of it (of the fare up to expense.businessShare, for a mixed trip; of a CO₂ booster only with
-   * co2Business), else nothing. kind: 'fare' | 'upgrade' | 'co2'; expense: the booking's (S.newExpense).
-   */
-  E.expenseShare = (kind, cost, reimbursed, expense, co2Business) => {
-    const own = cents(Math.max(0, cost - reimbursed));
-    const business = !expense.business || (kind === 'co2' && !co2Business) ? 0
-      : kind === 'fare' && expense.businessShare != null ? Math.min(own, expense.businessShare) : own;
-    return { own, business };
-  };
+  /** What the employer reimbursed of a fare (S.newExpense): on a business trip what was entered (null: all of it), nothing on a private trip. */
+  E.fareReimbursed = (expense, fare) => (!expense.business ? 0 : expense.reimbursed == null ? fare : expense.reimbursed);
 
   /**
    * The costs of a booking (E.bookings) with something to report (a cost or a reimbursement): its fare and each segment's
    * upgrade and CO₂ compensation, each with the date it was paid (an upgrade or a booster without its own date was paid
-   * with the fare; '' = not entered yet): [{ kind: 'fare' | 'upgrade' | 'co2', f (the segment; null for the fare), paidOn, cost, reimbursed }].
+   * with the fare; '' = not entered yet) and what the employer reimbursed (E.fareReimbursed; an upgrade or a booster in
+   * full when the employer paid it, MM.PAID_BY): [{ kind: 'fare' | 'upgrade' | 'co2', f (the segment; null for the fare), paidOn, cost, reimbursed }].
    */
   const costItems = (b) => {
-    const t = b.expense, items = [{ kind: 'fare', f: null, paidOn: t.paidOn, cost: b.fare, reimbursed: t.reimbursed }];
+    const t = b.expense, items = [{ kind: 'fare', f: null, paidOn: t.paidOn, cost: b.fare, reimbursed: E.fareReimbursed(t, b.fare) }];
+    const paid = (cost, by) => (by === 'employer' ? cost : 0);
     for (const f of b.flights) {
-      if (E.isUpgraded(f)) items.push({ kind: 'upgrade', f, paidOn: f.upgradePaidOn || t.paidOn, cost: f.upgradeCost, reimbursed: f.upgradeReimbursed });
-      if (E.hasBooster(f)) items.push({ kind: 'co2', f, paidOn: f.co2PaidOn || t.paidOn, cost: f.co2Cost, reimbursed: f.co2Reimbursed });
+      if (E.isUpgraded(f)) items.push({ kind: 'upgrade', f, paidOn: f.upgradePaidOn || t.paidOn, cost: f.upgradeCost, reimbursed: paid(f.upgradeCost, f.upgradePaidBy) });
+      if (E.hasBooster(f)) items.push({ kind: 'co2', f, paidOn: f.co2PaidOn || t.paidOn, cost: f.co2Cost, reimbursed: paid(f.co2Cost, f.co2PaidBy) });
     }
     return items.filter(x => x.cost > 0 || x.reimbursed > 0);
   };
@@ -776,24 +769,21 @@
   /**
    * Expense report of the costs paid in `year` (the year paid, not the year flown), per booking (E.bookings;
    * opts.businessOnly: business trips only). Its items are the booking's costs paid in that year (see costItems), each
-   * with your share and its business part (E.expenseShare) and flags: 'over' (reimbursed more than the cost), 'private'
-   * (reimbursed on a private trip); a booking's own flags: 'receipt' (a business trip without a receipt). Returns
-   * { year, bookings: [{ …booking, paidOn (its first item's), items, total, flags }] (newest payment first), total }.
+   * with what you paid privately (own: cost − reimbursed) and flags: 'over' (reimbursed more than the cost). Returns
+   * { year, bookings: [{ …booking, paidOn (its first item's), items, total }] (newest payment first), total }.
    */
   E.expenseReport = (state, year, opts = {}) => {
-    const set = state.settings.expenses, y = String(year);
+    const y = String(year);
     const sum = (xs) => Object.fromEntries(E.EXPENSE_AMOUNTS.map(k => [k, cents(xs.reduce((a, x) => a + x[k], 0))]));
     const bookings = [];
     for (const b of E.bookings(state)) {
       const t = b.expense;
       if (opts.businessOnly && !t.business) continue;
-      const items = costItems(b).filter(x => x.paidOn.slice(0, 4) === y).map(x => ({
-        ...x, ...E.expenseShare(x.kind, x.cost, x.reimbursed, t, set.co2Business),
-        flags: [x.reimbursed > x.cost && 'over', x.reimbursed > 0 && !t.business && 'private'].filter(Boolean),
-      }));
+      const items = costItems(b).filter(x => x.paidOn.slice(0, 4) === y)
+        .map(x => ({ ...x, own: cents(Math.max(0, x.cost - x.reimbursed)), flags: x.reimbursed > x.cost ? ['over'] : [] }));
       if (!items.length) continue;
       const paidOn = items.map(x => x.paidOn).sort()[0];
-      bookings.push({ ...b, paidOn, items, total: sum(items), flags: t.business && !t.receipt ? ['receipt'] : [] });
+      bookings.push({ ...b, paidOn, items, total: sum(items) });
     }
     bookings.sort((a, b) => b.paidOn.localeCompare(a.paidOn));
     return { year, bookings, total: sum(bookings.flatMap(b => b.items)) };
@@ -801,16 +791,14 @@
 
   /**
    * The Planner's upgrade and CO₂ what-ifs of `year` (E.upgradeWhatIf, E.co2WhatIf) on flights in the forecast
-   * (E.inForecast, as E.planScenario counts them) as they would show in the expense report, with nothing reimbursed:
-   * [{ kind: 'upgrade' | 'co2', f, cost, business (E.expenseShare) }].
+   * (E.inForecast, as E.planScenario counts them): [{ kind: 'upgrade' | 'co2', f, cost }].
    */
   E.expenseWhatIfs = (state, year, today = E.todayISO()) => {
-    const plan = state.plans[year], co2Business = state.settings.expenses.co2Business;
+    const plan = state.plans[year];
     if (!plan) return [];
     return state.flights.filter(f => +f.date.slice(0, 4) === year && E.inForecast(f, today)).sort(E.byDeparture).flatMap(f => {
-      const t = E.fareExpense(state, f), u = E.upgradeWhatIf(f, plan, today), c = E.co2WhatIf(f, plan, today);
-      const item = (kind, cost) => ({ kind, f, cost, business: E.expenseShare(kind, cost, 0, t, co2Business).business });
-      return [u && item('upgrade', u.cost), c && item('co2', c.cost)].filter(Boolean);
+      const u = E.upgradeWhatIf(f, plan, today), c = E.co2WhatIf(f, plan, today);
+      return [u && { kind: 'upgrade', f, cost: u.cost }, c && { kind: 'co2', f, cost: c.cost }].filter(Boolean);
     });
   };
 })();

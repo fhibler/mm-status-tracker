@@ -179,15 +179,12 @@
                 <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
               </span>
             </label>
-            <label>Reimbursed by employer<input name="reimbursed" inputmode="decimal" autocomplete="off">
-              <small class="field-hint">of the fare</small></label>
-            <label>Receipt<input name="receipt" autocomplete="off" placeholder="e.g. Receipts/2026/ABC123.pdf"></label>
+            <label data-business-only>Reimbursed by employer<input name="reimbursed" inputmode="decimal" autocomplete="off" placeholder="all of your fare">
+              <small class="field-hint">of the fare; the rest you paid privately</small></label>
           </div>
           <div class="grid">
             <label class="check"><input type="checkbox" name="business"> Business trip</label>
             <label class="check" title="An award booking: enter the cash part paid (fees and surcharges) as the fare"><input type="checkbox" name="award"> Award booking</label>
-            <label data-business-only>Of which business<input name="businessShare" inputmode="decimal" autocomplete="off" placeholder="all of your share">
-              <small class="field-hint">of your share of the fare, if partly private</small></label>
           </div>
           <div class="grid" data-for="flight">
             <label data-exp-upgrade>Upgrade paid on
@@ -199,7 +196,7 @@
                 <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
               </span>
             </label>
-            <label data-exp-upgrade>Upgrade reimbursed<input name="upgradeReimbursed" inputmode="decimal" autocomplete="off"></label>
+            <label data-exp-upgrade>Upgrade paid<select name="upgradePaidBy"></select></label>
             <label data-exp-co2>CO₂ compensation paid on
               <span class="date-field">
                 <input name="co2PaidOn" placeholder="with the fare" inputmode="numeric" maxlength="10" autocomplete="off">
@@ -209,7 +206,7 @@
                 <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
               </span>
             </label>
-            <label data-exp-co2>CO₂ compensation reimbursed<input name="co2Reimbursed" inputmode="decimal" autocomplete="off"></label>
+            <label data-exp-co2>CO₂ compensation paid<select name="co2PaidBy"></select></label>
           </div>
           <p class="hint m0" id="expenseLine"></p>
         </fieldset>
