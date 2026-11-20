@@ -315,8 +315,8 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
 /* ---------- fares per booking (store) ---------- */
 {
   const st = state();
-  const a = S.saveFlight(st, flight({ id: 'a', bookingCode: 'abc 123' }), 800);
-  S.saveFlight(st, flight({ id: 'b', bookingCode: 'ABC123', date: '2026-03-05' }), 800);
+  const a = S.saveFlight(st, flight({ id: 'a', bookingCode: 'abc 123' }), 800, S.newTax());
+  S.saveFlight(st, flight({ id: 'b', bookingCode: 'ABC123', date: '2026-03-05' }), 800, S.newTax());
   // the whole fare sits on the booking's first segment (a, 1 Mar), not split; b (5 Mar) carries none
   assert.strictEqual(`${a.bookingCode}:${a.flightCost}:${st.bookings.ABC123.fare}:${E.segmentFare(st, st.flights[0])}:${E.segmentFare(st, st.flights[1])}`, 'ABC123:0:800:800:0');
   assert.strictEqual(`${E.yearSummary(st, 2026, TODAY).cost.all.flight}`, '800');
@@ -324,10 +324,10 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const same = state({ flights: [flight({ id: 'q', bookingCode: 'S' }), flight({ id: 'p', bookingCode: 'S' })], bookings: { S: { fare: 50 } } });
   assert.strictEqual(E.fareHolders(same, TODAY).S, 'p');
   // moving b to another booking keeps ABC123's fare for a, and b gets the new booking's fare
-  S.saveFlight(st, { ...st.flights[1], bookingCode: 'XYZ999' }, 300);
+  S.saveFlight(st, { ...st.flights[1], bookingCode: 'XYZ999' }, 300, S.newTax());
   assert.strictEqual(`${st.bookings.ABC123.fare}:${st.bookings.XYZ999.fare}:${E.segmentFare(st, st.flights[0])}:${E.segmentFare(st, st.flights[1])}`, '800:300:800:300');
   // without a booking code the fare belongs to the flight; the booking left without segments is dropped
-  S.saveFlight(st, { ...st.flights[1], bookingCode: '' }, 120);
+  S.saveFlight(st, { ...st.flights[1], bookingCode: '' }, 120, S.newTax());
   assert.strictEqual(`${st.flights[1].flightCost}:${E.segmentFare(st, st.flights[1])}:${'XYZ999' in st.bookings}`, '120:120:false');
   // a booking code without a booking entry (e.g. edited in the .json) falls back to the segment's own fare
   assert.strictEqual(E.segmentFare(state(), flight({ bookingCode: 'NOPE', flightCost: 75 })), 75);
@@ -341,94 +341,139 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(`${'ABC123' in st.bookings}:${'a' in st.plans['2026'].co2}`, 'false:false');
   // a flight that becomes a train loses its what-ifs too: the planner neither shows nor resets them
   st.plans['2026'].co2.b = { level: 'large', cost: 40 };
-  S.saveFlight(st, { ...st.flights[0], flightNo: 'LH1' }, 0);
+  S.saveFlight(st, { ...st.flights[0], flightNo: 'LH1' }, 0, S.newTax());
   const kept = 'b' in st.plans['2026'].co2;
-  S.saveFlight(st, { ...st.flights[0], transport: 'rail' }, 0);
+  S.saveFlight(st, { ...st.flights[0], transport: 'rail' }, 0, S.newTax());
   assert.strictEqual(`${kept}:${'b' in st.plans['2026'].co2}`, 'true:false');
 }
 
 /* ---------- tax report: costs by the year paid, reimbursed by the employer, deductible on business trips ---------- */
+const tax = (o) => ({ ...S.newTax(), ...o });
+const taxUp = { bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid' };
+/** A state with business trip B (two segments; upgrade and booster with their own dates), private p1 (no booking code),
+ * mixed trip M (paid in 2026, flown in 2027; its upgrade paid with the fare) and U (no paid date yet). */
+const taxState = () => state({
+  settings: { tax: { enabled: true } },
+  flights: [
+    lhBiz({ id: 'a1', date: '2026-04-14', bookingCode: 'B', ...taxUp, upgradeCost: 600, upgradePaidOn: '2026-03-20', co2Level: 'medium', co2Cost: 38, co2PaidOn: '2026-04-14' }),
+    lhBiz({ id: 'a2', date: '2026-04-19', bookingCode: 'B', flightNo: 'LH401' }),
+    lhBiz({ id: 'p1', date: '2026-08-01', flightNo: 'LH402', flightCost: 300, tax: tax({ paidOn: '2026-05-01', reimbursed: 100 }) }),
+    lhBiz({ id: 'm1', date: '2027-01-10', bookingCode: 'M', ...taxUp, upgradeCost: 400 }),
+    lhBiz({ id: 'u1', date: '2026-05-01', bookingCode: 'U' }),
+  ],
+  bookings: {
+    B: { fare: 1000, tax: tax({ paidOn: '2026-03-02', reimbursed: 600, business: true, receipt: 'B.pdf' }) },
+    M: { fare: 500, tax: tax({ paidOn: '2026-12-01', reimbursed: 50, business: true, deductible: 300 }) },
+    U: { fare: 80, tax: tax() },
+  },
+});
+const taxItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.reimbursed}=${x.own}>${x.deductible}${x.flags.length ? '!' + x.flags : ''}`).join(' ');
 {
-  const tax = (o) => ({ ...S.newTax(), ...o });
-  const up = { bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'bid' };
-  const st = state({
-    settings: { tax: { enabled: true } },
-    flights: [
-      lhBiz({ id: 'a1', date: '2026-04-14', bookingCode: 'B', ...up, upgradeCost: 600, upgradePaidOn: '2026-03-20', co2Level: 'medium', co2Cost: 38, co2PaidOn: '2026-04-14' }),
-      lhBiz({ id: 'a2', date: '2026-04-19', bookingCode: 'B', flightNo: 'LH401' }),
-      lhBiz({ id: 'p1', date: '2026-08-01', flightNo: 'LH402', flightCost: 300, tax: tax({ paidOn: '2026-05-01', reimbursed: 100 }) }),   // private, no booking code
-      lhBiz({ id: 'm1', date: '2027-01-10', bookingCode: 'M', ...up, upgradeCost: 200 }),   // paid in 2026, flown in 2027; upgrade paid with the fare
-      lhBiz({ id: 'u1', date: '2026-05-01', bookingCode: 'U' }),
-    ],
-    bookings: {
-      B: { fare: 1000, tax: tax({ paidOn: '2026-03-02', reimbursed: 600, business: true, receipt: 'B.pdf' }) },
-      M: { fare: 500, tax: tax({ paidOn: '2026-12-01', reimbursed: 50, business: true, deductible: 300 }) },   // a mixed trip
-      U: { fare: 80, tax: tax() },   // no paid date yet
-    },
-  });
-  assert.strictEqual(`${E.fareTax(st, st.flights[1]).reimbursed}:${E.fareTax(st, st.flights[2]).reimbursed}`, '600:100');
+  const st = taxState();
   assert.strictEqual(E.bookings(st).map(b => `${b.code}:${b.flights.map(f => f.id)}`).join(' '), 'B:a1,a2 U:u1 :p1 M:m1');
-  assert.strictEqual(E.unpaidBookings(st).map(b => b.code).join(), 'U');   // left out of the report until its paid date is entered
+  // a booking code without a booking entry (e.g. edited in the .json) keeps its code, with the segment's own fare
+  assert.strictEqual(E.bookings(state({ flights: [flight({ bookingCode: 'NOPE', flightCost: 75 })] })).map(b => `${b.code}:${b.fare}`).join(), 'NOPE:75');
   const rep = E.taxReport(st, 2026);
-  const items = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.reimbursed}=${x.own}>${x.deductible}${x.flags.length ? '!' + x.flags : ''}`).join(' ');
   assert.strictEqual(rep.bookings.map(b => `${b.code || b.flights[0].id}@${b.paidOn}`).join(' '), 'M@2026-12-01 p1@2026-05-01 B@2026-03-02');   // newest payment first
-  assert.strictEqual(items(rep.bookings[2]), 'fare@2026-03-02:1000-600=400>400 upgrade@2026-03-20:600-0=600>600 co2@2026-04-14:38-0=38>38');
-  assert.strictEqual(items(rep.bookings[1]), 'fare@2026-05-01:300-100=200>0!private');   // a private trip: nothing deductible
-  assert.strictEqual(items(rep.bookings[0]), 'fare@2026-12-01:500-50=450>300 upgrade@2026-12-01:200-0=200>200');   // mixed: the fare's deductible part
+  assert.strictEqual(taxItems(rep.bookings[2]), 'fare@2026-03-02:1000-600=400>400 upgrade@2026-03-20:600-0=600>600 co2@2026-04-14:38-0=38>38');
+  assert.strictEqual(taxItems(rep.bookings[1]), 'fare@2026-05-01:300-100=200>0!private');   // a private trip: nothing deductible
+  // a mixed trip limits the deductible part of the fare only, not of the upgrade
+  assert.strictEqual(taxItems(rep.bookings[0]), 'fare@2026-12-01:500-50=450>300 upgrade@2026-12-01:400-0=400>400');
   // one line per booking adds up its items; the report's total and the Anlage N figures of the business trips
   assert.strictEqual(Object.values(rep.bookings[2].total).join(), '1638,600,1038,1038');
-  assert.strictEqual(`${Object.values(rep.total).join()}:${rep.claim.travel}:${rep.claim.reimbursed}`, '2638,750,1888,1538:2188:650');
+  assert.strictEqual(`${Object.values(rep.total).join()}:${Object.values(rep.claim).join()}`, '2838,750,2088,1738:2388,650,1738');
   assert.strictEqual(rep.bookings.map(b => b.flags.join() || '-').join(' '), 'receipt - -');   // a business trip without a receipt
   assert.strictEqual(E.taxReport(st, 2026, { businessOnly: true }).bookings.length, 2);
   assert.strictEqual(E.taxReport(st, 2027).bookings.length, 0);   // flown in 2027, paid in 2026
   // a booster is deductible only while the setting says so; more reimbursed than paid is flagged and counts up to the cost
   st.settings.tax.co2Deductible = false;
   st.bookings.B.tax.reimbursed = 1200;
-  assert.strictEqual(items(E.taxReport(st, 2026).bookings[2]), 'fare@2026-03-02:1000-1200=0>0!over upgrade@2026-03-20:600-0=600>600 co2@2026-04-14:38-0=38>0');
-  assert.strictEqual(E.taxReport(st, 2026).claim.reimbursed, 1050);
+  const over = E.taxReport(st, 2026);
+  assert.strictEqual(taxItems(over.bookings[2]), 'fare@2026-03-02:1000-1200=0>0!over upgrade@2026-03-20:600-0=600>600 co2@2026-04-14:38-0=38>0');
+  assert.strictEqual(over.claim.reimbursed, 1050);
+}
+{
+  // each cost in the year it was paid: an upgrade paid in 2027 on a booking paid in 2026, and the booking's date is its first item's
+  const st = taxState();
+  st.flights[0].upgradePaidOn = '2027-01-05';
+  st.flights[0].co2PaidOn = '';   // paid with the fare
+  const b26 = E.taxReport(st, 2026).bookings.find(b => b.code === 'B'), b27 = E.taxReport(st, 2027).bookings;
+  assert.strictEqual(`${taxItems(b26)}|${b27.map(b => `${b.code}@${b.paidOn} ${taxItems(b)}`)}`,
+    'fare@2026-03-02:1000-600=400>400 co2@2026-03-02:38-0=38>38|B@2027-01-05 upgrade@2027-01-05:600-0=600>600');
+  // a cost of 0 with a reimbursement is reported (and flagged); one with neither is not
+  st.flights[1].co2Level = 'small'; st.flights[1].co2Reimbursed = 20;
+  st.flights[2].co2Level = 'small';
+  assert.strictEqual(taxItems(E.taxReport(st, 2026).bookings.find(b => b.code === 'B')).split(' ').pop(), 'co2@2026-03-02:0-20=0>0!over');
+  assert.strictEqual(taxItems(E.taxReport(st, 2026).bookings.find(b => b.flights[0].id === 'p1')), 'fare@2026-05-01:300-100=200>0!private');
+}
+{
+  // without a paid date a cost is left out of the report and listed until it is entered; a booking without costs needs none
+  const st = taxState();
+  st.flights.push(lhBiz({ id: 'z1', date: '2026-06-01', bookingCode: 'Z' }), lhBiz({ id: 'z2', date: '2026-06-02', flightNo: 'LH9' }));
+  st.bookings.Z = { fare: 0, tax: tax() };
+  assert.strictEqual(E.unpaidBookings(st).map(b => b.code).join(), 'U');
+  // an upgrade with its own date is reported even before the fare's date is entered; it no longer makes the booking unpaid alone
+  st.flights.find(f => f.id === 'z1').upgradeClass = 'First';
+  Object.assign(st.flights.find(f => f.id === 'z1'), { upgradeType: 'bid', upgradeCost: 90, upgradePaidOn: '2025-12-20' });
+  assert.strictEqual(`${E.unpaidBookings(st).map(b => b.code).join()}:${E.taxReport(st, 2025).bookings.map(b => b.code)}`, 'U:Z');
+  // the years with a payment, for the year selector: a fare paid in the year before the flight
+  assert.strictEqual(E.taxYears(st).join(), '2025,2026');
+}
+{
   // CSV for a spreadsheet: German number and date formats, one row per item or per booking, and a total
+  const st = taxState();
+  st.bookings.B.tax.reimbursed = 1200;
   st.bookings.B.tax.receipt = 'Belege; "B"';
   const csv = (collapse) => S.taxCsv(E.taxReport(st, 2026, { businessOnly: true }), collapse, 'EUR').split('\r\n');
   const rows = csv(false);
   assert.strictEqual(rows[0], '﻿Bezahlt am;Buchungscode;Flüge;Geschäftsreise;Posten;Kosten (EUR);Erstattet (EUR);Eigenanteil (EUR);Absetzbar (EUR);Beleg;Hinweise');
   assert.strictEqual(rows[3], '02.03.2026;B;14.04.2026 LH400 X–X, 19.04.2026 LH401 X–X;ja;Flugpreis;1000,00;1200,00;0,00;0,00;"Belege; ""B""";Erstattung über den Kosten');
-  assert.strictEqual(`${rows.length}:${rows[rows.length - 2]}`, '8:Summe;;;;;2338,00;1250,00;1288,00;1100,00;;');
+  assert.strictEqual(rows.slice(1, 3).map(r => r.split(';').pop()).join('|'), 'Beleg fehlt|');   // a booking's flags (M: no receipt) on its first row only
+  assert.strictEqual(`${rows.length}:${rows[rows.length - 2]}`, '8:Summe;;;;;2538,00;1250,00;1488,00;1338,00;;');
   const one = csv(true);
-  assert.strictEqual(`${one.length}:${one[2]}`, '5:02.03.2026;B;14.04.2026 LH400 X–X, 19.04.2026 LH401 X–X;ja;1638,00;1200,00;638,00;600,00;"Belege; ""B"""');
-  st.bookings.B.tax.receipt = '=HYPERLINK("x")';   // text a spreadsheet would run as a formula stays text
-  assert.ok(csv(true)[2].endsWith(`;"'=HYPERLINK(""x"")"`));
-  // the Planner's what-ifs of the year, deductible on business trips
-  st.flights.push(lhBiz({ id: 'w1', date: '2026-09-01', bookingCode: 'B', flightNo: 'LH403', bookedClass: 'Economy', upgradeClass: 'Economy' }));
-  st.plans['2026'] = { ...S.newPlan(), upgrade: { w1: { cls: 'Business', cost: 400 } }, co2: { w1: { level: 'small', cost: 9 }, p1: { level: 'small', cost: 7 } } };
+  assert.strictEqual(`${one.length}:${one[2]}`, '5:02.03.2026;B;14.04.2026 LH400 X–X, 19.04.2026 LH401 X–X;ja;1638,00;1200,00;638,00;638,00;"Belege; ""B"""');
+  // text a spreadsheet would run as a formula stays text
+  const cells = ['=HYPERLINK("x")', '+1', '-1', '@SUM(A1)', '\tx'].map(v => { st.bookings.B.tax.receipt = v; return csv(true)[2].split(';').pop(); });
+  assert.strictEqual(cells.join('|'), `"'=HYPERLINK(""x"")"|'+1|'-1|'@SUM(A1)|'\tx`);
+}
+{
+  // the Planner's what-ifs of the year's flights in the forecast, deductible on business trips
+  const st = taxState();
+  st.settings.tax.co2Deductible = false;
+  st.flights.push(lhBiz({ id: 'w1', date: '2026-09-01', bookingCode: 'B', flightNo: 'LH403', bookedClass: 'Economy', upgradeClass: 'Economy' }),
+    lhBiz({ id: 'w2', date: '2026-09-02', bookingCode: 'B', flightNo: 'LH404', bookedClass: 'Economy', upgradeClass: 'Economy', includeInPlan: false }));
+  st.plans['2026'] = { ...S.newPlan(), upgrade: { w1: { cls: 'Business', cost: 400 }, w2: { cls: 'Business', cost: 300 } }, co2: { w1: { level: 'small', cost: 9 }, p1: { level: 'small', cost: 7 } } };
   const wi = () => E.taxWhatIfs(st, 2026, TODAY).map(x => `${x.kind}:${x.f.id}:${x.cost}>${x.deductible}`).join(' ');
-  assert.strictEqual(wi(), 'co2:p1:7>0 upgrade:w1:400>400 co2:w1:9>0');
+  assert.strictEqual(wi(), 'co2:p1:7>0 upgrade:w1:400>400 co2:w1:9>0');   // not w2, left out of the forecast
   st.settings.tax.co2Deductible = true;
   assert.strictEqual(wi(), 'co2:p1:7>0 upgrade:w1:400>400 co2:w1:9>9');
   assert.strictEqual(E.taxWhatIfs(st, 2025, TODAY).length, 0);
+}
+{
   // saving a flight keeps the tax details with its booking, or with the flight itself without a booking code
   const sv = state();
   S.saveFlight(sv, flight({ id: 's1', bookingCode: 'S', tax: tax({ paidOn: '2026-01-01' }) }), 100, tax({ paidOn: '2026-02-01', business: true }));
   S.saveFlight(sv, flight({ id: 's2' }), 50, tax({ paidOn: '2026-02-03' }));
-  assert.strictEqual(`${sv.bookings.S.tax.paidOn}:${sv.flights[0].tax.paidOn}:${sv.flights[1].tax.paidOn}`, '2026-02-01::2026-02-03');
+  assert.strictEqual(`${E.fareTax(sv, sv.flights[0]).paidOn}:${sv.flights[0].tax.paidOn}:${E.fareTax(sv, sv.flights[1]).paidOn}`, '2026-02-01::2026-02-03');
 }
 
 /* ---------- cache pruning (store): lookups no flight uses go once older than S.CACHE_KEEP ---------- */
 {
-  const ago = (days) => new Date(Date.now() - days * 864e5).toISOString();
+  const ago = (days) => new Date(Date.now() - days * 864e5).toISOString(), keep = S.CACHE_KEEP / 864e5;
   const lookup = (date, fetchedAt) => ({ date, fetchedAt, status: 'notfound' });
   const keys = (st) => Object.keys(st.apiCache).sort().join('|');
   // a codeshare uses the lookups of its number and of its operating flight, in any spelling, on its date
   const st = state({
     flights: [flight({ id: 'c', flightNo: 'lh 1', operatingFlightNo: 'UAL9' })],
     apiCache: { 'LH1 2026-03-01': lookup('2026-03-01', ago(30)), 'UA9 2026-03-01': lookup('2026-03-01', ago(30)),
-      'LH1 2026-02-28': lookup('2026-02-28', ago(8)),   // another date: unused
-      'LH2 2026-03-01': lookup('2026-03-01', ago(6)),   // unused, but recent (e.g. looked up in the dialog, not saved yet)
+      'LH1 2026-02-28': lookup('2026-02-28', ago(keep + 1)),   // another date: unused
+      'LH2 2026-03-01': lookup('2026-03-01', ago(keep - 1)),   // unused, but recent (e.g. looked up in the dialog, not saved yet)
       'LH3 2026-03-01': lookup('2026-03-01', 'whenever') },   // unused, without a valid time
   });
   assert.strictEqual(keys(st), 'LH1 2026-03-01|LH2 2026-03-01|UA9 2026-03-01');   // on load and import (S.normalize)
   // re-dating the flight leaves its old date's lookups unused
   st.apiCache['LH1 2026-03-02'] = lookup('2026-03-02', ago(10));
-  S.saveFlight(st, { ...st.flights[0], date: '2026-03-02' }, 0);
+  S.saveFlight(st, { ...st.flights[0], date: '2026-03-02' }, 0, S.newTax());
   assert.strictEqual(keys(st), 'LH1 2026-03-02|LH2 2026-03-01');
   S.deleteFlight(st, 'c');
   assert.strictEqual(keys(st), 'LH2 2026-03-01');
@@ -519,7 +564,7 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     assert.strictEqual(`${pts(un.base.forecast)}:${pts(un.withWhatIfs.forecast)}:${un.cost.co2}`, '200,200,200:300,300,240:40');
     // saving a booster to the flight (Apply, or the flight dialog) locks it again and drops its what-ifs
     lk.plans['2026'].co2.a = { level: 'small', cost: 10 };
-    S.saveFlight(lk, { ...f, co2Level: 'large', co2Cost: 40 }, 0);
+    S.saveFlight(lk, { ...f, co2Level: 'large', co2Cost: 40 }, 0, S.newTax());
     assert.strictEqual('a' in lk.plans['2026'].co2, false);
     assert.strictEqual(S.removeBooster(lk, 'nope'), undefined);
   }
@@ -581,10 +626,10 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
     // loading drops what-ifs for locked flights and cabins that aren't above the booked one; upgrading the flight drops its what-if
     const lu = state({ flights: [u, v], plans: { 2026: { upgrade: { u: { cls: 'First', cost: '700' }, v: { cls: 'First', cost: 1 }, x: { cls: 'Bogus' } } } } });
     assert.strictEqual(JSON.stringify(lu.plans['2026'].upgrade), '{"u":{"cls":"First","cost":700}}');
-    S.saveFlight(lu, { ...u, upgradeClass: 'Business', upgradeType: 'miles' }, 0);
+    S.saveFlight(lu, { ...u, upgradeClass: 'Business', upgradeType: 'miles' }, 0, S.newTax());
     assert.strictEqual(JSON.stringify(lu.plans['2026'].upgrade), '{}');
     const lb = state({ flights: [u], plans: { 2026: { upgrade: { u: { cls: 'First', cost: 0 } } } } });
-    S.saveFlight(lb, { ...u, bookedClass: 'First', upgradeClass: 'First' }, 0);   // booked in First now: nothing above
+    S.saveFlight(lb, { ...u, bookedClass: 'First', upgradeClass: 'First' }, 0, S.newTax());   // booked in First now: nothing above
     assert.strictEqual(JSON.stringify(lb.plans['2026'].upgrade), '{}');
   }
   // the Planner switch (E.withPlans): the same totals, cost and status as the scenario, as planned items
@@ -620,20 +665,25 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   assert.strictEqual(`${ru.co2.small.p},${ru.co2.small.qp},${ru.points.intercontinental.First},${ru.points.intercontinental.Business}`, '7,5,300,200');
   assert.strictEqual(`${ru.honClasses.join('+')}:${'extra' in ru}`, 'First:false');
   // IDs end up in HTML and selectors: unsafe and repeated ones are replaced; invalid entries are dropped
+  const rawCache = { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' },
+      LH3: { status: 'ok' },   // saved before lookups had a date
+      'LH4 2026-01-01': { date: '2026-01-02', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' }, 'LH5 2026-01-01': { date: '2026-01-01', fetchedAt: 1, status: 'notfound' },
+      'LH6 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'ok', response: { flightroute: { origin: 'FRA' } } },
+      'LH7 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'pending' } };
   const st = state({
     settings: { currency: 'XYZ', memberNumber: '992 000-123 456 789' },
     flights: [{ id: 'x"><b>', date: '2026-01-01', flightNo: 'LH2' }, { id: 'ok-1', date: '2026-02-01', route: { origin: 'FRA' }, routeLookup: { flightNo: 'LH1', date: 5 } },
       { id: 'ok-1', date: '2026-03-01' }, { date: 'yesterday' }, { date: '2026-02-30' }],
     adjustments: [{ date: '2026-13' }, { date: '2026-04-01', p: 5 }], stays: [{ nights: 2 }],
-    apiCache: { 'LH1 2026-01-01': null, 'LH2 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' },
-      LH3: { status: 'ok' },   // saved before lookups had a date
-      'LH4 2026-01-01': { date: '2026-01-02', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'notfound' }, 'LH5 2026-01-01': { date: '2026-01-01', fetchedAt: 1, status: 'notfound' },
-      'LH6 2026-01-01': { date: '2026-01-01', fetchedAt: '2026-01-01T10:00:00.000Z', status: 'ok', response: { flightroute: { origin: 'FRA' } } } },
+    apiCache: rawCache,
     plans: { 2025: { co2: { 'ok-1': { level: 'small', cost: 5 } }, mix: [{ count: '2', kind: 'X' }, { id: 'm', kind: 'RAIL', cls: 'First', co2Level: 'large' }, { id: 'm' }] } },   // what-if for a 2026 flight in 2025
   });
   assert.ok(/^[\w-]+$/.test(st.flights[0].id) && st.flights[0].id !== 'x"><b>');
   assert.ok(st.flights[2].id !== 'ok-1' && st.plans['2025'].mix[2].id !== 'm');
   assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.adjustments.length}:${st.stays.length}:${Object.keys(st.apiCache)}:${st.settings.currency}`, '3:ok-1:1:0:LH2 2026-01-01:EUR');
+  // invalid cached lookups are dropped even when a flight uses them (not only by the prune)
+  const used = state({ flights: ['LH1', 'LH2', 'LH4', 'LH5', 'LH6', 'LH7'].map(n => ({ date: '2026-01-01', flightNo: n })), apiCache: rawCache });
+  assert.strictEqual(Object.keys(used.apiCache).join(), 'LH2 2026-01-01');
   assert.strictEqual(`${st.flights[1].route}:${st.flights[1].routeLookup}`, 'null:null');   // a route without airports, a lookup with a number for a date
   const mix = st.plans['2025'].mix;
   assert.strictEqual(`${Object.keys(st.plans['2025'].co2).length}:${mix[0].count}:${mix[0].kind}`, '0:2:LHG');
@@ -654,10 +704,19 @@ assert.strictEqual(E.validUntil(2025), '2027-02-28');
   const vf = { date: '2026-01-01', bookedClass: 'Economy', upgradeClass: 'Business', upgradeType: 'voucher' };
   assert.strictEqual(state({ flights: [vf] }).flights[0].upgradeType, 'miles');
   // tax details: a paid date only as an ISO date, amounts ≥ 0, a deductible part only when set; the report is off by default
-  const tx = state({ flights: [{ date: '2026-01-01', upgradePaidOn: '2026/01/02', co2Reimbursed: -3, tax: { paidOn: '2026-02-30', reimbursed: '12', business: 'yes', deductible: 5, receipt: ' r ' } }],
+  const badTax = { paidOn: '2026-02-30', reimbursed: '12', business: 'yes', deductible: 5, receipt: ' r ' };
+  const tx = state({ flights: [{ date: '2026-01-01', ...taxUp, co2Level: 'small', upgradePaidOn: '2026/01/02', co2PaidOn: '2026-01-03', co2Reimbursed: -3, tax: badTax }],
     settings: { tax: { co2Deductible: false, marginalRate: 140 } } });
-  const ft = tx.flights[0].tax;
-  assert.strictEqual(`${tx.flights[0].upgradePaidOn}|${tx.flights[0].co2Reimbursed}|${ft.paidOn}|${ft.reimbursed}|${ft.business}|${ft.deductible}|${ft.receipt}|${S.newTax().deductible}`, '|0||12|false|5|r|null');
+  const tf = tx.flights[0], taxTxt = (t) => [t.paidOn, t.reimbursed, t.business, t.deductible, t.receipt].join('|');
+  assert.strictEqual(`${tf.upgradePaidOn}|${tf.co2PaidOn}|${tf.co2Reimbursed}|${taxTxt(tf.tax)}|${S.newTax().deductible}`, '|2026-01-03|0||12|false|5|r|null');
+  assert.strictEqual(taxTxt(state({ flights: [flight({ bookingCode: 'X' })], bookings: { X: { fare: 1, tax: badTax } } }).bookings.X.tax), '|12|false|5|r');
+  // the payment details of an upgrade or a booster only with one, as the dialog saves them
+  const paid = { upgradePaidOn: '2026-01-02', upgradeReimbursed: 5, co2PaidOn: '2026-01-03', co2Reimbursed: 6 };
+  const np = state({ flights: [{ date: '2026-01-01', ...paid }] }).flights[0];
+  assert.strictEqual(Object.keys(paid).map(k => np[k]).join(), ',0,,0');
+  // only a flight's own fields are kept: an imported asFlown would replace the flight in every calculation (E.yearSummary)
+  const af = state({ flights: [{ date: '2026-01-01', flightNo: 'LH1', asFlown: { bookedClass: 'First', flightCost: 99999 }, extra: 1 }] }).flights[0];
+  assert.strictEqual(`${'asFlown' in af}:${'extra' in af}:${Object.keys(af).length === Object.keys(S.newFlight()).length}`, 'false:false:true');
   assert.strictEqual(`${JSON.stringify(tx.settings.tax)}:${JSON.stringify(state().settings.tax)}`, '{"enabled":false,"co2Deductible":false,"marginalRate":100}:{"enabled":false,"co2Deductible":true,"marginalRate":0}');
   // booking codes are normalised and fares never negative; an implausible starting status year is dropped
   const bk = state({ flights: [flight({ bookingCode: 'AB1' })], bookings: { 'ab 1': { fare: -5 } }, settings: { startStatus: { status: 'SEN', year: 1 } } });

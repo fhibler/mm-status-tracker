@@ -1,4 +1,4 @@
-/* State, persistence (localStorage autosave + .json save/load) and demo data. */
+/* State, persistence (localStorage autosave + .json save/load), the tax report's CSV and demo data. */
 (function () {
   const S = (MM.store = {});
   const E = MM.engine;
@@ -77,7 +77,7 @@
    * Adds or replaces a flight. `fare` and `tax` (S.newTax) belong to the whole booking when the flight has a booking code
    * (shared by all segments with that code), else to the flight itself.
    */
-  S.saveFlight = (state, flight, fare, tax = S.newTax()) => {
+  S.saveFlight = (state, flight, fare, tax) => {
     const k = E.bookingKey(flight.bookingCode);
     const f = { ...flight, bookingCode: k, flightCost: k ? 0 : fare, tax: k ? S.newTax() : tax };
     if (k) state.bookings[k] = { fare, tax };
@@ -115,7 +115,8 @@
    * flight uses (its number or its operating flight's on its date) and that are older than S.CACHE_KEEP, e.g. those of
    * deleted or re-dated flights; a lookup without a valid time counts as old.
    */
-  const prune = (state, now = Date.now()) => {
+  const prune = (state) => {
+    const now = Date.now();
     const used = new Set(state.flights.map(f => E.bookingKey(f.bookingCode)).filter(Boolean));
     for (const k of Object.keys(state.bookings)) if (!used.has(k)) delete state.bookings[k];
     const asked = new Set(state.flights.flatMap(f => [E.parseFlightNo(f.flightNo), E.operating(f)].filter(Boolean).map(p => MM.api.cacheKey(p.iata, f.date))));
@@ -191,8 +192,9 @@
   /** A cached lookup for the date of its key, with what reading it relies on: its time, status and routes (MM.api.legs). */
   const cacheEntry = (k, c) => MM.api.isCacheKey(k) && isObj(c) && c.date === k.slice(-10) && typeof c.fetchedAt === 'string'
     && ['ok', 'notfound', 'error'].includes(c.status) && MM.api.legs(c).every(route);
-  const normalizeFlight = (f) => {
-    const d = S.newFlight(f.date);
+  const normalizeFlight = (x) => {
+    const d = S.newFlight(x.date);
+    const f = Object.fromEntries(Object.keys(d).map(k => [k, x[k]]));   // only a flight's own fields (e.g. no asFlown, see E.whatIfFlight)
     f.route = route(f.route);
     f.routeLookup = routeLookup(f.routeLookup);
     f.times = S.normalizeTimes(f.times);
@@ -205,7 +207,9 @@
         earnClassOverride: 'auto', haulOverride: 'auto', co2Level: 'none' });
     }
     for (const k of ['flightCost', 'upgradeCost', 'co2Cost', 'upgradeReimbursed', 'co2Reimbursed']) f[k] = amount(f[k]);   // like the fares of bookings
-    if (!E.hasBooster(f)) f.co2Cost = 0;   // a CO₂ cost only with a booster
+    // as the dialog saves them: the payment details of an upgrade or a booster only with one
+    if (!E.isUpgraded(f)) Object.assign(f, { upgradePaidOn: '', upgradeReimbursed: 0 });
+    if (!E.hasBooster(f)) Object.assign(f, { co2Cost: 0, co2PaidOn: '', co2Reimbursed: 0 });
     f.upgradePaidOn = isoOrEmpty(f.upgradePaidOn);
     f.co2PaidOn = isoOrEmpty(f.co2PaidOn);
     f.tax = normalizeTax(f.tax);
@@ -320,7 +324,7 @@
   const deAmount = (v) => v.toFixed(2).replace('.', ',');
   /** A CSV cell: quoted when it holds a separator, a quote or a line break; text starting like a formula is defused. */
   const cell = (v) => {
-    const t = typeof v === 'number' ? deAmount(v) : /^[=+\-@]/.test(v) ? `'${v}` : v;
+    const t = typeof v === 'number' ? deAmount(v) : /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
     return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
   /** "14.04.2026 LH430 MUC–ORD" for each segment of a booking. */
@@ -333,12 +337,12 @@
   S.taxCsv = (report, collapse, currency) => {
     const head = ['Bezahlt am', 'Buchungscode', 'Flüge', 'Geschäftsreise', ...(collapse ? [] : ['Posten']),
       ...['Kosten', 'Erstattet', 'Eigenanteil', 'Absetzbar'].map(h => `${h} (${currency})`), 'Beleg', ...(collapse ? [] : ['Hinweise'])];
-    const money = (t) => [t.cost, t.reimbursed, t.own, t.deductible];
+    const money = (t) => E.TAX_AMOUNTS.map(k => t[k]);
     const rows = report.bookings.flatMap(b => {
       const base = [b.code, flightsDe(b.flights), b.tax.business ? 'ja' : 'nein'];
       if (collapse) return [[deDate(b.paidOn), ...base, ...money(b.total), b.tax.receipt]];
-      return b.items.map(it => [deDate(it.paidOn), ...base, TAX_ITEM_DE[it.kind] + (it.kind === 'fare' && b.tax.award ? ' (Prämienflug, Zuzahlung)' : ''),
-        ...money(it), b.tax.receipt, [...it.flags, ...b.flags].map(k => TAX_FLAG_DE[k]).join(', ')]);
+      return b.items.map((it, i) => [deDate(it.paidOn), ...base, TAX_ITEM_DE[it.kind] + (it.kind === 'fare' && b.tax.award ? ' (Prämienflug, Zuzahlung)' : ''),
+        ...money(it), b.tax.receipt, [...it.flags, ...(i ? [] : b.flags)].map(k => TAX_FLAG_DE[k]).join(', ')]);   // the booking's flags once, as in the app
     });
     const total = ['Summe', '', '', '', ...(collapse ? [] : ['']), ...money(report.total), '', ...(collapse ? [] : [''])];
     return '\ufeff' + [head, ...rows, total].map(r => r.map(cell).join(';')).join('\r\n') + '\r\n';
