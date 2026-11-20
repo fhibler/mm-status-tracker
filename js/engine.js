@@ -796,21 +796,26 @@
   /**
    * The dashboard's costs of `year` by who paid them (costItems), counting what the dashboard counts: the segments in
    * the forecast (E.inForecast) and the fare of a booking with one (see E.fareHolders). Each is in the month it was paid
-   * or, without a paid date, in the month of its flight (a fare: its booking's first segment in the forecast):
-   * { months: [{ employer, personal }] for Jan…Dec, total }. The employer's part is at most the cost, so the two add up to it.
+   * or, without a paid date, in the month of its flight (a fare: its booking's first segment in the forecast), per item
+   * as E.cost names them: { months: [{ flight, upgrade, co2 }] for Jan…Dec, total }, each item { employer, personal }.
+   * The employer's part is at most the cost, so the two add up to it.
    */
   E.costSplit = (state, year, today = E.todayISO()) => {
-    const months = Array.from({ length: 12 }, () => ({ employer: 0, personal: 0 })), total = { employer: 0, personal: 0 };
+    const items = () => ({ flight: { employer: 0, personal: 0 }, upgrade: { employer: 0, personal: 0 }, co2: { employer: 0, personal: 0 } });
+    const months = Array.from({ length: 12 }, items), total = items();
     for (const b of E.bookings(state)) {
       const flights = b.flights.filter(f => E.inForecast(f, today));
       if (!flights.length) continue;
       for (const x of costItems({ ...b, flights })) {
         const date = x.paidOn || (x.f || flights[0]).date, personal = Math.max(0, x.cost - x.reimbursed);
         if (date.slice(0, 4) !== String(year)) continue;
-        for (const m of [months[+date.slice(5, 7) - 1], total]) { m.employer += x.cost - personal; m.personal += personal; }
+        for (const m of [months[+date.slice(5, 7) - 1], total]) {
+          const it = m[x.kind === 'fare' ? 'flight' : x.kind];
+          it.employer += x.cost - personal; it.personal += personal;
+        }
       }
     }
-    const round = (m) => ({ employer: cents(m.employer), personal: cents(m.personal) });
+    const round = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { employer: cents(v.employer), personal: cents(v.personal) }]));
     return { months: months.map(round), total: round(total) };
   };
 

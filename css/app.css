@@ -18,7 +18,7 @@
   --c-flight: #2a78d6;
   --c-upgrade: #6250d6;
   --c-co2: #1baf7a;
-  --c-employer: #2a78d6;
+  --c-employer: #5d6b82;   /* beside the items (dashboard cost charts), so not one of their colours */
   --c-personal: #eb6834;
   --st-FTL: #8a93a6;
   --st-SEN: #c99a00;
@@ -55,7 +55,7 @@
   --c-flight: #3987e5;
   --c-upgrade: #9085e9;
   --c-co2: #199e70;
-  --c-employer: #3987e5;
+  --c-employer: #8d9ab0;
   --c-personal: #d95926;
   --st-FTL: #a7afc2;
   --st-SEN: #e0b52a;
@@ -222,6 +222,7 @@ main { padding: 20px max(16px, 3vw) 32px; max-width: 1500px; margin: 0 auto; }
 .tooltip b { display: block; margin-bottom: 4px; }
 .tooltip .row { display: flex; gap: 12px; justify-content: space-between; }
 .tooltip .row i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 6px; }
+.legend i.faded, .tooltip .row i.faded { opacity: .5; }   /* a faded part of a bar (C.stackedBars) */
 
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; margin: 0 -18px; padding: 0 18px; }

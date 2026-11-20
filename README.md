@@ -74,8 +74,11 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     booking, all trips or business trips only: cost, employer and personal, flagging a reimbursement above
     the cost, and the Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast.
   - **Export CSV** for a spreadsheet (German formats: `;`, decimal comma, DD.MM.YYYY) and **Print / PDF**.
-  - The dashboard's cost charts then show what the employer and you paid instead of the items, of what the forecast
-    counts (not the flights left out of it), by the month and year paid (without a paid date: flown). With the
+  - The dashboard's cost charts then show the items (flight, upgrade, CO₂ compensation) and what the employer and you
+    paid: **side by side** (two bars per month and year: the items, and employer and personal) or **combined** (one bar,
+    each item split into employer and a faded personal part), switched on the chart and remembered in this browser.
+    They count what the forecast counts (not the flights left out of it), by the month and year paid (without a paid
+    date: flown). With the
     "Planner" switch, its upgrade and CO₂ what-ifs count as personal and paid today, its extra segments as personal
     on 31 December. The employer's and the personal part are shown only there and in the Report tab.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the

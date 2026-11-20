@@ -154,8 +154,10 @@
   };
 
   /**
-   * Stacked vertical bars.
-   * opts: { label, categories:[label], series:[{key (its marker in the tooltip: class c-<key>),label,color}], data:[{key:value,...}], format(v),
+   * Stacked vertical bars, one per category, or several side by side: series with another `stack` (0, 1, …) form their
+   * own bar, each breaking down the same total another way (the tooltip's total is the first bar's).
+   * opts: { label, categories:[label], series:[{key, label, color, stack, faded (drawn translucent, its marker with
+   *   class "faded"), marker (class of its marker in the tooltip, default c-<key>)}], data:[{key:value,...}], format(v),
    *   dim(i) (faded bar), tipTitle(i), note(i) (extra tooltip HTML) }
    */
   C.stackedBars = (host, opts) => {
@@ -163,11 +165,13 @@
     const W = Math.max(280, Math.round(host.clientWidth || 560)), H = 240, m = { l: 58, r: 10, t: 12, b: 26 };
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
     const n = opts.categories.length;
-    const totals = opts.data.map(d => opts.series.reduce((s, x) => s + (d[x.key] || 0), 0));
-    const yt = ticks(Math.max(...totals, 1) * 1.05);
+    const stacks = [...new Set(opts.series.map(s => s.stack || 0))].map(k => opts.series.filter(s => (s.stack || 0) === k));
+    const sum = (d, series) => series.reduce((a, x) => a + (d[x.key] || 0), 0);
+    const totals = opts.data.map(d => sum(d, stacks[0]));
+    const yt = ticks(Math.max(...opts.data.flatMap(d => stacks.map(ss => sum(d, ss))), 1) * 1.05);
     const yMax = yt[yt.length - 1];
     const Y = v => m.t + ih - (v / yMax) * ih;
-    const band = iw / n, bw = Math.min(42, band * 0.62);
+    const band = iw / n, gap = 2, bw = Math.min(42, (band * 0.62 - gap * (stacks.length - 1)) / stacks.length);
     const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': opts.label || 'bar chart' }, host);
     for (const v of yt) {
       el('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), class: 'gridline' }, svg);
@@ -177,26 +181,31 @@
     opts.categories.forEach((c, i) => {
       const cx = m.l + band * i + band / 2;
       el('text', { x: cx, y: H - 8, 'text-anchor': 'middle' }, svg).textContent = c;
-      let acc = 0;
-      const segs = opts.series.filter(s => (opts.data[i][s.key] || 0) > 0);
-      segs.forEach((s, j) => {
-        const v = opts.data[i][s.key];
-        const y0 = Y(acc), y1 = Y(acc + v);
-        const top = j === segs.length - 1;
-        const h = Math.max(0, y0 - y1 - (top ? 0 : 2));   // 2px surface gap between segments
-        const x = cx - bw / 2, y = y1;
-        if (top && h > 4) {
-          const r = Math.min(4, bw / 2);
-          el('path', { d: `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${y + h}Z`, fill: s.color, opacity: opts.dim && opts.dim(i, s) ? 0.45 : 1 }, svg);
-        } else {
-          el('rect', { x, y: y + (top ? 0 : 2), width: bw, height: Math.max(0.5, h), fill: s.color, opacity: opts.dim && opts.dim(i, s) ? 0.45 : 1 }, svg);
-        }
-        acc += v;
+      stacks.forEach((series, k) => {
+        const x = cx - (stacks.length * bw + (stacks.length - 1) * gap) / 2 + k * (bw + gap);
+        let acc = 0;
+        const segs = series.filter(s => (opts.data[i][s.key] || 0) > 0);
+        segs.forEach((s, j) => {
+          const v = opts.data[i][s.key];
+          const y0 = Y(acc), y1 = Y(acc + v);
+          const top = j === segs.length - 1;
+          const h = Math.max(0, y0 - y1 - (top ? 0 : 2));   // 2px surface gap between segments
+          const y = y1, opacity = (s.faded ? 0.5 : 1) * (opts.dim && opts.dim(i, s) ? 0.45 : 1);
+          if (top && h > 4) {
+            const r = Math.min(4, bw / 2);
+            el('path', { d: `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + bw - r}Q${x + bw},${y} ${x + bw},${y + r}V${y + h}Z`, fill: s.color, opacity }, svg);
+          } else {
+            el('rect', { x, y: y + (top ? 0 : 2), width: bw, height: Math.max(0.5, h), fill: s.color, opacity }, svg);
+          }
+          acc += v;
+        });
       });
       const hit = el('rect', { x: m.l + band * i, y: m.t, width: band, height: ih, fill: 'transparent' }, svg);
       hit.addEventListener('pointermove', (evt) => {
         let html = `<b>${opts.tipTitle ? opts.tipTitle(i) : c}</b>`;
-        for (const s of opts.series) html += `<div class="row"><span><i class="c-${s.key}"></i>${s.label}</span><span>${opts.format(opts.data[i][s.key] || 0)}</span></div>`;
+        for (const s of opts.series) {
+          html += `<div class="row"><span><i class="${s.marker || `c-${s.key}`}${s.faded ? ' faded' : ''}"></i>${s.label}</span><span>${opts.format(opts.data[i][s.key] || 0)}</span></div>`;
+        }
         html += `<div class="row"><span>Total</span><b>${opts.format(totals[i])}</b></div>`;
         if (opts.note) html += opts.note(i);
         C.showTip(html, evt);

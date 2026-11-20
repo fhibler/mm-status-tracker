@@ -16,6 +16,9 @@
   const REPORT_KEY = 'mm-status-tracker:report';
   let reportPrefs = { businessOnly: false, collapse: false };   // Report tab: trips and detail shown (per browser, not part of the .json)
   try { reportPrefs = { ...reportPrefs, ...JSON.parse(localStorage.getItem(REPORT_KEY)) }; } catch { /* ignore */ }
+  const COST_VIEW_KEY = 'mm-status-tracker:costView';
+  let costView = 'side';   // dashboard cost charts with the expense report: 'side' (items and who paid side by side) or 'combined' (per browser)
+  try { if (localStorage.getItem(COST_VIEW_KEY) === 'combined') costView = 'combined'; } catch { /* ignore */ }
 
   const money = (v, compact) => new Intl.NumberFormat('en-US', {
     style: 'currency', currency: state.settings.currency, maximumFractionDigits: compact ? 0 : 2, minimumFractionDigits: compact ? 0 : 2,
@@ -240,7 +243,10 @@
       </div>
       <div class="cols-3" id="cumCharts"></div>
       <div class="card">
-        <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">${expensesOn() ? 'by the date paid, else the date flown' : 'faded = planned'}</span></div>
+        <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">${expensesOn() ? 'by the date paid, else the date flown' : 'faded = planned'}</span>
+          ${expensesOn() ? `<div class="right"><div class="theme-switch" role="group" aria-label="Cost charts">${
+            [['side', 'Side by side', 'Items and who paid them as two bars'], ['combined', 'Combined', 'One bar: each item split into employer and personal']]
+              .map(([v, label, title]) => `<button type="button" class="with-label" data-cost-view="${v}" aria-pressed="${costView === v}" title="${title}">${label}</button>`).join('')}</div></div>` : ''}</div>
         <div class="chart" id="costChart"></div>
         ${costLegend()}
       </div>
@@ -251,6 +257,11 @@
       </div>`;
 
     fitText($$('.kpi-trio b, .kpi .value.fit', host));   // a large cost total shrinks to fit its card
+    $$('[data-cost-view]', host).forEach(b => b.addEventListener('click', () => {
+      costView = b.dataset.costView;
+      try { localStorage.setItem(COST_VIEW_KEY, costView); } catch { /* ignore */ }
+      render();
+    }));
     renderProgress(sum, rules);
     renderCumCharts(sum, rules);
     renderCostChart(st, sum);
@@ -389,15 +400,33 @@
 
   const COST_KINDS = [['flight', 'Flight', '--c-flight'], ['upgrade', 'Upgrade', '--c-upgrade'], ['co2', 'CO₂ compensation', '--c-co2']];
   const PAYER_KINDS = [['employer', 'Employer', '--c-employer'], ['personal', 'Personal', '--c-personal']];
-  /** With the expense report on, the cost charts show who paid (E.costSplit) instead of the items. */
-  const costKinds = () => (expensesOn() ? PAYER_KINDS : COST_KINDS);
-  const costSeries = () => costKinds().map(([key, label, color]) => ({ key, label, color: cssVar(color) }));
-  const costLegend = () => `<div class="legend">${costKinds().map(([key, label]) => `<span><i class="sq c-${key}"></i>${label}</span>`).join('')}</div>`;
+  const kindsSeries = (kinds, stack) => kinds.map(([key, label, color]) => ({ key, label, color: cssVar(color), stack }));
+  /**
+   * Series of the cost charts: the items; with the expense report on (E.costSplit) also who paid them, as a second bar
+   * beside the items (costView 'side'), or one bar of each item split into employer and personal, the personal part faded.
+   */
+  const costSeries = () => (!expensesOn() ? kindsSeries(COST_KINDS)
+    : costView === 'side' ? [...kindsSeries(COST_KINDS, 0), ...kindsSeries(PAYER_KINDS, 1)]
+    : COST_KINDS.flatMap(([key, label, color]) => ['employer', 'personal'].map(by => ({
+      key: `${key}-${by}`, label: `${label} · ${by}`, color: cssVar(color), marker: `c-${key}`, faded: by === 'personal' }))));
+  /** A period of E.costSplit as the chart data of costSeries: each item, its employer and personal parts, and who paid in all. */
+  const costData = (c) => {
+    const d = { employer: 0, personal: 0 };
+    for (const [key] of COST_KINDS) {
+      const { employer, personal } = c[key];
+      Object.assign(d, { [key]: employer + personal, [`${key}-employer`]: employer, [`${key}-personal`]: personal });
+      d.employer += employer; d.personal += personal;
+    }
+    return d;
+  };
+  const costLegend = () => `<div class="legend">${[...COST_KINDS, ...(expensesOn() && costView === 'side' ? PAYER_KINDS : [])]
+    .map(([key, label]) => `<span><i class="sq c-${key}"></i>${label}</span>`).join('')}${
+    expensesOn() && costView === 'combined' ? '<span class="muted">solid = employer · faded = personal</span>' : ''}</div>`;
 
   const renderCostChart = (st, sum) => {
     if (expensesOn()) {
       C.stackedBars($('#costChart'), {
-        label: 'Costs per month', categories: C.MONTHS, series: costSeries(), data: E.costSplit(st, year).months,
+        label: 'Costs per month', categories: C.MONTHS, series: costSeries(), data: E.costSplit(st, year).months.map(costData),
         format: (v) => money(v, true), tipTitle: (i) => `${C.MONTHS[i]} ${year}`,
       });
       return;
@@ -468,7 +497,7 @@
     if (yc) {
       C.stackedBars(yc, {
         label: 'Costs per year', categories: hist.map(h => String(h.year)), series: costSeries(),
-        data: hist.map(h => (expensesOn() ? E.costSplit(st, h.year).total : h.cost.all)),
+        data: hist.map(h => (expensesOn() ? costData(E.costSplit(st, h.year).total) : h.cost.all)),
         format: (v) => money(v, true),
         note: (i) => `<div class="row muted"><span>Status incl. plan</span><span>${statusLabel(hist[i].statusForecast)}</span></div>`,
       });

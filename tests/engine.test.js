@@ -370,6 +370,8 @@ const expenseState = () => state({
   },
 });
 const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.reimbursed}=${x.own}${x.flags.length ? '!' + x.flags : ''}`).join(' ');
+/** A period of E.costSplit: "flight 600/400,upgrade 0/600" (employer/personal of the items with a cost). */
+const costParts = (m) => Object.entries(m).filter(([, v]) => v.employer || v.personal).map(([k, v]) => `${k} ${v.employer}/${v.personal}`).join(',');
 {
   // what the employer reimbursed of a fare: on a business trip what was entered or else all of it, nothing on a personal trip
   assert.strictEqual([expense({ business: true }), expense({ business: true, reimbursed: 100 }), expense({ reimbursed: 100 })].map(x => E.fareReimbursed(x, 300)).join(), '300,100,0');
@@ -389,8 +391,8 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   assert.strictEqual(E.expenseReport(st, 2026, { businessOnly: true }).bookings.length, 2);
   assert.strictEqual(E.expenseReport(st, 2027).bookings.length, 0);   // flown in 2027, paid in 2026
   // the dashboard's costs by who paid, per month paid; without a paid date (U) in the month flown
-  const splitTxt = (x) => x.months.map((m, i) => (m.employer || m.personal ? `${i + 1}:${m.employer}/${m.personal}` : '')).filter(Boolean).join(' ') + ` =${x.total.employer}/${x.total.personal}`;
-  assert.strictEqual(splitTxt(E.costSplit(st, 2026, TODAY)), '3:600/1000 4:38/0 5:0/380 12:500/400 =1138/1780');
+  const splitTxt = (x) => x.months.map((m, i) => costParts(m) && `${i + 1}:${costParts(m)}`).filter(Boolean).join(' ') + ` =${costParts(x.total)}`;
+  assert.strictEqual(splitTxt(E.costSplit(st, 2026, TODAY)), '3:flight 600/400,upgrade 0/600 4:co2 38/0 5:flight 0/380 12:flight 500/0,upgrade 0/400 =flight 1100/780,upgrade 0/1000,co2 38/0');
   // like the dashboard, only what counts in the forecast: not a planned booking left out of it, nor such a segment's upgrade
   const out = expenseState();
   out.flights.push(lhBiz({ id: 'x1', date: '2026-09-01', bookingCode: 'X', includeInPlan: false }),
@@ -400,7 +402,7 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   // more reimbursed than paid is flagged
   st.bookings.B.expense.reimbursed = 1200;
   assert.strictEqual(costItems(E.expenseReport(st, 2026).bookings[2]).split(' ')[0], 'fare@2026-03-02:1000-1200=0!over');
-  assert.strictEqual(splitTxt(E.costSplit(st, 2026, TODAY)).split(' ')[0], '3:1000/600');   // the employer's part is at most the cost
+  assert.strictEqual(costParts(E.costSplit(st, 2026, TODAY).months[2]), 'flight 1000/0,upgrade 0/600');   // the employer's part is at most the cost
 }
 {
   // each cost in the year it was paid: an upgrade paid in 2027 on a booking paid in 2026, and the booking's date is its first item's
@@ -455,10 +457,10 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   // with the Planner switch (E.withPlans), the dashboard's costs by who paid add the what-ifs, personal and paid today
   // (as "Apply" saves them), and the extra segments, personal on 31 December
   st.plans['2026'].mix = [S.newMixRow({ count: 2, cost: 150 })];
-  const month = (s, m) => Object.values(E.costSplit(s, 2026, TODAY).months[m - 1]).join('/');
-  assert.strictEqual(`${month(st, 6)} ${month(st, 12)}`, '0/0 500/400');
+  const month = (s, m) => costParts(E.costSplit(s, 2026, TODAY).months[m - 1]);
+  assert.strictEqual(`${month(st, 6)} | ${month(st, 12)}`, ' | flight 500/0,upgrade 0/400');
   const wp = E.withPlans(st, TODAY);
-  assert.strictEqual(`${month(wp, 6)} ${month(wp, 12)}`, '0/416 500/700');
+  assert.strictEqual(`${month(wp, 6)} | ${month(wp, 12)}`, 'upgrade 0/400,co2 0/16 | flight 500/300,upgrade 0/400');
   // a Planner segment has every field of a flight
   assert.strictEqual(Object.keys(S.newFlight()).filter(k => !(k in wp.flights.find(f => f.flightNo === 'Planner'))).join(), '');
 }
