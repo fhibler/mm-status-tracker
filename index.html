@@ -167,8 +167,8 @@
           <label data-co2-only>CO₂ compensation cost<input name="co2Cost" inputmode="decimal" autocomplete="off">
             <small class="field-hint" id="co2Hint"></small></label>
         </div>
-        <fieldset id="taxBox" hidden>
-          <legend>Tax report <small class="muted" id="taxScope"></small></legend>
+        <fieldset id="expenseBox" hidden>
+          <legend>Expense report <small class="muted" id="expenseScope"></small></legend>
           <div class="grid">
             <label>Paid on
               <span class="date-field">
@@ -185,12 +185,12 @@
           </div>
           <div class="grid">
             <label class="check"><input type="checkbox" name="business"> Business trip</label>
-            <label class="check" title="An award booking: enter the cash part paid (taxes and surcharges) as the fare"><input type="checkbox" name="award"> Award booking</label>
-            <label data-business-only>Of which deductible<input name="deductible" inputmode="decimal" autocomplete="off" placeholder="all of your share">
+            <label class="check" title="An award booking: enter the cash part paid (fees and surcharges) as the fare"><input type="checkbox" name="award"> Award booking</label>
+            <label data-business-only>Of which business<input name="businessShare" inputmode="decimal" autocomplete="off" placeholder="all of your share">
               <small class="field-hint">of your share of the fare, if partly private</small></label>
           </div>
           <div class="grid" data-for="flight">
-            <label data-tax-upgrade>Upgrade paid on
+            <label data-exp-upgrade>Upgrade paid on
               <span class="date-field">
                 <input name="upgradePaidOn" placeholder="with the fare" inputmode="numeric" maxlength="10" autocomplete="off">
                 <button type="button" class="date-btn" aria-label="Open calendar" title="Open calendar">
@@ -199,8 +199,8 @@
                 <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
               </span>
             </label>
-            <label data-tax-upgrade>Upgrade reimbursed<input name="upgradeReimbursed" inputmode="decimal" autocomplete="off"></label>
-            <label data-tax-co2>CO₂ compensation paid on
+            <label data-exp-upgrade>Upgrade reimbursed<input name="upgradeReimbursed" inputmode="decimal" autocomplete="off"></label>
+            <label data-exp-co2>CO₂ compensation paid on
               <span class="date-field">
                 <input name="co2PaidOn" placeholder="with the fare" inputmode="numeric" maxlength="10" autocomplete="off">
                 <button type="button" class="date-btn" aria-label="Open calendar" title="Open calendar">
@@ -209,9 +209,9 @@
                 <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
               </span>
             </label>
-            <label data-tax-co2>CO₂ compensation reimbursed<input name="co2Reimbursed" inputmode="decimal" autocomplete="off"></label>
+            <label data-exp-co2>CO₂ compensation reimbursed<input name="co2Reimbursed" inputmode="decimal" autocomplete="off"></label>
           </div>
-          <p class="hint m0" id="taxLine"></p>
+          <p class="hint m0" id="expenseLine"></p>
         </fieldset>
         <div class="grid">
           <label>Notes<input name="notes" autocomplete="off"></label>
