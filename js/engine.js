@@ -713,4 +713,89 @@
     for (const m of mix) { addEarn(t, m.e, m.n); noteReached(t, out, { date: `${year}-12-31`, step: 'mix' }, rules); }
     return out;
   };
+
+  /* ---------- tax report (optional: settings.tax.enabled) ---------- */
+  const cents = (v) => Math.round(v * 100) / 100;
+
+  /** Tax details (S.newTax) of the fare of flight f: its booking's, or its own without a booking (like E.segmentFare). */
+  E.fareTax = (state, f) => { const b = state.bookings[E.bookingKey(f.bookingCode)]; return b ? b.tax : f.tax; };
+
+  /**
+   * The bookings of all flights: { code, fare, tax, flights } per booking code, and one for each flight without a
+   * booking (code ''), its segments by departure. `tax` is the object in the state, so a change to it is saved.
+   */
+  E.bookings = (state) => {
+    const out = new Map();
+    for (const f of [...state.flights].sort(E.byDeparture)) {
+      const k = E.bookingKey(f.bookingCode), b = state.bookings[k], key = b ? k : `#${f.id}`;
+      if (!out.has(key)) out.set(key, b ? { code: k, fare: b.fare, tax: b.tax, flights: [] } : { code: '', fare: f.flightCost, tax: f.tax, flights: [] });
+      out.get(key).flights.push(f);
+    }
+    return [...out.values()];
+  };
+
+  /**
+   * Your share of one cost of a booking (cost − what the employer reimbursed) and the deductible part of it: on a
+   * business trip all of it (of the fare up to tax.deductible, for a mixed trip; of a CO₂ booster only with
+   * co2Deductible), else nothing. kind: 'fare' | 'upgrade' | 'co2'; tax: the booking's (S.newTax).
+   */
+  E.taxShare = (kind, cost, reimbursed, tax, co2Deductible) => {
+    const own = cents(Math.max(0, cost - reimbursed));
+    return { own, deductible: !tax.business || (kind === 'co2' && !co2Deductible) ? 0 : kind === 'fare' && tax.deductible != null ? Math.min(own, tax.deductible) : own };
+  };
+
+  /** Bookings without a paid date (E.bookings): the tax report can't place them in a year, so it leaves them out. */
+  E.unpaidBookings = (state) => E.bookings(state).filter(b => !b.tax.paidOn);
+
+  /**
+   * Tax report of the costs paid in `year` (Abflussprinzip: the year paid, not the year flown), per booking with a
+   * paid date (E.bookings; opts.businessOnly: business trips only). Its items are the fare and each segment's upgrade
+   * and CO₂ compensation, each in the year it was paid (an upgrade or a booster without its own date was paid with the
+   * fare): { kind: 'fare' | 'upgrade' | 'co2', f (the segment; null for the fare), paidOn, cost, reimbursed (by the
+   * employer), own, deductible (E.taxShare), flags }. Flags: 'over' (reimbursed more than the cost), 'private'
+   * (reimbursed on a private trip); a booking's own flags: 'receipt' (a business trip without a receipt). Returns { year, bookings: [{ …booking, paidOn (its first item's),
+   * items, total, flags }] (newest payment first), total, claim } with claim = the business trips' costs for Anlage N:
+   * { travel: what is reimbursed or deductible, reimbursed }.
+   */
+  E.taxReport = (state, year, opts = {}) => {
+    const set = state.settings.tax, y = String(year);
+    const sum = (xs) => ['cost', 'reimbursed', 'own', 'deductible'].reduce((t, k) => ({ ...t, [k]: cents(xs.reduce((a, x) => a + x[k], 0)) }), {});
+    const bookings = [];
+    for (const b of E.bookings(state)) {
+      const t = b.tax;
+      if (!t.paidOn || (opts.businessOnly && !t.business)) continue;
+      const items = [];
+      const item = (kind, f, cost, paidOn, reimbursed) => {
+        if (paidOn.slice(0, 4) !== y || !(cost > 0 || reimbursed > 0)) return;
+        const flags = [reimbursed > cost && 'over', reimbursed > 0 && !t.business && 'private'].filter(Boolean);
+        items.push({ kind, f, paidOn, cost, reimbursed, ...E.taxShare(kind, cost, reimbursed, t, set.co2Deductible), flags });
+      };
+      item('fare', null, b.fare, t.paidOn, t.reimbursed);
+      for (const f of b.flights) {
+        if (E.isUpgraded(f)) item('upgrade', f, f.upgradeCost, f.upgradePaidOn || t.paidOn, f.upgradeReimbursed);
+        if (E.hasBooster(f)) item('co2', f, f.co2Cost, f.co2PaidOn || t.paidOn, f.co2Reimbursed);
+      }
+      if (!items.length) continue;
+      const paidOn = items.map(x => x.paidOn).sort()[0];
+      bookings.push({ ...b, paidOn, items, total: sum(items), flags: t.business && !t.receipt ? ['receipt'] : [] });
+    }
+    bookings.sort((a, b) => b.paidOn.localeCompare(a.paidOn));
+    const items = bookings.flatMap(b => b.items);
+    const business = sum(bookings.filter(b => b.tax.business).flatMap(b => b.items).map(x => ({ ...x, reimbursed: Math.min(x.reimbursed, x.cost) })));
+    return { year, bookings, total: sum(items), claim: { travel: cents(business.reimbursed + business.deductible), reimbursed: business.reimbursed } };
+  };
+
+  /**
+   * The Planner's upgrade and CO₂ what-ifs of `year` (E.upgradeWhatIf, E.co2WhatIf) as they would show in the tax report,
+   * with nothing reimbursed: [{ kind: 'upgrade' | 'co2', f, cost, deductible (E.taxShare) }].
+   */
+  E.taxWhatIfs = (state, year, today = E.todayISO()) => {
+    const plan = state.plans[year], co2Deductible = state.settings.tax.co2Deductible;
+    if (!plan) return [];
+    return state.flights.filter(f => +f.date.slice(0, 4) === year).sort(E.byDeparture).flatMap(f => {
+      const t = E.fareTax(state, f), u = E.upgradeWhatIf(f, plan, today), c = E.co2WhatIf(f, plan, today);
+      const item = (kind, cost) => ({ kind, f, cost, deductible: E.taxShare(kind, cost, 0, t, co2Deductible).deductible });
+      return [u && item('upgrade', u.cost), c && item('co2', c.cost)].filter(Boolean);
+    });
+  };
 })();

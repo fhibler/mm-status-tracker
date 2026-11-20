@@ -58,6 +58,22 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     segments of one type would close the gap.
   - The "Planner" switch (dashboard and Extra Benefits) counts the scenario as planned: a booster what-if on a flown flight adds to
     the forecast and the planned cost, while what you have flown and spent stays as it is.
+- **Tax report** (optional, turn it on in Settings): for the Werbungskosten in a German tax return (Anlage N).
+  - Each booking gets the date it was **paid**, which decides its tax year (the year paid, not the year flown), the
+    amount your employer **reimbursed**, whether it was a **business trip**, a receipt reference and whether it was an
+    award booking (the fare is then the cash part paid). With a booking code these belong to the whole booking, else to
+    the segment. A partly private trip takes the deductible part of your share of the fare.
+  - Upgrades and CO₂ compensation have their own reimbursed amount and paid date (empty: paid with the fare). CO₂
+    compensation on business trips is deductible, in line with your employer's zero-CO₂ goals (its Corporate
+    Responsibility Report); a setting turns that off.
+  - Turning the report on lists every booking without a paid date; the report leaves them out until you enter it, and
+    Activity marks them with "⚠ paid date". New bookings need it.
+  - The **Report tab** shows the costs paid in the year per item (fare, upgrade, CO₂ compensation) or one line per
+    booking, all trips or business trips only: cost, reimbursed, your share and what is deductible, with notes such as
+    a missing receipt. It adds the totals for Anlage N, an estimated tax effect with your marginal rate (optional), and
+    the Planner's upgrade and CO₂ what-ifs of the year as they would count.
+  - **Export CSV** for a spreadsheet or your tax adviser (German formats: `;`, decimal comma, DD.MM.YYYY) and
+    **Print / PDF**. Not tax advice.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
   to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are
@@ -81,7 +97,7 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
 - **Dashboard**: KPI tiles (incl. the year's cost and the cost per Point, QP and HON Point), status progress
   (flown and forecast), cumulative P/QP/HON charts with status thresholds, costs per month, a segment breakdown,
   and a history table by year with each status, its validity and the cost per Point, QP and HON Point.
-- **Save / Load `.json`**: the file holds your flights and fares, point corrections, hotel stays, planner
+- **Save / Load `.json`**: the file holds your flights and fares (with their tax details), point corrections, hotel stays, planner
   scenarios, your settings (including an AeroDataBox key) and every route lookup the app made so far (`apiCache`, with a `status` per flight
   number and date). When you load a saved file, the app reuses those answers and calls the API again only
   for failed lookups, provisional routes (see Notes) and, with an AeroDataBox key, routes without times. Lookups that no flight uses (by its flight number or operating flight on its date, e.g. of a deleted or re-dated flight) are dropped once they are older than 7 days, on load and when a flight is saved or deleted. Lookups saved before 18 Oct 2026 had no date and are dropped on load;

@@ -29,6 +29,7 @@
       <button role="tab" data-view="benefits">Extra Benefits</button>
       <button role="tab" data-view="flights">Activity</button>
       <button role="tab" data-view="planner">Planner</button>
+      <button role="tab" data-view="report" hidden>Report</button>
       <button role="tab" data-view="settings">Settings</button>
     </nav>
     <div class="toolbar">
@@ -60,6 +61,7 @@
     <section id="view-benefits" class="view" hidden></section>
     <section id="view-flights" class="view" hidden></section>
     <section id="view-planner" class="view" hidden></section>
+    <section id="view-report" class="view" hidden></section>
     <section id="view-settings" class="view" hidden></section>
   </main>
 
@@ -165,6 +167,52 @@
           <label data-co2-only>CO₂ compensation cost<input name="co2Cost" inputmode="decimal" autocomplete="off">
             <small class="field-hint" id="co2Hint"></small></label>
         </div>
+        <fieldset id="taxBox" hidden>
+          <legend>Tax report <small class="muted" id="taxScope"></small></legend>
+          <div class="grid">
+            <label>Paid on
+              <span class="date-field">
+                <input name="paidOn" placeholder="YYYY/MM/DD" inputmode="numeric" maxlength="10" autocomplete="off">
+                <button type="button" class="date-btn" aria-label="Open calendar" title="Open calendar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+                </button>
+                <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
+              </span>
+            </label>
+            <label>Reimbursed by employer<input name="reimbursed" inputmode="decimal" autocomplete="off">
+              <small class="field-hint">of the fare</small></label>
+            <label>Receipt<input name="receipt" autocomplete="off" placeholder="e.g. Receipts/2026/ABC123.pdf"></label>
+          </div>
+          <div class="grid">
+            <label class="check"><input type="checkbox" name="business"> Business trip</label>
+            <label class="check" title="An award booking: enter the cash part paid (taxes and surcharges) as the fare"><input type="checkbox" name="award"> Award booking</label>
+            <label data-business-only>Of which deductible<input name="deductible" inputmode="decimal" autocomplete="off" placeholder="all of your share">
+              <small class="field-hint">of your share of the fare, if partly private</small></label>
+          </div>
+          <div class="grid" data-for="flight">
+            <label data-tax-upgrade>Upgrade paid on
+              <span class="date-field">
+                <input name="upgradePaidOn" placeholder="with the fare" inputmode="numeric" maxlength="10" autocomplete="off">
+                <button type="button" class="date-btn" aria-label="Open calendar" title="Open calendar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+                </button>
+                <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
+              </span>
+            </label>
+            <label data-tax-upgrade>Upgrade reimbursed<input name="upgradeReimbursed" inputmode="decimal" autocomplete="off"></label>
+            <label data-tax-co2>CO₂ compensation paid on
+              <span class="date-field">
+                <input name="co2PaidOn" placeholder="with the fare" inputmode="numeric" maxlength="10" autocomplete="off">
+                <button type="button" class="date-btn" aria-label="Open calendar" title="Open calendar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+                </button>
+                <input type="date" class="date-native" tabindex="-1" aria-hidden="true">
+              </span>
+            </label>
+            <label data-tax-co2>CO₂ compensation reimbursed<input name="co2Reimbursed" inputmode="decimal" autocomplete="off"></label>
+          </div>
+          <p class="hint m0" id="taxLine"></p>
+        </fieldset>
         <div class="grid">
           <label>Notes<input name="notes" autocomplete="off"></label>
           <label class="check" data-plan-only><input type="checkbox" name="includeInPlan"> Include in forecast</label>

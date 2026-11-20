@@ -11,20 +11,32 @@
 
   S.empty = () => ({
     format: FORMAT, version: VERSION,
-    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '', aerodataboxKey: '', aerodataboxVia: 'rapidapi', aerodataboxLimits: {} },
+    settings: { rules: clone(MM.DEFAULT_RULES), currency: 'EUR', startStatus: { status: 'NONE', year: null }, memberNumber: '', aerodataboxKey: '', aerodataboxVia: 'rapidapi', aerodataboxLimits: {},
+      tax: { enabled: false, co2Deductible: true, marginalRate: 0 } },   // the optional tax report (E.taxReport); marginalRate in %, 0 = no estimate
     flights: [],
-    bookings: {},      // booking code -> { fare }: one fare per booking, counted once on one of its segments (E.fareHolders)
+    bookings: {},      // booking code -> { fare, tax }: one fare per booking, counted once on one of its segments (E.fareHolders), and its tax details (S.newTax)
     adjustments: [],   // manual point corrections from the account statement
     stays: [],         // Marriott Bonvoy hotel stays (Points only, capped per year)
     plans: {},         // planner scenarios per calendar year: { "2026": { co2: { flightId: { level, cost } }, upgrade: { flightId: { cls, cost } }, mix: [row] } }
     apiCache: {},
   });
 
+  /**
+   * Tax details of a booking's fare (or of a segment's own fare without a booking code), for the tax report
+   * (E.taxReport): the date it was paid ('' = not entered yet), what the employer reimbursed of the fare, whether it is a
+   * business trip, the deductible part of your share of the fare for a mixed trip (null = all of it), an award booking
+   * (the fare is the cash part paid) and where the receipt is filed.
+   */
+  S.newTax = () => ({ paidOn: '', reimbursed: 0, business: false, deductible: null, award: false, receipt: '' });
+
   S.newFlight = (date) => ({
     id: S.uid(), bookingCode: '', date: date || E.todayISO(), transport: 'flight',   // 'flight' | 'rail' | 'bus'
     flightNo: '', operatingFlightNo: '',
     earningGroup: 'auto', bookedClass: 'Economy', upgradeClass: 'Economy', upgradeType: '',   // see MM.UPGRADE_TYPES
     flightCost: 0, upgradeCost: 0, co2Level: 'none', co2Cost: 0,
+    // tax report: when the upgrade and the CO₂ compensation were paid ('' = with the booking's fare) and what the employer reimbursed
+    upgradePaidOn: '', upgradeReimbursed: 0, co2PaidOn: '', co2Reimbursed: 0,
+    tax: S.newTax(),   // the fare's tax details, used without a booking code (like flightCost)
     earnClassOverride: 'auto', haulOverride: 'auto', route: null, routeLookup: null, times: null, includeInPlan: true, notes: '',
   });
 
@@ -62,13 +74,13 @@
   };
 
   /**
-   * Adds or replaces a flight. `fare` is the whole booking's fare when the flight has a booking code (shared by all
-   * segments with that code), else the flight's own fare.
+   * Adds or replaces a flight. `fare` and `tax` (S.newTax) belong to the whole booking when the flight has a booking code
+   * (shared by all segments with that code), else to the flight itself.
    */
-  S.saveFlight = (state, flight, fare) => {
+  S.saveFlight = (state, flight, fare, tax = S.newTax()) => {
     const k = E.bookingKey(flight.bookingCode);
-    const f = { ...flight, bookingCode: k, flightCost: k ? 0 : fare };
-    if (k) state.bookings[k] = { fare };
+    const f = { ...flight, bookingCode: k, flightCost: k ? 0 : fare, tax: k ? S.newTax() : tax };
+    if (k) state.bookings[k] = { fare, tax };
     const i = state.flights.findIndex(x => x.id === f.id);
     i >= 0 ? (state.flights[i] = f) : state.flights.push(f);
     prune(state);
@@ -149,6 +161,14 @@
     co2Level: MM.CO2_LEVELS,
   };
   const str = (x, max) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : null);
+  const amount = (x) => Math.max(0, +x || 0);
+  /** An ISO date, or '' for anything else (e.g. a payment date not entered yet). */
+  const isoOrEmpty = (x) => (E.parseDate(x) === x ? x : '');
+  const normalizeTax = (t) => {
+    const x = isObj(t) ? t : {};
+    return { paidOn: isoOrEmpty(x.paidOn), reimbursed: amount(x.reimbursed), business: x.business === true,
+      deductible: x.deductible == null ? null : amount(x.deductible), award: x.award === true, receipt: str(x.receipt, 200) || '' };
+  };
   const time = (t) => (isObj(t) && MM.api.isoTime(t.utc) && MM.api.isoTime(t.local) ? { utc: MM.api.isoTime(t.utc), local: MM.api.isoTime(t.local) } : null);
   const movement = (m) => {
     if (!isObj(m) || !time(m.scheduled)) return null;
@@ -184,8 +204,11 @@
       Object.assign(f, { operatingFlightNo: '', upgradeClass: f.bookedClass, upgradeType: '', upgradeCost: 0,
         earnClassOverride: 'auto', haulOverride: 'auto', co2Level: 'none' });
     }
-    for (const k of ['flightCost', 'upgradeCost', 'co2Cost']) f[k] = Math.max(0, +f[k] || 0);   // like the fares of bookings
+    for (const k of ['flightCost', 'upgradeCost', 'co2Cost', 'upgradeReimbursed', 'co2Reimbursed']) f[k] = amount(f[k]);   // like the fares of bookings
     if (!E.hasBooster(f)) f.co2Cost = 0;   // a CO₂ cost only with a booster
+    f.upgradePaidOn = isoOrEmpty(f.upgradePaidOn);
+    f.co2PaidOn = isoOrEmpty(f.co2PaidOn);
+    f.tax = normalizeTax(f.tax);
     return f;
   };
 
@@ -207,7 +230,7 @@
       // what-ifs per flight ID (prune drops those for flights that can't take them); fromEntries keeps a "__proto__" ID a plain key
       const whatIfs = (x, ok, field) => Object.fromEntries(Object.entries(isObj(x) ? x : {})
         .filter(([, o]) => isObj(o) && ok.includes(o[field]))
-        .map(([id, o]) => [id, { [field]: o[field], cost: Math.max(0, +o.cost || 0) }]));
+        .map(([id, o]) => [id, { [field]: o[field], cost: amount(o.cost) }]));
       const co2 = whatIfs(p.co2, MM.CO2_LEVELS.filter(l => l !== 'none'), 'level');
       const upgrade = whatIfs(p.upgrade, MM.CLASSES, 'cls');
       const safeId = safeIds();
@@ -217,7 +240,7 @@
         haul: r.haul === 'intercontinental' ? 'intercontinental' : 'continental',
         cls: MM.CLASSES.includes(r.cls) ? r.cls : 'Economy',
         co2Level: MM.CO2_LEVELS.includes(r.co2Level) ? r.co2Level : 'none',
-        cost: Math.max(0, +r.cost || 0),
+        cost: amount(r.cost),
       })));
       out[y] = { co2, upgrade, mix };
     }
@@ -239,6 +262,8 @@
       const lim = Object.fromEntries(['pastDays', 'futureDays'].map(k => [k, l[k]]).filter(([, d]) => Number.isInteger(d) && d > 0 && d <= 5000));
       if (Object.keys(lim).length) s.settings.aerodataboxLimits[via] = lim;
     }
+    const tax = isObj(set.tax) ? set.tax : {};
+    s.settings.tax = { enabled: tax.enabled === true, co2Deductible: tax.co2Deductible !== false, marginalRate: Math.min(100, amount(tax.marginalRate)) };
     if (isObj(set.startStatus) && MM.STATUS_ORDER.includes(set.startStatus.status)) {
       const y = +set.startStatus.year;
       s.settings.startStatus = { status: set.startStatus.status, year: S.validYear(y) ? y : null };
@@ -248,7 +273,7 @@
     s.adjustments = list(raw.adjustments, S.newAdjustment);
     s.stays = list(raw.stays, S.newStay);
     for (const [k, b] of Object.entries(isObj(raw.bookings) ? raw.bookings : {})) {
-      if (E.bookingKey(k)) s.bookings[E.bookingKey(k)] = { fare: Math.max(0, +(isObj(b) && b.fare) || 0) };
+      if (E.bookingKey(k)) s.bookings[E.bookingKey(k)] = { fare: amount(isObj(b) && b.fare), tax: normalizeTax(isObj(b) && b.tax) };
     }
     s.plans = normalizePlans(raw.plans);
     return prune(s);
@@ -273,16 +298,52 @@
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); return true; } catch { return false; }
   };
 
-  S.exportJSON = (state) => {
-    const data = { ...state, format: FORMAT, version: VERSION, savedAt: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  /** Hands the browser a file to save. */
+  const download = (name, text, type) => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = S.fileName(state);
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
   };
+
+  S.exportJSON = (state) => {
+    const data = { ...state, format: FORMAT, version: VERSION, savedAt: new Date().toISOString() };
+    download(S.fileName(state), JSON.stringify(data, null, 2), 'application/json');
+  };
+
+  /* ---------- tax report as CSV (German conventions, for a spreadsheet or a tax adviser) ---------- */
+  const TAX_ITEM_DE = { fare: 'Flugpreis', upgrade: 'Upgrade', co2: 'CO₂-Kompensation' };
+  const TAX_FLAG_DE = { over: 'Erstattung über den Kosten', private: 'Erstattung einer Privatreise', receipt: 'Beleg fehlt' };
+  const deDate = (iso) => iso.split('-').reverse().join('.');
+  const deAmount = (v) => v.toFixed(2).replace('.', ',');
+  /** A CSV cell: quoted when it holds a separator, a quote or a line break; text starting like a formula is defused. */
+  const cell = (v) => {
+    const t = typeof v === 'number' ? deAmount(v) : /^[=+\-@]/.test(v) ? `'${v}` : v;
+    return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  /** "14.04.2026 LH430 MUC–ORD" for each segment of a booking. */
+  const flightsDe = (flights) => flights.map(f => [deDate(f.date), f.flightNo,
+    f.route && f.route.origin && f.route.destination ? `${f.route.origin.iata}–${f.route.destination.iata}` : ''].filter(Boolean).join(' ')).join(', ');
+  /**
+   * The tax report (E.taxReport) as CSV: semicolons, decimal commas, DD.MM.YYYY dates, UTF-8 with a byte order mark so
+   * that Excel reads it right; one row per cost item or, with `collapse`, one per booking (without notes), and a total.
+   */
+  S.taxCsv = (report, collapse, currency) => {
+    const head = ['Bezahlt am', 'Buchungscode', 'Flüge', 'Geschäftsreise', ...(collapse ? [] : ['Posten']),
+      ...['Kosten', 'Erstattet', 'Eigenanteil', 'Absetzbar'].map(h => `${h} (${currency})`), 'Beleg', ...(collapse ? [] : ['Hinweise'])];
+    const money = (t) => [t.cost, t.reimbursed, t.own, t.deductible];
+    const rows = report.bookings.flatMap(b => {
+      const base = [b.code, flightsDe(b.flights), b.tax.business ? 'ja' : 'nein'];
+      if (collapse) return [[deDate(b.paidOn), ...base, ...money(b.total), b.tax.receipt]];
+      return b.items.map(it => [deDate(it.paidOn), ...base, TAX_ITEM_DE[it.kind] + (it.kind === 'fare' && b.tax.award ? ' (Prämienflug, Zuzahlung)' : ''),
+        ...money(it), b.tax.receipt, [...it.flags, ...b.flags].map(k => TAX_FLAG_DE[k]).join(', ')]);
+    });
+    const total = ['Summe', '', '', '', ...(collapse ? [] : ['']), ...money(report.total), '', ...(collapse ? [] : [''])];
+    return '\ufeff' + [head, ...rows, total].map(r => r.map(cell).join(';')).join('\r\n') + '\r\n';
+  };
+  S.exportTaxCsv = (report, collapse, currency) => download(`reisekosten-flug-${report.year}.csv`, S.taxCsv(report, collapse, currency), 'text/csv;charset=utf-8');
 
   S.importFile = (file) => file.text().then(S.parse);
 
@@ -338,7 +399,7 @@
       const f = { ...S.newFlight(date), flightNo: no, bookingCode: pnr,
         bookedClass: bc, upgradeClass: uc, upgradeType: uc === bc ? '' : bid ? 'bid' : 'miles',
         upgradeCost: uco, co2Level: co2, co2Cost: co2c };
-      s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc };
+      s.bookings[pnr] = { fare: ((s.bookings[pnr] || {}).fare || 0) + fc, tax: S.newTax() };
       f.route = MM.api.routeFromCache(s.apiCache[key]);
       f.routeLookup = MM.api.lookupInfo({ ...s.apiCache[key], fromCache: true }, no);
       s.flights.push(f);
@@ -347,6 +408,14 @@
     const lx = s.flights.find(f => f.flightNo === 'LX318');
     const [ly, lm, ld] = lx.date.split('-').map(Number);
     s.adjustments.push({ ...S.newAdjustment(isoUTC(ly, lm - 1, ld + 10)), p: 20, qp: 20, hon: 0, remark: 'Statement: retro credit for missing LX segment' });
+    // Tax report (off until switched on in Settings): each booking paid 3 weeks before its first segment; two business
+    // trips, reimbursed in part by the employer, and one booking whose paid date is still missing.
+    const trips = { K7XQ2P: [600, 'Belege/K7XQ2P.pdf'], Q1W2E3: [2000, ''] };
+    for (const [pnr, b] of Object.entries(s.bookings)) {
+      const [y, m, d] = s.flights.find(f => f.bookingCode === pnr).date.split('-').map(Number);
+      const [reimbursed, receipt] = trips[pnr] || [0, ''];
+      Object.assign(b.tax, { paidOn: pnr === 'HM2K1Q' ? '' : isoUTC(y, m - 1, d - 21), reimbursed, business: pnr in trips, receipt });
+    }
     return s;
   };
 })();
