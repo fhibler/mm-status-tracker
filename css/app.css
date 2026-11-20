@@ -18,6 +18,8 @@
   --c-flight: #2a78d6;
   --c-upgrade: #6250d6;
   --c-co2: #1baf7a;
+  --c-employer: #2a78d6;
+  --c-personal: #eb6834;
   --st-FTL: #8a93a6;
   --st-SEN: #c99a00;
   --st-HON: #111827;
@@ -53,6 +55,8 @@
   --c-flight: #3987e5;
   --c-upgrade: #9085e9;
   --c-co2: #199e70;
+  --c-employer: #3987e5;
+  --c-personal: #d95926;
   --st-FTL: #a7afc2;
   --st-SEN: #e0b52a;
   --st-HON: #f4f4f4;
@@ -203,6 +207,8 @@ main { padding: 20px max(16px, 3vw) 32px; max-width: 1500px; margin: 0 auto; }
 .c-flight { --c: var(--c-flight); }
 .c-upgrade { --c: var(--c-upgrade); }
 .c-co2 { --c: var(--c-co2); }
+.c-employer { --c: var(--c-employer); }
+.c-personal { --c: var(--c-personal); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 14px; height: 3px; border-radius: 2px; background: var(--c); display: inline-block; }

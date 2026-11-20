@@ -181,7 +181,7 @@
     const host = $('#view-dashboard');
     if (!state.flights.length && !state.adjustments.length && !state.stays.length) { host.innerHTML = emptyState(); return; }
     const rules = state.settings.rules;
-    const { hist, sum } = yearHistory();
+    const { st, hist, sum } = yearHistory();
     const prevYear = hist.find(h => h.year === year - 1);
     const heldMeta = sum.downgraded ? downgradeTxt(sum, ' from March')
       : E.rank(sum.carriedIn) < E.rank(sum.prevHeld) ? `Requalified ${sum.fromStatement ? 'as per your statement' : C.fmtDate(sum.reached.actual[sum.held])} after soft landing`
@@ -240,22 +240,22 @@
       </div>
       <div class="cols-3" id="cumCharts"></div>
       <div class="card">
-        <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">faded = planned</span></div>
+        <div class="card-head"><h2>Costs per month ${year}</h2><span class="sub">${expensesOn() ? 'by the date paid, else the date flown' : 'faded = planned'}</span></div>
         <div class="chart" id="costChart"></div>
-        ${costLegend}
+        ${costLegend()}
       </div>
       <div class="card">
         <div class="card-head"><h2>History &amp; forecast by calendar year</h2><span class="sub">a status is valid from the day it is reached until the end of February of the year after next; without requalification it then drops one level</span></div>
         <div class="table-wrap" id="histTable"></div>
-        ${hist.length > 1 ? `<div class="chart mt" id="yearCost"></div>${costLegend}` : ''}
+        ${hist.length > 1 ? `<div class="chart mt" id="yearCost"></div>${costLegend()}` : ''}
       </div>`;
 
     fitText($$('.kpi-trio b, .kpi .value.fit', host));   // a large cost total shrinks to fit its card
     renderProgress(sum, rules);
     renderCumCharts(sum, rules);
-    renderCostChart(sum);
+    renderCostChart(st, sum);
     renderSegments(sum);
-    renderHistory(hist);
+    renderHistory(st, hist);
   };
 
   const renderProgress = (sum, rules) => {
@@ -388,10 +388,20 @@
   };
 
   const COST_KINDS = [['flight', 'Flight', '--c-flight'], ['upgrade', 'Upgrade', '--c-upgrade'], ['co2', 'CO₂ compensation', '--c-co2']];
-  const costSeries = () => COST_KINDS.map(([key, label, color]) => ({ key, label, color: cssVar(color) }));
-  const costLegend = `<div class="legend">${COST_KINDS.map(([key, label]) => `<span><i class="sq c-${key}"></i>${label}</span>`).join('')}</div>`;
+  const PAYER_KINDS = [['employer', 'Employer', '--c-employer'], ['personal', 'Personal', '--c-personal']];
+  /** With the expense report on, the cost charts show who paid (E.costSplit) instead of the items. */
+  const costKinds = () => (expensesOn() ? PAYER_KINDS : COST_KINDS);
+  const costSeries = () => costKinds().map(([key, label, color]) => ({ key, label, color: cssVar(color) }));
+  const costLegend = () => `<div class="legend">${costKinds().map(([key, label]) => `<span><i class="sq c-${key}"></i>${label}</span>`).join('')}</div>`;
 
-  const renderCostChart = (sum) => {
+  const renderCostChart = (st, sum) => {
+    if (expensesOn()) {
+      C.stackedBars($('#costChart'), {
+        label: 'Costs per month', categories: C.MONTHS, series: costSeries(), data: E.costSplit(st, year).months,
+        format: (v) => money(v, true), tipTitle: (i) => `${C.MONTHS[i]} ${year}`,
+      });
+      return;
+    }
     const data = C.MONTHS.map(() => ({ flight: 0, upgrade: 0, co2: 0, planned: 0, n: 0 }));
     for (const r of sum.events) {
       if (!r.f || !r.counts) continue;   // segments and the planned boosters of flown ones
@@ -435,7 +445,7 @@
       <p class="hint">${lhg} Lufthansa Group segment(s) · ${star} Star Alliance segment(s) (Points only)</p>` : '<p class="muted">No segments in this year.</p>';
   };
 
-  const renderHistory = (hist) => {
+  const renderHistory = (st, hist) => {
     const rows = hist.slice().reverse().map(h => {
       const total = h.cost.all.total;
       const nPlan = plannedCount(h), hasPlan = nPlan > 0;
@@ -457,7 +467,8 @@
     const yc = $('#yearCost');
     if (yc) {
       C.stackedBars(yc, {
-        label: 'Costs per year', categories: hist.map(h => String(h.year)), series: costSeries(), data: hist.map(h => h.cost.all),
+        label: 'Costs per year', categories: hist.map(h => String(h.year)), series: costSeries(),
+        data: hist.map(h => (expensesOn() ? E.costSplit(st, h.year).total : h.cost.all)),
         format: (v) => money(v, true),
         note: (i) => `<div class="row muted"><span>Status incl. plan</span><span>${statusLabel(hist[i].statusForecast)}</span></div>`,
       });
@@ -649,10 +660,8 @@
      */
     const fareCell = (f, fare) => {
       const k = E.bookingKey(f.bookingCode), b = E.booking(state, f);
-      const t = E.fareExpense(state, f), r = E.fareReimbursed(t, fare);
-      const paid = !expensesOn() ? '' : `<div class="muted">${t.business ? `employer ${money(r)} · personal ${money(Math.max(0, fare - r))}` : 'personal'}</div>`;
-      if (!b || segs[k] < 2) return money(fare) + paid;
-      if (holders[k] === f.id) return `${money(fare)}<div class="muted" title="Whole fare of booking ${esc(k)}, counted once for its ${segs[k]} segments">booking · ${segs[k]} seg.</div>${paid}`;
+      if (!b || segs[k] < 2) return money(fare);
+      if (holders[k] === f.id) return `${money(fare)}<div class="muted" title="Whole fare of booking ${esc(k)}, counted once for its ${segs[k]} segments">booking · ${segs[k]} seg.</div>`;
       const h = state.flights.find(x => x.id === holders[k]);
       return `<span class="muted">–</span><div class="muted" title="Booking ${esc(k)}: the whole fare (${money(b.fare)}) is counted on ${esc(h.flightNo)}, ${esc(C.fmtDate(h.date))}">in ${esc(h.flightNo)}</div>`;
     };

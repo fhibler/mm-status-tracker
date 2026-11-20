@@ -74,6 +74,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     booking, all trips or business trips only: cost, employer and personal, flagging a reimbursement above
     the cost, and the Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast.
   - **Export CSV** for a spreadsheet (German formats: `;`, decimal comma, DD.MM.YYYY) and **Print / PDF**.
+  - The dashboard's cost charts then show what the employer and you paid instead of the items, by the month and
+    year paid (without a paid date: flown). The employer's and the personal part are shown only there and in the Report tab.
 - **CO₂ price estimate** (`MM.CO2_PRICE` in `js/data.js`): when you pick a booster, in the flight dialog or the
   planner, the cost is prefilled with the estimated lufthansa.com price until you type your own. It is fitted
   to 16 flights seen in Oct 2026 (all four packages each) and the costs paid in 2026. The packages are

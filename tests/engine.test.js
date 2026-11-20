@@ -388,9 +388,13 @@ const costItems = (b) => b.items.map(x => `${x.kind}@${x.paidOn}:${x.cost}-${x.r
   assert.strictEqual(Object.values(rep.total).join(), '2838,1138,1700');
   assert.strictEqual(E.expenseReport(st, 2026, { businessOnly: true }).bookings.length, 2);
   assert.strictEqual(E.expenseReport(st, 2027).bookings.length, 0);   // flown in 2027, paid in 2026
+  // the dashboard's costs by who paid, per month paid; without a paid date (U) in the month flown
+  const splitTxt = (x) => x.months.map((m, i) => (m.employer || m.personal ? `${i + 1}:${m.employer}/${m.personal}` : '')).filter(Boolean).join(' ') + ` =${x.total.employer}/${x.total.personal}`;
+  assert.strictEqual(splitTxt(E.costSplit(st, 2026)), '3:600/1000 4:38/0 5:0/380 12:500/400 =1138/1780');
   // more reimbursed than paid is flagged
   st.bookings.B.expense.reimbursed = 1200;
   assert.strictEqual(costItems(E.expenseReport(st, 2026).bookings[2]).split(' ')[0], 'fare@2026-03-02:1000-1200=0!over');
+  assert.strictEqual(splitTxt(E.costSplit(st, 2026)).split(' ')[0], '3:1000/600');   // the employer's part is at most the cost
 }
 {
   // each cost in the year it was paid: an upgrade paid in 2027 on a booking paid in 2026, and the booking's date is its first item's

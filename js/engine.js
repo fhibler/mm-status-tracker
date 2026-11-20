@@ -790,6 +790,24 @@
   };
 
   /**
+   * The dashboard's costs of `year` by who paid them (costItems): each in the month it was paid or, without a paid date,
+   * in the month of its flight (a fare: its booking's first segment): { months: [{ employer, personal }] for Jan…Dec,
+   * total }. The employer's part is at most the cost, so the two add up to it.
+   */
+  E.costSplit = (state, year) => {
+    const months = Array.from({ length: 12 }, () => ({ employer: 0, personal: 0 })), total = { employer: 0, personal: 0 };
+    for (const b of E.bookings(state)) {
+      for (const x of costItems(b)) {
+        const date = x.paidOn || (x.f || b.flights[0]).date, personal = Math.max(0, x.cost - x.reimbursed);
+        if (date.slice(0, 4) !== String(year)) continue;
+        for (const m of [months[+date.slice(5, 7) - 1], total]) { m.employer += x.cost - personal; m.personal += personal; }
+      }
+    }
+    const round = (m) => ({ employer: cents(m.employer), personal: cents(m.personal) });
+    return { months: months.map(round), total: round(total) };
+  };
+
+  /**
    * The Planner's upgrade and CO₂ what-ifs of `year` (E.upgradeWhatIf, E.co2WhatIf) on flights in the forecast
    * (E.inForecast, as E.planScenario counts them): [{ kind: 'upgrade' | 'co2', f, cost }].
    */
