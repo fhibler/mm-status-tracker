@@ -576,10 +576,11 @@ const costParts = (m) => Object.entries(m).filter(([, v]) => v.employer || v.per
     assert.strictEqual(at(oneMore), '{"date":"2026-12-31","step":"mix"}');
   }
   {  // a compensated flight is locked: loading drops its what-ifs; removing the compensation unlocks it
-    const lk = state({ flights: [lh], plans: { 2026: { co2: { a: { level: 'xlarge', cost: 90 } }, mix: [] } } });
+    const lk = state({ flights: [{ ...lh, co2PaidOn: '2026-01-20', co2PaidBy: 'employer' }], plans: { 2026: { co2: { a: { level: 'xlarge', cost: 90 } }, mix: [] } } });
     assert.strictEqual('a' in lk.plans['2026'].co2, false);
+    // … with its payment details, so a booster applied from the planner later is personal (E.whatIfFlight)
     const f = S.removeBooster(lk, 'a');
-    assert.strictEqual(`${f.co2Level}:${f.co2Cost}:${E.hasBooster(f)}:${lh.co2Level}`, 'none:0:false:large');
+    assert.strictEqual(`${f.co2Level}:${f.co2Cost}:${f.co2PaidOn}:${f.co2PaidBy}:${E.hasBooster(f)}:${lh.co2Level}`, 'none:0::personal:false:large');
     const un = E.planScenario(lk, 2026, { ...S.newPlan(), co2: { a: { level: 'large', cost: 40 } } }, TODAY);
     assert.strictEqual(`${pts(un.base.forecast)}:${pts(un.withWhatIfs.forecast)}:${un.cost.co2}`, '200,200,200:300,300,240:40');
     // saving a booster to the flight (Apply, or the flight dialog) locks it again and drops its what-ifs

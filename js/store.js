@@ -90,10 +90,12 @@
     state.flights = state.flights.filter(f => f.id !== id);
     prune(state);
   };
-  /** Removes the CO₂ compensation (booster and its cost) from a flight, which unlocks it in the planner. */
+  /** A flight's booster fields without a booster, as the dialog saves them: no cost and no payment details. */
+  const NO_BOOSTER = { co2Level: 'none', co2Cost: 0, co2PaidOn: '', co2PaidBy: 'personal' };
+  /** Removes the CO₂ compensation (booster, its cost and payment details) from a flight, which unlocks it in the planner. */
   S.removeBooster = (state, id) => {
     const f = state.flights.find(x => x.id === id);
-    if (f) { f.co2Level = 'none'; f.co2Cost = 0; }
+    if (f) Object.assign(f, NO_BOOSTER);
     prune(state);
     return f;
   };
@@ -213,7 +215,7 @@
     for (const k of ['flightCost', 'upgradeCost', 'co2Cost']) f[k] = amount(f[k]);   // like the fares of bookings
     // as the dialog saves them: the type, cost and payment details of an upgrade or a booster only with one
     if (!E.isUpgraded(f)) Object.assign(f, { upgradeType: '', upgradeCost: 0, upgradePaidOn: '', upgradePaidBy: 'personal' });
-    if (!E.hasBooster(f)) Object.assign(f, { co2Cost: 0, co2PaidOn: '', co2PaidBy: 'personal' });
+    if (!E.hasBooster(f)) Object.assign(f, NO_BOOSTER);
     f.upgradePaidOn = isoOrEmpty(f.upgradePaidOn);
     f.co2PaidOn = isoOrEmpty(f.co2PaidOn);
     f.expense = normalizeExpense(f.expense);
