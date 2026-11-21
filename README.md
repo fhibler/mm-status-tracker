@@ -70,10 +70,12 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     in which years, when not only in the selected one) with a link to them; the report leaves those costs out until
     you enter the date. Opening such a booking highlights its paid date. Saving a flown trip with a cost needs the date; a planned one can wait until it is paid. The year selector also offers
     every year in which something was paid.
-  - The **Report tab** shows the costs paid in the year per item (fare, upgrade, CO₂ compensation) or one line per
-    booking, all trips or business trips only: cost, employer and personal, flagging a reimbursement above
-    the cost, and the Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast.
-  - **Export CSV** for a spreadsheet (German formats: `;`, decimal comma, DD.MM.YYYY) and **Print / PDF**.
+  - The **Report tab** shows the costs paid in the year by the date paid, oldest first like Activity, per item (fare,
+    upgrade, CO₂ compensation) or one line per booking: cost, employer and personal (never below zero), and the
+    Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast. A filter picks the trips: all, personal,
+    business (all), business with a personal part in the year, or business without one.
+  - **Export CSV** for a spreadsheet (German formats: `;`, decimal comma, DD.MM.YYYY) and **Print / PDF** (A4 landscape),
+    both with the trips the filter shows.
   - The dashboard's cost charts then show the items (flight, upgrade, CO₂ compensation) and what the employer and you
     paid: **side by side** (two bars per month and year: the items, and employer and personal) or **combined** (one bar,
     each item split into employer and a faded personal part), switched on the chart and remembered in this browser.

@@ -14,8 +14,8 @@
   let withPlanner = false;   // dashboard and Extra Benefits incl. the Planner's scenarios (per browser, not part of the .json)
   try { withPlanner = localStorage.getItem('mm-status-tracker:withPlanner') === '1'; } catch { /* ignore */ }
   const REPORT_KEY = 'mm-status-tracker:report';
-  let reportPrefs = { businessOnly: false, collapse: false };   // Report tab: trips and detail shown (per browser, not part of the .json)
-  try { reportPrefs = { ...reportPrefs, ...JSON.parse(localStorage.getItem(REPORT_KEY)) }; } catch { /* ignore */ }
+  let reportPrefs = { trips: 'all', collapse: false };   // Report tab: trips (E.REPORT_TRIPS) and detail shown (per browser, not part of the .json)
+  try { const p = JSON.parse(localStorage.getItem(REPORT_KEY)); reportPrefs = { trips: p.trips in E.REPORT_TRIPS ? p.trips : 'all', collapse: p.collapse === true }; } catch { /* ignore */ }
   const COST_VIEW_KEY = 'mm-status-tracker:costView';
   let costView = 'side';   // dashboard cost charts with the expense report: 'side' (items and who paid side by side) or 'combined' (per browser)
   try { if (localStorage.getItem(COST_VIEW_KEY) === 'combined') costView = 'combined'; } catch { /* ignore */ }
@@ -1227,7 +1227,9 @@
   /* ================= report view (the optional expense report: settings.expenses.enabled) ================= */
   const expensesOn = () => state.settings.expenses.enabled;
   const COST_ITEM = { fare: 'Fare', upgrade: 'Upgrade', co2: 'CO₂ compensation' };
-  const COST_FLAG = { over: 'reimbursed more than paid' };
+  /** The trips the report can show (E.REPORT_TRIPS), as the filter names them. */
+  const REPORT_TRIPS = { all: 'All trips', personal: 'Personal trips', business: 'Business trips (all)',
+    businessOwn: 'Business trips with personal costs', businessNoOwn: 'Business trips without personal costs' };
   /** "14 Apr 2026 LH430 MUC→ORD", one line per segment of a booking. */
   const segmentsTxt = (flights) => flights.map(f => `<div class="nw">${C.fmtDate(f.date)} ${esc(f.flightNo)}${hasRoute(f.route) ? ` <span class="route">${routeTxt(f)}</span>` : ''}</div>`).join('');
   const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code> ${b.expense.business ? '<span class="pill ok">business</span>' : '<span class="pill">personal</span>'}${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
@@ -1236,7 +1238,7 @@
 
   const renderReport = () => {
     const host = $('#view-report'), collapse = reportPrefs.collapse;
-    const rep = E.expenseReport(state, year, { businessOnly: reportPrefs.businessOnly }), t = rep.total;
+    const rep = E.expenseReport(state, year, reportPrefs), t = rep.total, trips = REPORT_TRIPS[reportPrefs.trips];
     const unpaid = E.unpaidBookings(state), unpaidYs = unpaidYears(), whatIfs = E.expenseWhatIfs(state, year);
     const amounts = (x) => E.EXPENSE_AMOUNTS.map(k => `<td class="num">${money(x[k])}</td>`).join('');
     const pref = (key, value, label) => `<button type="button" class="with-label" data-pref="${key}:${value}" aria-pressed="${reportPrefs[key] === value}">${label}</button>`;
@@ -1247,12 +1249,12 @@
           <td>${C.fmtDate(it.paidOn)}</td>
           ${i ? '' : `<td rowspan="${b.items.length}">${bookingTxt(b)}</td><td rowspan="${b.items.length}">${segmentsTxt(b.flights)}</td>`}
           <td>${COST_ITEM[it.kind]}${it.f && b.flights.length > 1 ? ` <span class="muted">${esc(it.f.flightNo)}</span>` : ''}</td>
-          ${amounts(it)}<td>${it.flags.map(k => `<span class="pill warn">${COST_FLAG[k]}</span>`).join(' ')}</td>
+          ${amounts(it)}
         </tr>`).join(''))).join('');
     const cols = collapse ? 3 : 4;
 
     host.innerHTML = `
-      <p class="print-only">Flight costs paid in ${year} · as of ${C.fmtDate(E.todayISO())}</p>
+      <p class="print-only">Flight costs paid in ${year} · ${trips} · as of ${C.fmtDate(E.todayISO())}</p>
       ${unpaid.length ? `<div class="card warn-card no-print">
         <b>⚠ ${unpaid.length} booking${unpaid.length === 1 ? ' has' : 's have'} no paid date</b> and ${unpaid.length === 1 ? 'is' : 'are'} left out of the report
         until you enter ${unpaid.length === 1 ? 'it' : 'them'}. Activity marks ${unpaid.length === 1 ? 'it' : 'them'} with ⚠${
@@ -1260,7 +1262,7 @@
         <button class="btn small" data-act="goto-unpaid">Show in Activity</button>
       </div>` : ''}
       <div class="kpis">
-        ${kpi(`Cost paid in ${year}`, t.cost, `${rep.bookings.length} booking${rep.bookings.length === 1 ? '' : 's'}${reportPrefs.businessOnly ? ' · business trips' : ''}`)}
+        ${kpi(`Cost paid in ${year}`, t.cost, `${rep.bookings.length} booking${rep.bookings.length === 1 ? '' : 's'}${reportPrefs.trips === 'all' ? '' : ` · ${trips}`}`)}
         ${kpi('Employer', t.reimbursed, 'reimbursed to you')}
         ${kpi('Personal', t.own, 'cost − employer')}
       </div>
@@ -1269,7 +1271,7 @@
           <h2>Costs paid in ${year}</h2>
           <span class="sub">by the date paid · click a row to edit</span>
           <div class="right no-print">
-            <div class="theme-switch" role="group" aria-label="Trips">${pref('businessOnly', false, 'All trips')}${pref('businessOnly', true, 'Business trips')}</div>
+            <select id="reportTrips" aria-label="Trips in the report, the CSV and the PDF">${Object.entries(REPORT_TRIPS).map(([k, l]) => `<option value="${k}" ${k === reportPrefs.trips ? 'selected' : ''}>${l}</option>`).join('')}</select>
             <div class="theme-switch" role="group" aria-label="Detail">${pref('collapse', false, 'Per item')}${pref('collapse', true, 'One line per booking')}</div>
             <button class="btn" data-act="report-csv" title="For a spreadsheet: German number and date formats">Export CSV</button>
             <button class="btn" data-act="report-print" title="Print the report or save it as PDF">Print / PDF</button>
@@ -1277,10 +1279,10 @@
         </div>
         ${rep.bookings.length ? `<div class="table-wrap"><table class="report">
           <thead><tr><th>Paid on</th><th>Booking</th><th>Flights</th>${collapse ? '' : '<th>Item</th>'}
-            <th class="num">Cost</th><th class="num">Employer</th><th class="num">Personal</th>${collapse ? '' : '<th>Notes</th>'}</tr></thead>
+            <th class="num">Cost</th><th class="num">Employer</th><th class="num">Personal</th></tr></thead>
           <tbody>${rows}</tbody>
-          <tfoot><tr><td colspan="${cols}">Total</td>${amounts(t)}${collapse ? '' : '<td></td>'}</tr></tfoot>
-        </table></div>` : `<p class="muted m0">No costs paid in ${year}${reportPrefs.businessOnly ? ' on business trips' : ''}.</p>`}
+          <tfoot><tr><td colspan="${cols}">Total</td>${amounts(t)}</tr></tfoot>
+        </table></div>` : `<p class="muted m0">No costs paid in ${year}${reportPrefs.trips === 'all' ? '' : ` · ${trips}`}.</p>`}
       </div>
       ${whatIfs.length ? `<div class="card no-print">
         <div class="card-head"><h2>Planner what-ifs ${year}</h2><span class="sub">upgrades and CO₂ boosters you try in the Planner on flights in ${year}</span>
@@ -1293,12 +1295,13 @@
       </div>` : ''}`;
     fitText($$('.kpi .value.fit', host));
     $$('tbody tr[data-id]', host).forEach(tr => tr.addEventListener('click', () => openDialog(state.flights.find(f => f.id === tr.dataset.id))));
-    $$('[data-pref]', host).forEach(b => b.addEventListener('click', () => {
-      const [k, v] = b.dataset.pref.split(':');
-      reportPrefs[k] = v === 'true';
+    const setPref = (k, v) => {
+      reportPrefs[k] = v;
       try { localStorage.setItem(REPORT_KEY, JSON.stringify(reportPrefs)); } catch { /* ignore */ }
       render();
-    }));
+    };
+    $$('[data-pref]', host).forEach(b => b.addEventListener('click', () => { const [k, v] = b.dataset.pref.split(':'); setPref(k, v === 'true'); }));
+    $('#reportTrips', host).addEventListener('change', (e) => setPref('trips', e.target.value));
   };
 
   /* ================= settings view ================= */

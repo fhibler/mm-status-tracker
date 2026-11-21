@@ -771,25 +771,36 @@
   E.paidYears = (state) => [...new Set(E.bookings(state).flatMap(costItems).filter(x => x.paidOn).map(x => +x.paidOn.slice(0, 4)))].sort((a, b) => a - b);
 
   /**
-   * Expense report of the costs paid in `year` (the year paid, not the year flown), per booking (E.bookings;
-   * opts.businessOnly: business trips only). Its items are the booking's costs paid in that year (see costItems), each
-   * with the personal part (own: cost − reimbursed) and flags: 'over' (reimbursed more than the cost). Returns
-   * { year, bookings: [{ …booking, paidOn (its first item's), items, total }] (newest payment first), total }.
+   * The trips an expense report can show (E.expenseReport), by a booking of the report: all, personal ones, business ones,
+   * and business ones with or without a personal part (what the employer didn't reimburse) in the year.
+   */
+  E.REPORT_TRIPS = {
+    all: () => true,
+    personal: (b) => !b.expense.business,
+    business: (b) => b.expense.business,
+    businessOwn: (b) => b.expense.business && b.total.own > 0,
+    businessNoOwn: (b) => b.expense.business && !(b.total.own > 0),
+  };
+
+  /**
+   * Expense report of the costs paid in `year` (the year paid, not the year flown), per booking (E.bookings) of the
+   * trips `opts.trips` (a key of E.REPORT_TRIPS; all by default). Its items are the booking's costs paid in that year
+   * (see costItems), each with the personal part (own: cost − reimbursed, at least 0). Returns
+   * { year, bookings: [{ …booking, paidOn (its first item's), items, total }], total }, by the date paid, oldest first like Activity.
    */
   E.expenseReport = (state, year, opts = {}) => {
-    const y = String(year);
+    const y = String(year), trips = E.REPORT_TRIPS[opts.trips] || E.REPORT_TRIPS.all;
     const sum = (xs) => Object.fromEntries(E.EXPENSE_AMOUNTS.map(k => [k, cents(xs.reduce((a, x) => a + x[k], 0))]));
     const bookings = [];
     for (const b of E.bookings(state)) {
-      const t = b.expense;
-      if (opts.businessOnly && !t.business) continue;
       const items = costItems(b).filter(x => x.paidOn.slice(0, 4) === y)
-        .map(x => ({ ...x, own: cents(Math.max(0, x.cost - x.reimbursed)), flags: x.reimbursed > x.cost ? ['over'] : [] }));
+        .map(x => ({ ...x, own: cents(Math.max(0, x.cost - x.reimbursed)) }))
+        .sort((p, q) => p.paidOn.localeCompare(q.paidOn));
       if (!items.length) continue;
-      const paidOn = items.map(x => x.paidOn).sort()[0];
-      bookings.push({ ...b, paidOn, items, total: sum(items) });
+      const r = { ...b, paidOn: items[0].paidOn, items, total: sum(items) };
+      if (trips(r)) bookings.push(r);
     }
-    bookings.sort((a, b) => b.paidOn.localeCompare(a.paidOn));
+    bookings.sort((a, b) => a.paidOn.localeCompare(b.paidOn));
     return { year, bookings, total: sum(bookings.flatMap(b => b.items)) };
   };
 

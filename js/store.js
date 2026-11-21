@@ -208,12 +208,11 @@
     // as the dialog saves them: trains in 2nd or 1st class; trains and buses without the flight-only fields
     if (f.transport === 'rail' && !(f.bookedClass in MM.RAIL_CLASSES)) f.bookedClass = 'Economy';
     if (f.transport !== 'flight') {
-      Object.assign(f, { operatingFlightNo: '', upgradeClass: f.bookedClass, upgradeType: '', upgradeCost: 0,
-        earnClassOverride: 'auto', haulOverride: 'auto', co2Level: 'none' });
+      Object.assign(f, { operatingFlightNo: '', upgradeClass: f.bookedClass, earnClassOverride: 'auto', haulOverride: 'auto', co2Level: 'none' });
     }
     for (const k of ['flightCost', 'upgradeCost', 'co2Cost']) f[k] = amount(f[k]);   // like the fares of bookings
-    // as the dialog saves them: the payment details of an upgrade or a booster only with one
-    if (!E.isUpgraded(f)) Object.assign(f, { upgradePaidOn: '', upgradePaidBy: 'personal' });
+    // as the dialog saves them: the type, cost and payment details of an upgrade or a booster only with one
+    if (!E.isUpgraded(f)) Object.assign(f, { upgradeType: '', upgradeCost: 0, upgradePaidOn: '', upgradePaidBy: 'personal' });
     if (!E.hasBooster(f)) Object.assign(f, { co2Cost: 0, co2PaidOn: '', co2PaidBy: 'personal' });
     f.upgradePaidOn = isoOrEmpty(f.upgradePaidOn);
     f.co2PaidOn = isoOrEmpty(f.co2PaidOn);
@@ -324,7 +323,6 @@
 
   /* ---------- expense report as CSV (German conventions, for a spreadsheet) ---------- */
   const COST_ITEM_DE = { fare: 'Flugpreis', upgrade: 'Upgrade', co2: 'CO₂-Kompensation' };
-  const COST_FLAG_DE = { over: 'Erstattung über den Kosten' };
   const deDate = (iso) => iso.split('-').reverse().join('.');
   const deAmount = (v) => v.toFixed(2).replace('.', ',');
   /**
@@ -340,19 +338,19 @@
     f.route && f.route.origin && f.route.destination ? `${f.route.origin.iata}–${f.route.destination.iata}` : ''].filter(Boolean).join(' ')).join(', ');
   /**
    * The expense report (E.expenseReport) as CSV: semicolons, decimal commas, DD.MM.YYYY dates, UTF-8 with a byte order mark so
-   * that Excel reads it right; one row per cost item or, with `collapse`, one per booking (without notes), and a total.
+   * that Excel reads it right; one row per cost item or, with `collapse`, one per booking, and a total.
    */
   S.expenseCsv = (report, collapse, currency) => {
     const head = ['Bezahlt am', 'Buchungscode', 'Flüge', 'Geschäftsreise', ...(collapse ? [] : ['Posten']),
-      ...['Kosten', 'Arbeitgeber', 'Persönlich'].map(h => `${h} (${currency})`), ...(collapse ? [] : ['Hinweise'])];
+      ...['Kosten', 'Arbeitgeber', 'Persönlich'].map(h => `${h} (${currency})`)];
     const money = (t) => E.EXPENSE_AMOUNTS.map(k => t[k]);
     const rows = report.bookings.flatMap(b => {
       const base = [b.code, flightsDe(b.flights), b.expense.business ? 'ja' : 'nein'];
       if (collapse) return [[deDate(b.paidOn), ...base, ...money(b.total)]];
       return b.items.map(it => [deDate(it.paidOn), ...base, COST_ITEM_DE[it.kind] + (it.kind === 'fare' && b.expense.award ? ' (Prämienflug, Zuzahlung)' : ''),
-        ...money(it), it.flags.map(k => COST_FLAG_DE[k]).join(', ')]);
+        ...money(it)]);
     });
-    const total = ['Summe', '', '', '', ...(collapse ? [] : ['']), ...money(report.total), ...(collapse ? [] : [''])];
+    const total = ['Summe', '', '', '', ...(collapse ? [] : ['']), ...money(report.total)];
     return '\ufeff' + [head, ...rows, total].map(r => r.map(cell).join(';')).join('\r\n') + '\r\n';
   };
   S.exportExpenseCsv = (report, collapse, currency) => download(`reisekosten-flug-${report.year}.csv`, S.expenseCsv(report, collapse, currency), 'text/csv;charset=utf-8');
