@@ -70,6 +70,8 @@ Miles & More status per calendar year (CY): Points, Qualifying Points (QP) and H
     in which years, when not only in the selected one) with a link to them; the report leaves those costs out until
     you enter the date. Opening such a booking highlights its paid date. Saving a flown trip with a cost needs the date; a planned one can wait until it is paid. The year selector also offers
     every year in which something was paid.
+  - Activity also marks an upgrade or CO₂ cost without a paid date of its own with *: the report counts it as paid with
+    the fare.
   - The **Report tab** shows the costs paid in the year by the date paid, oldest first like Activity, per item (fare,
     upgrade, CO₂ compensation) or one line per booking: cost, employer and personal (never below zero), and the
     Planner's upgrade and CO₂ what-ifs on the year's flights in the forecast. A filter picks the trips: all, personal,

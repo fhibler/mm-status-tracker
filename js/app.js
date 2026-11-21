@@ -683,6 +683,9 @@
     const missing = sum.rows.filter(r => timesAvailable(r.f)).length;
     const segs = E.bookingSegments(state), holders = E.fareHolders(state);
     const unpaid = new Set(expensesOn() ? E.unpaidBookings(state).flatMap(b => b.flights.map(f => f.id)) : []);
+    /** With the expense report: "*" on an upgrade or CO₂ cost without its own paid date, which the report counts as paid with the fare. */
+    const withFare = (cost, paidOn) => (expensesOn() && cost > 0 && !paidOn ? '<span class="muted" title="No paid date of its own: counted as paid with the fare. Click to enter it">*</span>' : '');
+    const anyWithFare = expensesOn() && sum.rows.some(r => withFare(r.c.upgrade, r.f.upgradePaidOn) || withFare(r.c.co2, r.f.co2PaidOn));
     /**
      * Fare cell. A booking with several segments shows its whole fare once, on the segment that carries it
      * (E.fareHolders); its other segments point to that one.
@@ -709,8 +712,8 @@
         <td class="cls">${clsBadge(f.bookedClass)}</td>
         <td class="cls">${up ? `${clsBadge(f.upgradeClass)}<div class="muted">${f.upgradeType ? esc(MM.UPGRADE_TYPES[f.upgradeType].label) : 'type not specified'}</div>` : '<span class="muted">–</span>'}${f.earnClassOverride && f.earnClassOverride !== 'auto' ? `<div class="muted">earns as ${esc(f.earnClassOverride)}</div>` : ''}</td>
         <td class="num">${num(r.e.p)}</td><td class="num">${num(r.e.qp)}</td><td class="num">${num(r.e.hon)}</td>
-        <td class="num">${fareCell(f, r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) : '–'}</td>
-        ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
+        <td class="num">${fareCell(f, r.c.flight)}</td><td class="num">${up ? money(r.c.upgrade) + withFare(r.c.upgrade, f.upgradePaidOn) : '–'}</td>
+        ${showCO2 ? `<td class="num">${co2 ? `${money(r.c.co2)}${withFare(r.c.co2, f.co2PaidOn)}<div class="muted">${esc(MM.CO2_LABEL[f.co2Level])}</div>` : '–'}</td>` : ''}
       </tr>
       <tr class="detail-row ${r.planned ? 'planned' : ''}" data-detail="${esc(f.id)}" ${open ? '' : 'hidden'}><td></td><td colspan="${cols - 1}">${timesDetail(f)}</td></tr>`;
     };
@@ -749,7 +752,7 @@
             ${planned.length ? footRow('Incl. planned', tot(sum.rows)) : ''}
             ${sum.adjustments.length || sum.stays.length ? footRow(`Incl. ${[sum.adjustments.length && 'point corrections', sum.stays.length && 'hotel stays'].filter(Boolean).join(' &amp; ')}`, { ...sum.forecast, ...sum.cost.all }) : ''}
           </tfoot>
-        </table></div>` : `<div class="empty"><h2>No flights in ${year}</h2><p>Add a flown or planned segment to start tracking.</p>
+        </table></div>${anyWithFare ? '<p class="muted mt">* No paid date of its own: the expense report counts it as paid with the fare.</p>' : ''}` : `<div class="empty"><h2>No flights in ${year}</h2><p>Add a flown or planned segment to start tracking.</p>
           <div class="btns"><button class="btn primary" data-act="add">Add flight</button>${hasData() ? '' : '<button class="btn" data-act="demo">Load demo data</button>'}</div></div>`}
       </div>
       ${renderAdjustmentsCard(sum)}
