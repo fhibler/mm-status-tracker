@@ -137,11 +137,14 @@
 
   /* ---------- normalize: fills missing fields with defaults and drops invalid entries ---------- */
   const isObj = (x) => !!x && typeof x === 'object';
-  /** IDs end up in HTML attributes and CSS selectors, so only simple ones are kept; a repeated one gets a new ID. */
+  /**
+   * IDs end up in HTML attributes and CSS selectors, so only simple ones are kept, and they key the planner's what-ifs
+   * (plain objects), so none that every object has ("__proto__", "constructor"); a repeated one gets a new ID.
+   */
   const safeIds = () => {
     const seen = new Set();
     return (id) => {
-      const ok = typeof id === 'string' && /^[\w-]{1,40}$/.test(id) && !seen.has(id) ? id : S.uid();
+      const ok = typeof id === 'string' && /^[\w-]{1,40}$/.test(id) && !(id in Object.prototype) && !seen.has(id) ? id : S.uid();
       seen.add(ok);
       return ok;
     };

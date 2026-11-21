@@ -701,6 +701,9 @@ const costParts = (m) => Object.entries(m).filter(([, v]) => v.employer || v.per
   });
   assert.ok(/^[\w-]+$/.test(st.flights[0].id) && st.flights[0].id !== 'x"><b>');
   assert.ok(st.flights[2].id !== 'ok-1' && st.plans['2025'].mix[2].id !== 'm');
+  // so are names every object has: "constructor" would read Object as a what-if of an empty plan
+  const named = state({ flights: ['__proto__', 'constructor'].map(id => lhBiz({ id })) }).flights;
+  assert.strictEqual(named.map(f => `${f.id in Object.prototype}:${E.co2WhatIf(f, S.newPlan(), TODAY)}`).join(), 'false:null,false:null');
   assert.strictEqual(`${st.flights.length}:${st.flights[1].id}:${st.adjustments.length}:${st.stays.length}:${Object.keys(st.apiCache)}:${st.settings.currency}`, '3:ok-1:1:0:LH2 2026-01-01:EUR');
   // invalid cached lookups are dropped even when a flight uses them (not only by the prune)
   const used = state({ flights: ['LH1', 'LH2', 'LH4', 'LH5', 'LH6', 'LH7'].map(n => ({ date: '2026-01-01', flightNo: n })), apiCache: rawCache });
