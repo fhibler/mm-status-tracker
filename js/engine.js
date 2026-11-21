@@ -504,17 +504,17 @@
 
   /* ---------- planner scenarios ---------- */
   /**
-   * One row of a planned mix: `count` extra segments of a kind.
+   * What one segment of a row of a planned mix (`count` extra segments of a kind) earns by, as a flight's fields.
    * kind: 'LHG' (Lufthansa Group flight), 'STAR' (Star Alliance flight, Points only) or 'RAIL' (train: continental,
-   * no CO₂ booster, QP / HON capped). Returns the earning of one segment.
+   * no CO₂ booster, QP / HON capped).
    */
-  E.mixRowEarn = (row, rules) => {
+  const mixSegment = (row) => {
     const rail = row.kind === 'RAIL';
-    return E.earn({
-      transport: rail ? 'rail' : 'flight', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
-      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, co2Level: row.co2Level,
-    }, rules);
+    return { transport: rail ? 'rail' : 'flight', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
+      haulOverride: rail ? 'continental' : row.haul, bookedClass: row.cls, upgradeClass: row.cls, co2Level: rail ? 'none' : row.co2Level };
   };
+  /** The earning of one segment of a row of a planned mix (see mixSegment). */
+  E.mixRowEarn = (row, rules) => E.earn(mixSegment(row), rules);
 
   /**
    * "Fill the gap": how many more Lufthansa Group flights of one type (seg = { haul, cls, co2Level }) close the gap
@@ -688,17 +688,13 @@
       const date = `${y}-12-31`;
       if (!E.mixCounts(+y, today)) continue;
       for (const row of plan.mix) {
-        const rail = row.kind === 'RAIL';
         for (let i = 0; i < row.count; i++) {
           flights.push({
-            id: `plan-${y}-${row.id}-${i}`, bookingCode: '', date, transport: rail ? 'rail' : 'flight',
-            flightNo: 'Planner', operatingFlightNo: '', earningGroup: row.kind === 'STAR' ? 'STAR' : 'LHG',
-            bookedClass: row.cls, upgradeClass: row.cls, upgradeType: '', flightCost: +row.cost || 0, upgradeCost: 0,
-            co2Level: rail ? 'none' : row.co2Level, co2Cost: 0,
+            id: `plan-${y}-${row.id}-${i}`, bookingCode: '', date, flightNo: 'Planner', operatingFlightNo: '', ...mixSegment(row),
+            upgradeType: '', flightCost: +row.cost || 0, upgradeCost: 0, co2Cost: 0,
             upgradePaidOn: '', upgradePaidBy: 'personal', co2PaidOn: '', co2PaidBy: 'personal',
             expense: { paidOn: '', business: false, reimbursed: null, award: false },
-            earnClassOverride: 'auto', haulOverride: rail ? 'continental' : row.haul, route: null, routeLookup: null, times: null,
-            includeInPlan: true, notes: '',
+            earnClassOverride: 'auto', route: null, routeLookup: null, times: null, includeInPlan: true, notes: '',
           });
         }
       }
