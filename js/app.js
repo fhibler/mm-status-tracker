@@ -1235,7 +1235,8 @@
     businessOwn: 'Business trips with personal costs', businessNoOwn: 'Business trips without personal costs' };
   /** "14 Apr 2026 LH430 MUC→ORD", one line per segment of a booking. */
   const segmentsTxt = (flights) => flights.map(f => `<div class="nw">${C.fmtDate(f.date)} ${esc(f.flightNo)}${hasRoute(f.route) ? ` <span class="route">${routeTxt(f)}</span>` : ''}</div>`).join('');
-  const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code> ${b.expense.business ? '<span class="pill ok">business</span>' : '<span class="pill">personal</span>'}${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
+  const bookingTxt = (b) => `<code>${esc(b.code || '–')}</code>${b.expense.award ? ' <span class="pill">award</span>' : ''}`;
+  const tripTxt = (b) => (b.expense.business ? '<span class="pill ok">Business</span>' : '<span class="pill">Personal</span>');
   /** Calendar years in which Activity marks a booking without a paid date (⚠, E.unpaidBookings): those of its segments. */
   const unpaidYears = () => [...new Set(E.unpaidBookings(state).flatMap(b => b.flights.map(f => +f.date.slice(0, 4))))].sort((a, b) => a - b);
 
@@ -1247,14 +1248,14 @@
     const pref = (key, value, label) => `<button type="button" class="with-label" data-pref="${key}:${value}" aria-pressed="${reportPrefs[key] === value}">${label}</button>`;
     const kpi = (label, v, meta) => `<div class="card kpi"><div class="label">${label}</div><div class="value fit">${money(v)}</div><div class="meta">${meta}</div></div>`;
     const rows = rep.bookings.map(b => (collapse
-      ? `<tr data-id="${esc(b.flights[0].id)}"><td>${C.fmtDate(b.paidOn)}</td><td>${bookingTxt(b)}</td><td>${segmentsTxt(b.flights)}</td>${amounts(b.total)}</tr>`
+      ? `<tr data-id="${esc(b.flights[0].id)}"><td>${C.fmtDate(b.paidOn)}</td><td>${bookingTxt(b)}</td><td>${tripTxt(b)}</td><td>${segmentsTxt(b.flights)}</td>${amounts(b.total)}</tr>`
       : b.items.map((it, i) => `<tr data-id="${esc((it.f || b.flights[0]).id)}">
           <td>${C.fmtDate(it.paidOn)}</td>
-          ${i ? '' : `<td rowspan="${b.items.length}">${bookingTxt(b)}</td><td rowspan="${b.items.length}">${segmentsTxt(b.flights)}</td>`}
+          ${i ? '' : `<td rowspan="${b.items.length}">${bookingTxt(b)}</td><td rowspan="${b.items.length}">${tripTxt(b)}</td><td rowspan="${b.items.length}">${segmentsTxt(b.flights)}</td>`}
           <td>${COST_ITEM[it.kind]}${it.f && b.flights.length > 1 ? ` <span class="muted">${esc(it.f.flightNo)}</span>` : ''}</td>
           ${amounts(it)}
         </tr>`).join(''))).join('');
-    const cols = collapse ? 3 : 4;
+    const cols = collapse ? 4 : 5;
 
     host.innerHTML = `
       <p class="print-only">Flight costs paid in ${year} · ${trips} · as of ${C.fmtDate(E.todayISO())}</p>
@@ -1281,7 +1282,7 @@
           </div>
         </div>
         ${rep.bookings.length ? `<div class="table-wrap"><table class="report">
-          <thead><tr><th>Paid on</th><th>Booking</th><th>Flights</th>${collapse ? '' : '<th>Item</th>'}
+          <thead><tr><th>Paid on</th><th>Booking</th><th>Trip</th><th>Flights</th>${collapse ? '' : '<th>Item</th>'}
             <th class="num">Cost</th><th class="num">Employer</th><th class="num">Personal</th></tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr><td colspan="${cols}">Total</td>${amounts(t)}</tr></tfoot>
