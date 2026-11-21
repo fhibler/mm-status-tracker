@@ -11,7 +11,7 @@ while ($l.IsListening) {
   $p = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath.TrimStart('/'))
   if ($p -eq '') { $p = 'index.html' }
   $f = Join-Path $Root $p
-  if ((Test-Path $f -PathType Leaf) -and ([IO.Path]::GetFullPath($f).StartsWith($Root, [StringComparison]::OrdinalIgnoreCase))) {
+  if ((Test-Path -LiteralPath $f -PathType Leaf) -and ([IO.Path]::GetFullPath($f).StartsWith($Root, [StringComparison]::OrdinalIgnoreCase))) {
     $b = [IO.File]::ReadAllBytes($f)
     $ext = [IO.Path]::GetExtension($f)
     $ctx.Response.ContentType = $(if ($types[$ext]) { $types[$ext] } else { 'application/octet-stream' })
